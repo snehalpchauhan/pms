@@ -1,6 +1,7 @@
 import avatar1 from "@/assets/avatar-1.png";
 import avatar2 from "@/assets/avatar-2.png";
 import avatar3 from "@/assets/avatar-3.png";
+import { addDays, format, subDays } from "date-fns";
 
 export type Status = "todo" | "in-progress" | "review" | "done" | string;
 
@@ -134,6 +135,12 @@ export const PROJECTS: Project[] = [
     }
 ];
 
+const today = new Date();
+const tomorrow = addDays(today, 1);
+const yesterday = subDays(today, 1);
+const twoDaysLater = addDays(today, 2);
+const nextWeek = addDays(today, 7);
+
 export const INITIAL_TASKS: Task[] = [
   {
     id: "t1",
@@ -144,7 +151,7 @@ export const INITIAL_TASKS: Task[] = [
     priority: "high",
     tags: ["Design", "System"],
     assignees: ["u2", "u1"],
-    dueDate: "2024-03-20",
+    dueDate: format(today, "yyyy-MM-dd"), // TODAY
     attachments: [],
     comments: [
       {
@@ -172,6 +179,7 @@ export const INITIAL_TASKS: Task[] = [
     priority: "high",
     tags: ["Backend", "Auth"],
     assignees: ["u1"],
+    dueDate: format(tomorrow, "yyyy-MM-dd"), // TOMORROW
     comments: [],
     attachments: []
   },
@@ -185,6 +193,7 @@ export const INITIAL_TASKS: Task[] = [
     tags: ["Frontend", "Data"],
     assignees: ["u1"],
     coverImage: "https://images.unsplash.com/photo-1551288049-bebda4e38f71?q=80&w=2070&auto=format&fit=crop",
+    dueDate: format(twoDaysLater, "yyyy-MM-dd"), // THIS WEEK
     comments: [],
     attachments: [
        { id: "a1", name: "mockup_v2.png", type: "image", url: "https://images.unsplash.com/photo-1551288049-bebda4e38f71?q=80&w=2070&auto=format&fit=crop", size: "2.4MB" }
@@ -199,6 +208,7 @@ export const INITIAL_TASKS: Task[] = [
     priority: "low",
     tags: ["Bug", "Mobile"],
     assignees: ["u2"],
+    dueDate: format(yesterday, "yyyy-MM-dd"), // OVERDUE
     comments: [],
     attachments: []
   },
@@ -211,6 +221,7 @@ export const INITIAL_TASKS: Task[] = [
       priority: "high",
       tags: ["Design", "Assets"],
       assignees: ["u2"],
+      dueDate: "2026-03-20", // Specific Date requested
       comments: [],
       attachments: []
   }
