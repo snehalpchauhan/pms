@@ -12,8 +12,8 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
-import { Task, USERS } from "@/lib/mockData";
-import { Calendar, Paperclip, Tag, User as UserIcon, CheckCircle2, MoreHorizontal, MessageSquare, Plus, X, Reply, Clock, History, AlertCircle, FileText, Activity, Repeat, CalendarCheck, ArrowRight, CheckSquare } from "lucide-react";
+import { Task, USERS, ChecklistItem, Attachment } from "@/lib/mockData";
+import { Calendar, Paperclip, Tag, User as UserIcon, CheckCircle2, MoreHorizontal, MessageSquare, Plus, X, Reply, Clock, History, AlertCircle, FileText, Activity, Repeat, CalendarCheck, ArrowRight, CheckSquare, Trash2, Download } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
@@ -23,6 +23,7 @@ import { format } from "date-fns";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 
 interface TaskDetailPageProps {
   task: Task;
@@ -32,12 +33,50 @@ interface TaskDetailPageProps {
 export function TaskDetailPage({ task, onClose }: TaskDetailPageProps) {
   const [commentInput, setCommentInput] = useState("");
   const [status, setStatus] = useState(task.status);
-  const [checklist, setChecklist] = useState(task.checklist || []);
+  const [checklist, setChecklist] = useState<ChecklistItem[]>(task.checklist || []);
+  const [newChecklistInput, setNewChecklistInput] = useState("");
+  const [attachments, setAttachments] = useState<Attachment[]>(task.attachments || []);
+  const [assignees, setAssignees] = useState<string[]>(task.assignees || []);
 
   const toggleChecklistItem = (id: string) => {
       setChecklist(checklist.map(item => 
           item.id === id ? { ...item, completed: !item.completed } : item
       ));
+  };
+
+  const addChecklistItem = () => {
+      if (!newChecklistInput.trim()) return;
+      const newItem: ChecklistItem = {
+          id: `cl-${Date.now()}`,
+          text: newChecklistInput,
+          completed: false
+      };
+      setChecklist([...checklist, newItem]);
+      setNewChecklistInput("");
+  };
+
+  const removeChecklistItem = (id: string) => {
+      setChecklist(checklist.filter(item => item.id !== id));
+  };
+
+  const handleAttachmentUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (e.target.files) {
+          const newFiles = Array.from(e.target.files).map((file, i) => ({
+              id: `att-new-${Date.now()}-${i}`,
+              name: file.name,
+              type: file.type.includes('image') ? 'image' as const : 'file' as const,
+              size: `${(file.size / 1024).toFixed(1)} KB`
+          }));
+          setAttachments([...attachments, ...newFiles]);
+      }
+  };
+
+  const toggleAssignee = (userId: string) => {
+      if (assignees.includes(userId)) {
+          setAssignees(assignees.filter(id => id !== userId));
+      } else {
+          setAssignees([...assignees, userId]);
+      }
   };
   
   return (
@@ -126,7 +165,7 @@ export function TaskDetailPage({ task, onClose }: TaskDetailPageProps) {
                         <div className="space-y-2">
                              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Assignees</div>
                              <div className="flex flex-wrap gap-2">
-                                {task.assignees.map(id => {
+                                {assignees.map(id => {
                                     const user = USERS[id];
                                     return user ? (
                                         <div key={id} className="flex items-center gap-2 bg-background border border-border/50 rounded-full pl-1 pr-3 py-1 shadow-sm">
@@ -135,12 +174,40 @@ export function TaskDetailPage({ task, onClose }: TaskDetailPageProps) {
                                                 <AvatarFallback>{user.name[0]}</AvatarFallback>
                                             </Avatar>
                                             <span className="text-xs font-medium truncate max-w-[80px]">{user.name}</span>
+                                            <button onClick={() => toggleAssignee(id)} className="ml-1 text-muted-foreground hover:text-destructive">
+                                                <X className="w-3 h-3" />
+                                            </button>
                                         </div>
                                     ) : null;
                                 })}
-                                <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full border border-dashed border-border/50">
-                                    <Plus className="w-3 h-3" />
-                                </Button>
+                                <Popover>
+                                    <PopoverTrigger asChild>
+                                        <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full border border-dashed border-border/50">
+                                            <Plus className="w-3 h-3" />
+                                        </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-60 p-2" align="start">
+                                        <div className="space-y-1">
+                                            <div className="text-xs font-semibold text-muted-foreground px-2 py-1.5">Add Assignee</div>
+                                            {Object.values(USERS).filter(u => !assignees.includes(u.id)).map(user => (
+                                                <button 
+                                                    key={user.id}
+                                                    onClick={() => toggleAssignee(user.id)}
+                                                    className="flex items-center gap-2 w-full px-2 py-1.5 hover:bg-muted rounded-md text-sm transition-colors"
+                                                >
+                                                    <Avatar className="h-6 w-6">
+                                                        <AvatarImage src={user.avatar} />
+                                                        <AvatarFallback>{user.name[0]}</AvatarFallback>
+                                                    </Avatar>
+                                                    <span>{user.name}</span>
+                                                </button>
+                                            ))}
+                                            {Object.values(USERS).filter(u => !assignees.includes(u.id)).length === 0 && (
+                                                <div className="text-xs text-muted-foreground px-2 py-2 italic">All users assigned</div>
+                                            )}
+                                        </div>
+                                    </PopoverContent>
+                                </Popover>
                              </div>
                         </div>
 
@@ -193,20 +260,56 @@ export function TaskDetailPage({ task, onClose }: TaskDetailPageProps) {
                      </div>
                      
                      {/* Attachments */}
-                     {task.attachments.length > 0 && (
-                        <div className="space-y-2">
-                            <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Attachments</div>
-                            <div className="flex flex-wrap gap-2">
-                            {task.attachments.map(att => (
-                                <div key={att.id} className="flex items-center gap-2 bg-background border border-border/50 rounded-md px-3 py-2 shadow-sm text-xs max-w-full truncate cursor-pointer hover:bg-muted/50 transition-colors">
-                                    <Paperclip className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                                    <span className="truncate font-medium">{att.name}</span>
-                                    <span className="text-muted-foreground text-[10px] ml-1">{att.size}</span>
-                                </div>
-                            ))}
+                     <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                            <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                                <Paperclip className="w-4 h-4 text-primary" /> Attachments
+                            </h3>
+                            <div className="relative">
+                                <input 
+                                    type="file" 
+                                    multiple 
+                                    className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10"
+                                    onChange={handleAttachmentUpload}
+                                />
+                                <Button variant="ghost" size="sm" className="h-7 text-xs">
+                                    <Plus className="w-3 h-3 mr-1" /> Add File
+                                </Button>
                             </div>
                         </div>
-                     )}
+                        
+                        {attachments.length > 0 ? (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                                {attachments.map(att => (
+                                    <div key={att.id} className="flex items-center gap-3 bg-background border border-border/50 rounded-lg p-3 shadow-sm hover:bg-muted/30 transition-colors group">
+                                        <div className="w-10 h-10 rounded bg-muted flex items-center justify-center shrink-0">
+                                            {att.type === 'image' ? (
+                                                <img src={att.url || "https://placehold.co/100x100"} alt="" className="w-full h-full object-cover rounded" />
+                                            ) : (
+                                                <FileText className="w-5 h-5 text-muted-foreground" />
+                                            )}
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <div className="text-sm font-medium truncate">{att.name}</div>
+                                            <div className="text-xs text-muted-foreground">{att.size}</div>
+                                        </div>
+                                        <div className="opacity-0 group-hover:opacity-100 flex gap-1 transition-opacity">
+                                            <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground">
+                                                <Download className="w-3.5 h-3.5" />
+                                            </Button>
+                                            <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => setAttachments(attachments.filter(a => a.id !== att.id))}>
+                                                <X className="w-3.5 h-3.5" />
+                                            </Button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="border-2 border-dashed border-border/50 rounded-lg p-6 text-center text-muted-foreground text-sm bg-muted/10">
+                                No attachments yet. Click "Add File" to upload.
+                            </div>
+                        )}
+                     </div>
 
                      {/* Description */}
                      <div className="space-y-3">
@@ -219,30 +322,52 @@ export function TaskDetailPage({ task, onClose }: TaskDetailPageProps) {
                     </div>
 
                     {/* Checklist */}
-                    {checklist.length > 0 && (
-                        <div className="space-y-3">
-                            <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
-                                <CheckSquare className="w-4 h-4 text-primary" /> Checklist
-                            </h3>
-                            <div className="bg-background border border-border/50 rounded-xl p-4 space-y-2 shadow-sm">
-                                {checklist.map(item => (
-                                    <div key={item.id} className="flex items-center gap-3 group">
-                                        <Checkbox 
-                                            id={item.id} 
-                                            checked={item.completed} 
-                                            onCheckedChange={() => toggleChecklistItem(item.id)}
-                                        />
-                                        <label 
-                                            htmlFor={item.id}
-                                            className={cn("text-sm cursor-pointer select-none transition-all", item.completed && "text-muted-foreground line-through")}
-                                        >
-                                            {item.text}
-                                        </label>
-                                    </div>
-                                ))}
+                    <div className="space-y-3">
+                        <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                            <CheckSquare className="w-4 h-4 text-primary" /> Checklist
+                        </h3>
+                        <div className="bg-background border border-border/50 rounded-xl p-4 space-y-3 shadow-sm">
+                            {checklist.length > 0 && checklist.map(item => (
+                                <div key={item.id} className="flex items-center gap-3 group">
+                                    <Checkbox 
+                                        id={item.id} 
+                                        checked={item.completed} 
+                                        onCheckedChange={() => toggleChecklistItem(item.id)}
+                                    />
+                                    <label 
+                                        htmlFor={item.id}
+                                        className={cn("text-sm cursor-pointer select-none transition-all flex-1", item.completed && "text-muted-foreground line-through")}
+                                    >
+                                        {item.text}
+                                    </label>
+                                    <Button 
+                                        variant="ghost" 
+                                        size="icon" 
+                                        className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
+                                        onClick={() => removeChecklistItem(item.id)}
+                                    >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                    </Button>
+                                </div>
+                            ))}
+                            
+                            <div className="flex gap-2 pt-2">
+                                <Input 
+                                    placeholder="Add an item..." 
+                                    className="h-9 text-sm bg-muted/20"
+                                    value={newChecklistInput}
+                                    onChange={(e) => setNewChecklistInput(e.target.value)}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                            e.preventDefault();
+                                            addChecklistItem();
+                                        }
+                                    }}
+                                />
+                                <Button size="sm" variant="secondary" className="h-9" onClick={addChecklistItem}>Add</Button>
                             </div>
                         </div>
-                    )}
+                    </div>
 
                      {/* Tabs for Comments vs Logs */}
                      <Tabs defaultValue="comments" className="w-full">

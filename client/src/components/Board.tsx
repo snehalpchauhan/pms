@@ -47,7 +47,7 @@ function Column({ id, title, tasks, color, onTaskClick }: ColumnProps) {
   const getGroup = (task: Task) => {
     if (!task.dueDate) return 'Later';
     const date = new Date(task.dueDate);
-    if (isPast(date) && !isToday(date)) return 'Overdue'; // Group overdue with Today or separate? User asked for Today, This Week. Let's do: Today (incl Overdue for urgency), This Week, Later.
+    if (isPast(date) && !isToday(date)) return 'Overdue';
     if (isToday(date)) return 'Today';
     if (isTomorrow(date)) return 'This Week'; // Tomorrow is part of this week usually
     if (isThisWeek(date, { weekStartsOn: 1 })) return 'This Week';
@@ -56,14 +56,16 @@ function Column({ id, title, tasks, color, onTaskClick }: ColumnProps) {
 
   // Group tasks
   const groupedTasks: Record<string, Task[]> = {
-    'Today & Overdue': [],
+    'Overdue': [],
+    'Today': [],
     'This Week': [],
     'Later': []
   };
 
   tasks.forEach(task => {
       const group = getGroup(task);
-      if (group === 'Overdue' || group === 'Today') groupedTasks['Today & Overdue'].push(task);
+      if (group === 'Overdue') groupedTasks['Overdue'].push(task);
+      else if (group === 'Today') groupedTasks['Today'].push(task);
       else if (group === 'This Week') groupedTasks['This Week'].push(task);
       else groupedTasks['Later'].push(task);
   });
@@ -93,8 +95,9 @@ function Column({ id, title, tasks, color, onTaskClick }: ColumnProps) {
                              <div className="flex items-center gap-2 px-1">
                                 <h4 className={cn(
                                     "text-[10px] font-bold uppercase tracking-wider",
-                                    groupName === 'Today & Overdue' ? "text-orange-500" : 
-                                    groupName === 'This Week' ? "text-primary" : "text-muted-foreground"
+                                    groupName === 'Overdue' ? "text-red-500" : 
+                                    groupName === 'Today' ? "text-orange-500" :
+                                    groupName === 'This Week' ? "text-blue-500" : "text-muted-foreground"
                                 )}>
                                     {groupName}
                                 </h4>
