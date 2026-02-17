@@ -1,4 +1,4 @@
-import { Plus, LayoutGrid, CheckSquare, Settings, Users, MessageSquare, Bell, Search, Hash, Lock, ListTodo, FolderKanban, LogOut } from "lucide-react";
+import { Plus, LayoutGrid, CheckSquare, Settings, Users, MessageSquare, Bell, Search, Hash, Lock, ListTodo, FolderKanban, LogOut, Briefcase } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -6,22 +6,22 @@ import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import avatar1 from "@/assets/avatar-1.png";
-import { PROJECTS, CHANNELS, Project } from "@/lib/mockData";
+import { PROJECTS, CHANNELS, Project, USERS } from "@/lib/mockData";
 import { cn } from "@/lib/utils";
+import { useState } from "react";
+import { Badge } from "@/components/ui/badge";
 
 interface SidebarProps {
-    currentView: "board" | "list" | "messages" | "team";
-    onViewChange: (view: "board" | "list" | "messages" | "team") => void;
+    currentView: "tasks" | "messages" | "team";
+    onViewChange: (view: "tasks" | "messages" | "team") => void;
     currentProject: Project;
     onProjectChange: (projectId: string) => void;
     onAddProject: () => void;
     onAddChannel: () => void;
+    currentUserRole: string;
 }
 
-export function Sidebar({ currentView, onViewChange, currentProject, onProjectChange, onAddProject, onAddChannel }: SidebarProps) {
-  // Filter channels based on current project
-  // We strictly show only channels linked to this project or 'general' if we want a default
-  // For this new flow, we'll only show project specific channels
+export function Sidebar({ currentView, onViewChange, currentProject, onProjectChange, onAddProject, onAddChannel, currentUserRole }: SidebarProps) {
   const projectChannels = CHANNELS.filter(c => c.projectId === currentProject.id);
 
   return (
@@ -59,41 +59,58 @@ export function Sidebar({ currentView, onViewChange, currentProject, onProjectCh
                             </TooltipContent>
                         </Tooltip>
                     ))}
-                    <Tooltip>
-                        <TooltipTrigger asChild>
-                            <button 
-                                onClick={onAddProject}
-                                className="w-10 h-10 rounded-xl border-2 border-dashed border-muted-foreground/30 flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-primary/50 hover:bg-primary/5 transition-all"
-                            >
-                                <Plus className="w-5 h-5" />
-                            </button>
-                        </TooltipTrigger>
-                         <TooltipContent side="right">
-                            <p>Create Project</p>
-                        </TooltipContent>
-                    </Tooltip>
+                    
+                    {currentUserRole === 'manager' && (
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <button 
+                                    onClick={onAddProject}
+                                    className="w-10 h-10 rounded-xl border-2 border-dashed border-muted-foreground/30 flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-primary/50 hover:bg-primary/5 transition-all"
+                                >
+                                    <Plus className="w-5 h-5" />
+                                </button>
+                            </TooltipTrigger>
+                             <TooltipContent side="right">
+                                <p>Create Project</p>
+                            </TooltipContent>
+                        </Tooltip>
+                    )}
                  </div>
              </ScrollArea>
 
              <div className="mt-auto pb-4">
-                 <Avatar className="h-10 w-10 border-2 border-background ring-1 ring-border/20 cursor-pointer hover:ring-primary/50 transition-all">
-                    <AvatarImage src={avatar1} />
-                    <AvatarFallback>JD</AvatarFallback>
-                </Avatar>
+                 <Tooltip>
+                     <TooltipTrigger asChild>
+                        <div className="relative group cursor-pointer">
+                            <Avatar className="h-10 w-10 border-2 border-background ring-1 ring-border/20 group-hover:ring-primary/50 transition-all">
+                                <AvatarImage src={avatar1} />
+                                <AvatarFallback>JD</AvatarFallback>
+                            </Avatar>
+                            <div className="absolute -bottom-1 -right-1 bg-background rounded-full px-1.5 py-0.5 border border-border shadow-sm">
+                                <span className="text-[8px] font-bold uppercase text-foreground">{currentUserRole[0]}</span>
+                            </div>
+                        </div>
+                     </TooltipTrigger>
+                     <TooltipContent side="right">
+                         <p className="capitalize">Role: {currentUserRole}</p>
+                     </TooltipContent>
+                 </Tooltip>
              </div>
         </div>
 
         {/* Secondary Sidebar - Project Context */}
         <div className="w-60 flex flex-col bg-muted/5">
              <div className="h-16 flex items-center px-5 border-b border-border/40 shrink-0">
-                 <h2 className="font-display font-bold text-lg truncate leading-tight">
-                     {currentProject.name}
-                 </h2>
+                 <div className="flex flex-col overflow-hidden">
+                    <h2 className="font-display font-bold text-lg truncate leading-tight">
+                        {currentProject.name}
+                    </h2>
+                    <span className="text-xs text-muted-foreground truncate">{currentProject.description}</span>
+                 </div>
              </div>
 
              <div className="p-3">
                  <Button className="w-full justify-start gap-2 shadow-sm" onClick={() => {
-                     // Trigger new task modal from anywhere
                      const event = new CustomEvent('openNewTaskModal');
                      window.dispatchEvent(event);
                  }}>
@@ -105,20 +122,12 @@ export function Sidebar({ currentView, onViewChange, currentProject, onProjectCh
                  <div className="space-y-6 py-2">
                      <div className="space-y-1">
                         <Button 
-                            variant={currentView === "board" ? "secondary" : "ghost"} 
-                            className={cn("w-full justify-start font-medium h-9", currentView === "board" && "bg-background shadow-sm text-primary")}
-                            onClick={() => onViewChange("board")}
+                            variant={currentView === "tasks" ? "secondary" : "ghost"} 
+                            className={cn("w-full justify-start font-medium h-9", currentView === "tasks" && "bg-background shadow-sm text-primary")}
+                            onClick={() => onViewChange("tasks")}
                         >
-                            <FolderKanban className="w-4 h-4 mr-2 opacity-70" />
-                            Board
-                        </Button>
-                        <Button 
-                            variant={currentView === "list" ? "secondary" : "ghost"} 
-                            className={cn("w-full justify-start font-medium h-9", currentView === "list" && "bg-background shadow-sm text-primary")}
-                            onClick={() => onViewChange("list")}
-                        >
-                            <ListTodo className="w-4 h-4 mr-2 opacity-70" />
-                            My Tasks
+                            <Briefcase className="w-4 h-4 mr-2 opacity-70" />
+                            Tasks & Board
                         </Button>
                          <Button 
                             variant={currentView === "team" ? "secondary" : "ghost"} 
@@ -126,7 +135,7 @@ export function Sidebar({ currentView, onViewChange, currentProject, onProjectCh
                             onClick={() => onViewChange("team")}
                         >
                             <Users className="w-4 h-4 mr-2 opacity-70" />
-                            Team
+                            Members & Access
                         </Button>
                      </div>
 
@@ -169,10 +178,13 @@ export function Sidebar({ currentView, onViewChange, currentProject, onProjectCh
 interface HeaderProps {
     title: string;
     view: string;
+    currentUserRole: string;
+    onRoleChange: (role: string) => void;
 }
 
-export function Header({ title, view }: HeaderProps) {
-    const viewName = view.charAt(0).toUpperCase() + view.slice(1);
+export function Header({ title, view, currentUserRole, onRoleChange }: HeaderProps) {
+    const viewName = view === 'tasks' ? 'Tasks' : view.charAt(0).toUpperCase() + view.slice(1);
+    
   return (
     <header className="h-16 border-b border-border bg-background/80 backdrop-blur-md sticky top-0 z-10 px-6 flex items-center justify-between shrink-0">
       <div className="flex items-center gap-4">
@@ -183,10 +195,29 @@ export function Header({ title, view }: HeaderProps) {
       </div>
 
       <div className="flex items-center gap-3">
-        <div className="relative w-64 hidden md:block">
+        {/* Role Switcher for Demo */}
+        <div className="flex items-center gap-2 mr-4 bg-muted/50 p-1 rounded-lg border border-border/50">
+            <span className="text-xs font-medium px-2 text-muted-foreground">View as:</span>
+            {(['manager', 'employee', 'client'] as const).map(role => (
+                <button
+                    key={role}
+                    onClick={() => onRoleChange(role)}
+                    className={cn(
+                        "text-[10px] uppercase font-bold px-2 py-1 rounded-md transition-all",
+                        currentUserRole === role 
+                            ? "bg-primary text-primary-foreground shadow-sm" 
+                            : "hover:bg-background text-muted-foreground"
+                    )}
+                >
+                    {role}
+                </button>
+            ))}
+        </div>
+
+        <div className="relative w-48 hidden lg:block">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input 
-                placeholder="Search in project..." 
+                placeholder="Search..." 
                 className="pl-9 bg-background border-border/50 h-9 text-sm" 
             />
         </div>

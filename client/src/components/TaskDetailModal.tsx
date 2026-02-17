@@ -12,8 +12,10 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { Task, USERS } from "@/lib/mockData";
-import { Calendar, Paperclip, Tag, User as UserIcon, CheckCircle2, MoreHorizontal, MessageSquare, Plus, X } from "lucide-react";
+import { Calendar, Paperclip, Tag, User as UserIcon, CheckCircle2, MoreHorizontal, MessageSquare, Plus, X, Reply } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { cn } from "@/lib/utils";
+import { useState } from "react";
 
 interface TaskDetailModalProps {
   task: Task | null;
@@ -22,6 +24,8 @@ interface TaskDetailModalProps {
 }
 
 export function TaskDetailModal({ task, open, onOpenChange }: TaskDetailModalProps) {
+  const [commentInput, setCommentInput] = useState("");
+  
   if (!task) return null;
 
   return (
@@ -121,11 +125,15 @@ export function TaskDetailModal({ task, open, onOpenChange }: TaskDetailModalPro
 
                     {/* Activity / Comments */}
                     <div className="space-y-6">
-                        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
-                             <MessageSquare className="w-3.5 h-3.5" /> Activity
-                        </h3>
+                        <div className="flex items-center justify-between">
+                            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                                 <MessageSquare className="w-3.5 h-3.5" /> Activity
+                            </h3>
+                            <span className="text-xs text-muted-foreground">Only visible to team</span>
+                        </div>
                         
                         <div className="space-y-6">
+                            {/* New Comment Input */}
                             <div className="flex gap-4">
                                 <Avatar className="h-9 w-9 border border-border">
                                     <AvatarImage src={USERS["u1"].avatar} />
@@ -134,6 +142,8 @@ export function TaskDetailModal({ task, open, onOpenChange }: TaskDetailModalPro
                                 <div className="flex-1 space-y-3">
                                     <div className="relative">
                                         <Textarea 
+                                            value={commentInput}
+                                            onChange={(e) => setCommentInput(e.target.value)}
                                             placeholder="Write a comment..." 
                                             className="min-h-[100px] resize-none bg-background focus:ring-1 focus:ring-primary/20 border-border shadow-sm p-3 pr-12" 
                                         />
@@ -143,17 +153,34 @@ export function TaskDetailModal({ task, open, onOpenChange }: TaskDetailModalPro
                                             </Button>
                                         </div>
                                     </div>
-                                    <div className="flex justify-end">
+                                    <div className="flex justify-end gap-2">
                                         <Button size="sm" className="px-6">Post Comment</Button>
                                     </div>
                                 </div>
                             </div>
 
+                            {/* Comment Stream */}
                             <div className="space-y-6 pl-4 border-l-2 border-border/40 ml-4">
                                 {task.comments.map(comment => {
                                     const author = USERS[comment.authorId];
+                                    
+                                    if (comment.type === 'system') {
+                                        return (
+                                            <div key={comment.id} className="relative pl-6 pb-2">
+                                                 <div className="absolute -left-[21px] top-1 bg-background rounded-full p-0.5 border border-border/60">
+                                                    <div className="w-2 h-2 rounded-full bg-muted-foreground/50" />
+                                                </div>
+                                                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                                    <span className="font-medium text-foreground/80">{author?.name}</span>
+                                                    <span>{comment.content}</span>
+                                                    <span className="opacity-50">• {comment.createdAt}</span>
+                                                </div>
+                                            </div>
+                                        )
+                                    }
+
                                     return (
-                                        <div key={comment.id} className="relative pl-6 pb-2">
+                                        <div key={comment.id} className="relative pl-6 pb-2 group">
                                             <div className="absolute -left-[29px] top-0 bg-background rounded-full p-1 border border-border/60 shadow-sm">
                                                 <Avatar className="h-6 w-6">
                                                     <AvatarImage src={author?.avatar} />
@@ -182,10 +209,10 @@ export function TaskDetailModal({ task, open, onOpenChange }: TaskDetailModalPro
                                                     </div>
                                                 )}
                                                 
-                                                <div className="flex items-center gap-2">
-                                                    <Button variant="link" size="sm" className="h-auto p-0 text-xs text-muted-foreground hover:text-primary">Reply</Button>
-                                                    <span className="text-muted-foreground/30">•</span>
-                                                    <Button variant="link" size="sm" className="h-auto p-0 text-xs text-muted-foreground hover:text-foreground">React</Button>
+                                                <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    <Button variant="ghost" size="sm" className="h-auto p-0 text-xs text-muted-foreground hover:text-primary flex items-center gap-1">
+                                                        <Reply className="w-3 h-3" /> Reply
+                                                    </Button>
                                                 </div>
                                             </div>
                                         </div>

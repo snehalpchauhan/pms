@@ -1,8 +1,7 @@
 import { Sidebar, Header } from "@/components/Layout";
-import Board from "@/components/Board";
+import ProjectTasksView from "@/components/ProjectTasksView";
 import MessagesView from "@/components/MessagesView";
 import TeamView from "@/components/TeamView";
-import TaskListView from "@/components/TaskListView";
 import { NewTaskModal } from "@/components/NewTaskModal";
 import { NewProjectModal } from "@/components/NewProjectModal";
 import { NewChannelModal } from "@/components/NewChannelModal";
@@ -14,13 +13,14 @@ import { useState, useEffect } from "react";
 import { PROJECTS, Task, INITIAL_TASKS } from "@/lib/mockData";
 
 function App() {
-  const [currentView, setCurrentView] = useState<"board" | "list" | "messages" | "team">("board");
+  const [currentView, setCurrentView] = useState<"tasks" | "messages" | "team">("tasks");
   const [currentProjectId, setCurrentProjectId] = useState("p1");
+  const [currentUserRole, setCurrentUserRole] = useState("manager"); // Demo state for role switching
+  
   const [isNewTaskOpen, setIsNewTaskOpen] = useState(false);
   const [isNewProjectOpen, setIsNewProjectOpen] = useState(false);
   const [isNewChannelOpen, setIsNewChannelOpen] = useState(false);
   
-  // In a real app we'd fetch these
   const [allTasks, setAllTasks] = useState<Task[]>(INITIAL_TASKS);
 
   const currentProject = PROJECTS.find(p => p.id === currentProjectId) || PROJECTS[0];
@@ -32,8 +32,6 @@ function App() {
   }, []);
 
   const handleTaskCreate = (newTask: Partial<Task>) => {
-      console.log("Creating new task:", newTask);
-      // Mock update to show it in UI
       const task: Task = {
           ...newTask as Task,
           id: `t-${Date.now()}`,
@@ -63,22 +61,26 @@ function App() {
             currentProject={currentProject}
             onProjectChange={(id) => {
                 setCurrentProjectId(id);
-                // Optional: Reset view to board when changing projects?
-                // setCurrentView("board");
+                setCurrentView("tasks"); // Default to tasks when switching project
             }}
             onAddProject={() => setIsNewProjectOpen(true)}
             onAddChannel={() => setIsNewChannelOpen(true)}
+            currentUserRole={currentUserRole}
           />
           <div className="flex-1 flex flex-col h-full overflow-hidden relative z-0">
              <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 pointer-events-none mix-blend-overlay z-[1]" />
              
-             <Header title={currentProject.name} view={currentView} />
+             <Header 
+                title={currentProject.name} 
+                view={currentView} 
+                currentUserRole={currentUserRole}
+                onRoleChange={setCurrentUserRole}
+             />
              
              <main className="flex-1 overflow-hidden relative z-[2]">
                 {currentView === "messages" && <MessagesView project={currentProject} />}
-                {currentView === "team" && <TeamView project={currentProject} />}
-                {currentView === "board" && <Board key={currentProjectId} project={currentProject} tasks={allTasks.filter(t => t.projectId === currentProjectId)} />}
-                {currentView === "list" && <TaskListView project={currentProject} tasks={allTasks.filter(t => t.projectId === currentProjectId)} />}
+                {currentView === "team" && <TeamView project={currentProject} currentUserRole={currentUserRole} />}
+                {currentView === "tasks" && <ProjectTasksView project={currentProject} tasks={allTasks.filter(t => t.projectId === currentProjectId)} />}
              </main>
           </div>
         </div>

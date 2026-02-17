@@ -6,6 +6,8 @@ export type Status = "todo" | "in-progress" | "review" | "done" | string;
 
 export type Priority = "low" | "medium" | "high";
 
+export type UserRole = "manager" | "employee" | "client";
+
 export interface Attachment {
   id: string;
   name: string;
@@ -20,13 +22,15 @@ export interface Comment {
   content: string;
   createdAt: string;
   attachments?: Attachment[];
+  parentId?: string; // For threaded replies
+  type?: "comment" | "system"; // Distinguish between user comments and system logs (e.g. status changes)
 }
 
 export interface User {
   id: string;
   name: string;
   avatar: string;
-  role: string;
+  role: UserRole;
   status?: "online" | "offline" | "busy";
   email?: string;
 }
@@ -74,13 +78,13 @@ export interface Channel {
     name: string;
     type: "public" | "private" | "direct";
     members: string[];
-    projectId?: string; // Optional because some channels like "random" might be global
+    projectId?: string; 
 }
 
 export const USERS: Record<string, User> = {
-  "u1": { id: "u1", name: "Jane Doe", avatar: avatar1, role: "Frontend Dev", status: "online", email: "jane@example.com" },
-  "u2": { id: "u2", name: "John Smith", avatar: avatar2, role: "Designer", status: "busy", email: "john@example.com" },
-  "u3": { id: "u3", name: "Alice Brown", avatar: avatar3, role: "Project Manager", status: "offline", email: "alice@example.com" },
+  "u1": { id: "u1", name: "Jane Doe", avatar: avatar1, role: "manager", status: "online", email: "jane@example.com" },
+  "u2": { id: "u2", name: "John Smith", avatar: avatar2, role: "employee", status: "busy", email: "john@example.com" },
+  "u3": { id: "u3", name: "Alice Brown", avatar: avatar3, role: "client", status: "offline", email: "alice@example.com" },
 };
 
 export const PROJECTS: Project[] = [
@@ -130,7 +134,15 @@ export const INITIAL_TASKS: Task[] = [
         id: "c1",
         authorId: "u3",
         content: "Make sure to include the new brand colors we discussed.",
-        createdAt: "2h ago"
+        createdAt: "2h ago",
+        type: "comment"
+      },
+      {
+          id: "sys1",
+          authorId: "u1",
+          content: "changed status from To Do to In Progress",
+          createdAt: "1d ago",
+          type: "system"
       }
     ]
   },
