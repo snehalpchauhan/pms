@@ -9,7 +9,7 @@ import {
   defaultDropAnimationSideEffects,
   DropAnimation
 } from "@dnd-kit/core";
-import { COLUMNS, Task, Status, INITIAL_TASKS, Project } from "@/lib/mockData";
+import { Task, Status, INITIAL_TASKS, Project } from "@/lib/mockData";
 import { TaskCard } from "./TaskCard";
 import { TaskDetailModal } from "./TaskDetailModal";
 import { ScrollArea } from "@/components/ui/scroll-area";

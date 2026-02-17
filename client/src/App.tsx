@@ -1,7 +1,10 @@
 import { Sidebar, Header } from "@/components/Layout";
 import Board from "@/components/Board";
 import MessagesView from "@/components/MessagesView";
+import TeamView from "@/components/TeamView";
 import { NewTaskModal } from "@/components/NewTaskModal";
+import { NewProjectModal } from "@/components/NewProjectModal";
+import { NewChannelModal } from "@/components/NewChannelModal";
 import { queryClient } from "@/lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -10,22 +13,26 @@ import { useState } from "react";
 import { PROJECTS, Task } from "@/lib/mockData";
 
 function App() {
-  const [currentView, setCurrentView] = useState<"board" | "messages" | "tasks">("board");
+  const [currentView, setCurrentView] = useState<"board" | "messages" | "tasks" | "team">("board");
   const [currentProjectId, setCurrentProjectId] = useState("p1");
   const [isNewTaskOpen, setIsNewTaskOpen] = useState(false);
-  // In a real app, this would be managed by React Query or context
-  // but for mockup we'll lift state here or just rely on the Board's internal state + prop drilling key to reset
+  const [isNewProjectOpen, setIsNewProjectOpen] = useState(false);
+  const [isNewChannelOpen, setIsNewChannelOpen] = useState(false);
   
   const currentProject = PROJECTS.find(p => p.id === currentProjectId) || PROJECTS[0];
 
   const handleTaskCreate = (newTask: Partial<Task>) => {
-      // In a real app this would trigger a mutation
-      // For the mockup, we'll just log it and maybe the board component would refetch
       console.log("Creating new task:", newTask);
-      // To simulate update, we could force a re-render or pass new data down
-      // But for this mockup structure, the Board uses local state initialized from mock data
-      // So without context/redux, we can't easily push to it from here without lifting ALL board state up.
-      // For the prototype, we'll just show the UI flow works.
+      // In mockup we can't easily push to immutable constants without a wrapper, 
+      // but UI flow is demonstrated.
+  };
+
+  const handleProjectCreate = (newProject: any) => {
+      console.log("Creating new project:", newProject);
+  };
+
+  const handleChannelCreate = (newChannel: any) => {
+      console.log("Creating new channel:", newChannel);
   };
 
   return (
@@ -37,21 +44,21 @@ function App() {
             onViewChange={setCurrentView}
             currentProject={currentProjectId}
             onProjectChange={setCurrentProjectId}
+            onAddProject={() => setIsNewProjectOpen(true)}
+            onAddChannel={() => setIsNewChannelOpen(true)}
           />
           <div className="flex-1 flex flex-col h-full overflow-hidden relative z-0">
              <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 pointer-events-none mix-blend-overlay z-[1]" />
              
-             {currentView !== "messages" && (
+             {currentView === "board" && (
                 <Header title={currentProject.name} onNewTask={() => setIsNewTaskOpen(true)} />
              )}
              
              <main className="flex-1 overflow-hidden relative z-[2]">
-                {currentView === "messages" ? (
-                    <MessagesView />
-                ) : (
-                    // We pass a key to force re-mount when project changes, ensuring tasks reload
-                    <Board key={currentProjectId} project={currentProject} />
-                )}
+                {currentView === "messages" && <MessagesView />}
+                {currentView === "team" && <TeamView />}
+                {currentView === "board" && <Board key={currentProjectId} project={currentProject} />}
+                {currentView === "tasks" && <div className="p-10 text-center text-muted-foreground">My Tasks View Placeholder</div>}
              </main>
           </div>
         </div>
@@ -62,6 +69,20 @@ function App() {
             project={currentProject}
             onSave={handleTaskCreate}
         />
+
+        <NewProjectModal
+            open={isNewProjectOpen}
+            onOpenChange={setIsNewProjectOpen}
+            onSave={handleProjectCreate}
+        />
+
+        <NewChannelModal
+            open={isNewChannelOpen}
+            onOpenChange={setIsNewChannelOpen}
+            projectId={currentProjectId}
+            onSave={handleChannelCreate}
+        />
+
         <Toaster />
       </TooltipProvider>
     </QueryClientProvider>

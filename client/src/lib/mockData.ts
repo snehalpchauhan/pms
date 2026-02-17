@@ -28,6 +28,7 @@ export interface User {
   avatar: string;
   role: string;
   status?: "online" | "offline" | "busy";
+  email?: string;
 }
 
 export interface Task {
@@ -56,6 +57,8 @@ export interface Project {
     name: string;
     color: string;
     columns: Column[];
+    description?: string;
+    members?: string[];
 }
 
 export interface Message {
@@ -71,12 +74,13 @@ export interface Channel {
     name: string;
     type: "public" | "private" | "direct";
     members: string[];
+    projectId?: string; // Optional because some channels like "random" might be global
 }
 
 export const USERS: Record<string, User> = {
-  "u1": { id: "u1", name: "Jane Doe", avatar: avatar1, role: "Frontend Dev", status: "online" },
-  "u2": { id: "u2", name: "John Smith", avatar: avatar2, role: "Designer", status: "busy" },
-  "u3": { id: "u3", name: "Alice Brown", avatar: avatar3, role: "Project Manager", status: "offline" },
+  "u1": { id: "u1", name: "Jane Doe", avatar: avatar1, role: "Frontend Dev", status: "online", email: "jane@example.com" },
+  "u2": { id: "u2", name: "John Smith", avatar: avatar2, role: "Designer", status: "busy", email: "john@example.com" },
+  "u3": { id: "u3", name: "Alice Brown", avatar: avatar3, role: "Project Manager", status: "offline", email: "alice@example.com" },
 };
 
 export const PROJECTS: Project[] = [
@@ -84,6 +88,8 @@ export const PROJECTS: Project[] = [
         id: "p1",
         name: "Website Redesign",
         color: "bg-blue-500",
+        description: "Overhaul of the main corporate website.",
+        members: ["u1", "u2", "u3"],
         columns: [
             { id: "todo", title: "To Do", color: "bg-slate-500" },
             { id: "in-progress", title: "In Progress", color: "bg-blue-500" },
@@ -95,6 +101,8 @@ export const PROJECTS: Project[] = [
         id: "p2",
         name: "Mobile App",
         color: "bg-orange-500",
+        description: "Native mobile application for iOS and Android.",
+        members: ["u1", "u2"],
         columns: [
             { id: "backlog", title: "Backlog", color: "bg-slate-400" },
             { id: "design", title: "Design", color: "bg-purple-500" },
@@ -180,10 +188,10 @@ export const INITIAL_TASKS: Task[] = [
 ];
 
 export const CHANNELS: Channel[] = [
-    { id: "general", name: "general", type: "public", members: ["u1", "u2", "u3"] },
-    { id: "design", name: "design-team", type: "public", members: ["u1", "u2"] },
-    { id: "random", name: "random", type: "public", members: ["u1", "u2", "u3"] },
-    { id: "project-x", name: "project-x-secret", type: "private", members: ["u1", "u3"] },
+    { id: "general", name: "general", type: "public", members: ["u1", "u2", "u3"], projectId: "p1" },
+    { id: "design", name: "design-team", type: "public", members: ["u1", "u2"], projectId: "p1" },
+    { id: "random", name: "random", type: "public", members: ["u1", "u2", "u3"] }, // Global
+    { id: "mobile-dev", name: "mobile-dev", type: "public", members: ["u1", "u3"], projectId: "p2" },
 ];
 
 export const MESSAGES: Message[] = [

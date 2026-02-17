@@ -9,13 +9,18 @@ import { PROJECTS, CHANNELS } from "@/lib/mockData";
 import { cn } from "@/lib/utils";
 
 interface SidebarProps {
-    currentView: "board" | "messages" | "tasks";
-    onViewChange: (view: "board" | "messages" | "tasks") => void;
+    currentView: "board" | "messages" | "tasks" | "team";
+    onViewChange: (view: "board" | "messages" | "tasks" | "team") => void;
     currentProject: string;
     onProjectChange: (projectId: string) => void;
+    onAddProject: () => void;
+    onAddChannel: () => void;
 }
 
-export function Sidebar({ currentView, onViewChange, currentProject, onProjectChange }: SidebarProps) {
+export function Sidebar({ currentView, onViewChange, currentProject, onProjectChange, onAddProject, onAddChannel }: SidebarProps) {
+  // Filter channels based on current project or global channels
+  const filteredChannels = CHANNELS.filter(c => !c.projectId || c.projectId === currentProject);
+
   return (
     <div className="w-64 border-r border-border h-screen bg-sidebar flex flex-col hidden md:flex">
       <div className="p-6">
@@ -66,7 +71,11 @@ export function Sidebar({ currentView, onViewChange, currentProject, onProjectCh
                 <MessageSquare className="w-4 h-4 mr-2" />
                 Messages
                 </Button>
-                <Button variant="ghost" className="w-full justify-start text-muted-foreground hover:text-foreground">
+                <Button 
+                    variant={currentView === "team" ? "secondary" : "ghost"} 
+                    className={cn("w-full justify-start font-medium", currentView === "team" ? "bg-sidebar-accent text-sidebar-accent-foreground" : "text-muted-foreground")}
+                    onClick={() => onViewChange("team")}
+                >
                 <Users className="w-4 h-4 mr-2" />
                 Team
                 </Button>
@@ -76,7 +85,7 @@ export function Sidebar({ currentView, onViewChange, currentProject, onProjectCh
             <div>
             <div className="flex items-center justify-between px-2 mb-3">
                 <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Projects</h3>
-                <Button variant="ghost" size="icon" className="h-4 w-4 text-muted-foreground hover:text-foreground">
+                <Button variant="ghost" size="icon" className="h-4 w-4 text-muted-foreground hover:text-foreground" onClick={onAddProject}>
                     <Plus className="w-3 h-3" />
                 </Button>
             </div>
@@ -101,12 +110,12 @@ export function Sidebar({ currentView, onViewChange, currentProject, onProjectCh
             <div>
                  <div className="flex items-center justify-between px-2 mb-3">
                     <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Channels</h3>
-                    <Button variant="ghost" size="icon" className="h-4 w-4 text-muted-foreground hover:text-foreground">
+                    <Button variant="ghost" size="icon" className="h-4 w-4 text-muted-foreground hover:text-foreground" onClick={onAddChannel}>
                         <Plus className="w-3 h-3" />
                     </Button>
                 </div>
                 <div className="space-y-1">
-                    {CHANNELS.map(channel => (
+                    {filteredChannels.map(channel => (
                         <Button 
                             key={channel.id}
                             variant="ghost" 

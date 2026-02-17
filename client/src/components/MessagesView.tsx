@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Hash, Search, Phone, Video, Info, Plus, Smile, Paperclip, Lock } from "lucide-react";
-import { USERS, CHANNELS, MESSAGES, Message, Channel } from "@/lib/mockData";
+import { USERS, CHANNELS, MESSAGES, Message, Channel, PROJECTS } from "@/lib/mockData";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 
@@ -12,9 +12,14 @@ export default function MessagesView() {
     const [activeChannelId, setActiveChannelId] = useState("general");
     const [input, setInput] = useState("");
     const [messages, setMessages] = useState<Message[]>(MESSAGES);
+    const [searchTerm, setSearchTerm] = useState("");
 
     const activeChannel = CHANNELS.find(c => c.id === activeChannelId);
     const channelMessages = messages.filter(m => m.channelId === activeChannelId);
+    
+    // Group channels by project for better organization
+    const projectChannels = CHANNELS.filter(c => c.projectId);
+    const globalChannels = CHANNELS.filter(c => !c.projectId);
 
     const handleSend = () => {
         if (!input.trim()) return;
@@ -32,12 +37,17 @@ export default function MessagesView() {
     return (
         <div className="flex h-full bg-background">
             {/* Channel List */}
-            <div className="w-64 border-r border-border bg-muted/10 flex flex-col">
+            <div className="w-72 border-r border-border bg-muted/10 flex flex-col">
                 <div className="p-4 border-b border-border/50">
                     <h2 className="font-display font-semibold px-2 mb-4">Messages</h2>
                     <div className="relative">
                         <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                        <Input placeholder="Jump to..." className="pl-9 bg-background/50 border-border/50 h-9" />
+                        <Input 
+                            placeholder="Jump to..." 
+                            className="pl-9 bg-background/50 border-border/50 h-9" 
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                        />
                     </div>
                 </div>
                 
@@ -45,11 +55,10 @@ export default function MessagesView() {
                     <div className="space-y-6">
                          <div>
                             <div className="flex items-center justify-between px-2 mb-2 group">
-                                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Channels</h3>
-                                <Plus className="w-3.5 h-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 cursor-pointer hover:text-foreground" />
+                                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">General</h3>
                             </div>
                             <div className="space-y-0.5">
-                                {CHANNELS.map(channel => (
+                                {globalChannels.map(channel => (
                                     <Button
                                         key={channel.id}
                                         variant="ghost"
@@ -66,10 +75,36 @@ export default function MessagesView() {
                             </div>
                         </div>
 
+                        {/* Project Channels */}
+                        <div>
+                            <div className="flex items-center justify-between px-2 mb-2 group">
+                                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Projects</h3>
+                            </div>
+                             <div className="space-y-0.5">
+                                {projectChannels.map(channel => {
+                                    const project = PROJECTS.find(p => p.id === channel.projectId);
+                                    return (
+                                        <Button
+                                            key={channel.id}
+                                            variant="ghost"
+                                            className={cn(
+                                                "w-full justify-start h-8 px-2 font-normal",
+                                                activeChannelId === channel.id ? "bg-sidebar-accent text-foreground font-medium" : "text-muted-foreground hover:text-foreground"
+                                            )}
+                                            onClick={() => setActiveChannelId(channel.id)}
+                                        >
+                                            <span className={cn("w-2 h-2 rounded-full mr-2 shrink-0", project?.color || "bg-slate-400")} />
+                                            {channel.type === 'private' ? <Lock className="w-3.5 h-3.5 mr-2 opacity-70" /> : <Hash className="w-3.5 h-3.5 mr-2 opacity-70" />}
+                                            <span className="truncate">{channel.name}</span>
+                                        </Button>
+                                    )
+                                })}
+                            </div>
+                        </div>
+
                         <div>
                             <div className="flex items-center justify-between px-2 mb-2 group">
                                 <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Direct Messages</h3>
-                                <Plus className="w-3.5 h-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 cursor-pointer hover:text-foreground" />
                             </div>
                             <div className="space-y-0.5">
                                 {Object.values(USERS).map(user => (
