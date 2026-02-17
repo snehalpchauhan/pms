@@ -13,7 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { Task, USERS } from "@/lib/mockData";
-import { Calendar, Paperclip, Tag, User as UserIcon, CheckCircle2, MoreHorizontal, MessageSquare, Plus, X, Reply, Clock, History, AlertCircle, FileText, Activity, Repeat, CalendarCheck, ArrowRight } from "lucide-react";
+import { Calendar, Paperclip, Tag, User as UserIcon, CheckCircle2, MoreHorizontal, MessageSquare, Plus, X, Reply, Clock, History, AlertCircle, FileText, Activity, Repeat, CalendarCheck, ArrowRight, CheckSquare } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
@@ -22,6 +22,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { format } from "date-fns";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Checkbox } from "@/components/ui/checkbox";
 
 interface TaskDetailPageProps {
   task: Task;
@@ -31,6 +32,13 @@ interface TaskDetailPageProps {
 export function TaskDetailPage({ task, onClose }: TaskDetailPageProps) {
   const [commentInput, setCommentInput] = useState("");
   const [status, setStatus] = useState(task.status);
+  const [checklist, setChecklist] = useState(task.checklist || []);
+
+  const toggleChecklistItem = (id: string) => {
+      setChecklist(checklist.map(item => 
+          item.id === id ? { ...item, completed: !item.completed } : item
+      ));
+  };
   
   return (
     <div className="absolute inset-0 z-50 bg-background flex flex-col animate-in slide-in-from-right duration-300">
@@ -102,7 +110,11 @@ export function TaskDetailPage({ task, onClose }: TaskDetailPageProps) {
                             {task.recurrence && (
                                 <Badge variant="secondary" className="h-8 px-3 gap-1.5 font-medium border-primary/20 bg-primary/5 text-primary">
                                     <Repeat className="w-3.5 h-3.5" />
-                                    <span className="capitalize">{task.recurrence.frequency}</span>
+                                    <span className="capitalize">
+                                        {task.recurrence.frequency === 'custom' 
+                                            ? `Every ${task.recurrence.interval} ${task.recurrence.customType}` 
+                                            : task.recurrence.frequency}
+                                    </span>
                                 </Badge>
                             )}
                         </div>
@@ -180,7 +192,7 @@ export function TaskDetailPage({ task, onClose }: TaskDetailPageProps) {
                         </div>
                      </div>
                      
-                     {/* Attachments (Separate Row if needed or kept above) */}
+                     {/* Attachments */}
                      {task.attachments.length > 0 && (
                         <div className="space-y-2">
                             <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Attachments</div>
@@ -205,6 +217,32 @@ export function TaskDetailPage({ task, onClose }: TaskDetailPageProps) {
                             <p>{task.description}</p>
                         </div>
                     </div>
+
+                    {/* Checklist */}
+                    {checklist.length > 0 && (
+                        <div className="space-y-3">
+                            <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                                <CheckSquare className="w-4 h-4 text-primary" /> Checklist
+                            </h3>
+                            <div className="bg-background border border-border/50 rounded-xl p-4 space-y-2 shadow-sm">
+                                {checklist.map(item => (
+                                    <div key={item.id} className="flex items-center gap-3 group">
+                                        <Checkbox 
+                                            id={item.id} 
+                                            checked={item.completed} 
+                                            onCheckedChange={() => toggleChecklistItem(item.id)}
+                                        />
+                                        <label 
+                                            htmlFor={item.id}
+                                            className={cn("text-sm cursor-pointer select-none transition-all", item.completed && "text-muted-foreground line-through")}
+                                        >
+                                            {item.text}
+                                        </label>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
 
                      {/* Tabs for Comments vs Logs */}
                      <Tabs defaultValue="comments" className="w-full">

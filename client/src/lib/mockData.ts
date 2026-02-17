@@ -35,11 +35,17 @@ export interface User {
   email?: string;
 }
 
+export interface ChecklistItem {
+  id: string;
+  text: string;
+  completed: boolean;
+}
+
 export interface Recurrence {
   frequency: "daily" | "weekly" | "monthly" | "custom";
   interval?: number;
   daysOfWeek?: number[]; // 0-6 where 0 is Sunday
-  customCron?: string;
+  customType?: "days" | "weeks" | "months" | "years";
 }
 
 export interface Task {
@@ -54,6 +60,7 @@ export interface Task {
   dueDate?: string;
   recurrence?: Recurrence;
   comments: Comment[];
+  checklist?: ChecklistItem[];
   attachments: Attachment[];
   coverImage?: string;
   projectId: string;
