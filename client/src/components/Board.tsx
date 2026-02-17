@@ -9,12 +9,12 @@ import {
   defaultDropAnimationSideEffects,
   DropAnimation
 } from "@dnd-kit/core";
-import { COLUMNS, Task, Status, INITIAL_TASKS } from "@/lib/mockData";
+import { COLUMNS, Task, Status, INITIAL_TASKS, Project } from "@/lib/mockData";
 import { TaskCard } from "./TaskCard";
 import { TaskDetailModal } from "./TaskDetailModal";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
-import { Plus } from "lucide-react";
+import { Plus, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const dropAnimation: DropAnimation = {
@@ -68,8 +68,13 @@ function Column({ id, title, tasks, color, onTaskClick }: ColumnProps) {
   );
 }
 
-export default function Board() {
-  const [tasks, setTasks] = useState<Task[]>(INITIAL_TASKS);
+interface BoardProps {
+    project: Project;
+}
+
+export default function Board({ project }: BoardProps) {
+  // Filter tasks by project ID
+  const [tasks, setTasks] = useState<Task[]>(INITIAL_TASKS.filter(t => t.projectId === project.id));
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
 
@@ -97,7 +102,7 @@ export default function Board() {
     let newStatus: Status | undefined;
 
     // 1. Dropped on a Column
-    if (COLUMNS.some(col => col.id === overId)) {
+    if (project.columns.some(col => col.id === overId)) {
         newStatus = overId as Status;
     } 
     // 2. Dropped on another Task
@@ -129,7 +134,7 @@ export default function Board() {
             onDragEnd={handleDragEnd}
           >
             <div className="flex h-full p-6 gap-6 w-max min-w-full">
-                {COLUMNS.map((col) => (
+                {project.columns.map((col) => (
                     <Column 
                         key={col.id} 
                         id={col.id} 
@@ -139,6 +144,14 @@ export default function Board() {
                         onTaskClick={setSelectedTask}
                     />
                 ))}
+                
+                {/* Add Column Button */}
+                <div className="min-w-[320px] max-w-[320px] h-[100px] border-2 border-dashed border-border/50 rounded-xl flex items-center justify-center hover:bg-muted/10 transition-colors cursor-pointer group">
+                    <div className="flex items-center gap-2 text-muted-foreground group-hover:text-primary transition-colors">
+                        <Plus className="w-5 h-5" />
+                        <span className="font-medium">Add Section</span>
+                    </div>
+                </div>
             </div>
 
             <DragOverlay dropAnimation={dropAnimation}>
