@@ -6,7 +6,7 @@ export type Status = "todo" | "in-progress" | "review" | "done" | string;
 
 export type Priority = "low" | "medium" | "high";
 
-export type UserRole = "manager" | "employee" | "client";
+export type UserRole = "admin" | "manager" | "employee" | "client";
 
 export interface Attachment {
   id: string;
@@ -82,6 +82,7 @@ export interface Channel {
 }
 
 export const USERS: Record<string, User> = {
+  "u0": { id: "u0", name: "Super Admin", avatar: "", role: "admin", status: "online", email: "admin@company.com" },
   "u1": { id: "u1", name: "Jane Doe", avatar: avatar1, role: "manager", status: "online", email: "jane@example.com" },
   "u2": { id: "u2", name: "John Smith", avatar: avatar2, role: "employee", status: "busy", email: "john@example.com" },
   "u3": { id: "u3", name: "Alice Brown", avatar: avatar3, role: "client", status: "offline", email: "alice@example.com" },

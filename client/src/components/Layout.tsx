@@ -1,4 +1,4 @@
-import { Plus, LayoutGrid, CheckSquare, Settings, Users, MessageSquare, Bell, Search, Hash, Lock, ListTodo, FolderKanban, LogOut, Briefcase } from "lucide-react";
+import { Plus, LayoutGrid, CheckSquare, Settings, Users, MessageSquare, Bell, Search, Hash, Lock, ListTodo, FolderKanban, LogOut, Briefcase, Building2 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,11 +10,12 @@ import { PROJECTS, CHANNELS, Project, USERS } from "@/lib/mockData";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
+import { CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 
 interface SidebarProps {
-    currentView: "tasks" | "messages" | "team";
-    currentChannelId?: string; // Track selected channel
-    onViewChange: (view: "tasks" | "messages" | "team", channelId?: string) => void;
+    currentView: "tasks" | "messages" | "team" | "settings";
+    currentChannelId?: string; 
+    onViewChange: (view: "tasks" | "messages" | "team" | "settings", channelId?: string) => void;
     currentProject: Project;
     onProjectChange: (projectId: string) => void;
     onAddProject: () => void;
@@ -23,35 +24,52 @@ interface SidebarProps {
 }
 
 export function Sidebar({ currentView, currentChannelId, onViewChange, currentProject, onProjectChange, onAddProject, onAddChannel, currentUserRole }: SidebarProps) {
+  const [projectSearchOpen, setProjectSearchOpen] = useState(false);
   const projectChannels = CHANNELS.filter(c => c.projectId === currentProject.id);
   const projectMembers = Object.values(USERS).filter(u => currentProject.members?.includes(u.id));
 
+  // Determine if we're in the "Settings" context (outside a project)
+  const isSettingsView = currentView === "settings";
+
   return (
     <div className="flex h-screen bg-sidebar border-r border-border shadow-2xl z-20">
-        {/* Primary Rail - Project Switcher */}
-        <div className="w-[70px] bg-background border-r border-border flex flex-col items-center py-6 gap-4 shrink-0">
-             <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center text-primary-foreground shadow-lg shadow-primary/20 mb-2">
-                <LayoutGrid className="w-6 h-6" />
-             </div>
-             
+        {/* Primary Rail - Global Navigation & Project Switcher */}
+        <div className="w-[70px] bg-background border-r border-border flex flex-col items-center py-4 gap-3 shrink-0">
+             {/* Home/Search Quick Action */}
+             <Tooltip>
+                <TooltipTrigger asChild>
+                    <button 
+                        onClick={() => setProjectSearchOpen(true)}
+                        className="w-10 h-10 rounded-xl bg-muted/50 hover:bg-muted text-muted-foreground hover:text-primary transition-all flex items-center justify-center mb-2"
+                    >
+                        <Search className="w-5 h-5" />
+                    </button>
+                </TooltipTrigger>
+                <TooltipContent side="right">Find Project (Ctrl+K)</TooltipContent>
+             </Tooltip>
+
              <Separator className="w-8" />
 
+             {/* Projects List */}
              <ScrollArea className="flex-1 w-full px-3 gap-3 flex flex-col items-center">
-                 <div className="flex flex-col gap-3 items-center w-full">
+                 <div className="flex flex-col gap-3 items-center w-full py-2">
                     {PROJECTS.map(project => (
                         <Tooltip key={project.id}>
                             <TooltipTrigger asChild>
                                 <button
-                                    onClick={() => onProjectChange(project.id)}
+                                    onClick={() => {
+                                        onProjectChange(project.id);
+                                        if (isSettingsView) onViewChange("tasks");
+                                    }}
                                     className={cn(
                                         "w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-200 relative group",
-                                        currentProject.id === project.id 
+                                        !isSettingsView && currentProject.id === project.id 
                                             ? "bg-primary text-primary-foreground shadow-md ring-2 ring-primary ring-offset-2 ring-offset-background" 
                                             : "bg-muted hover:bg-muted-foreground/20 text-muted-foreground hover:text-foreground"
                                     )}
                                 >
                                     <span className="font-bold text-sm">{project.name.substring(0, 2).toUpperCase()}</span>
-                                    {currentProject.id === project.id && (
+                                    {!isSettingsView && currentProject.id === project.id && (
                                         <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-[18px] w-1 h-8 bg-primary rounded-r-full" />
                                     )}
                                 </button>
@@ -62,7 +80,7 @@ export function Sidebar({ currentView, currentChannelId, onViewChange, currentPr
                         </Tooltip>
                     ))}
                     
-                    {currentUserRole === 'manager' && (
+                    {(currentUserRole === 'manager' || currentUserRole === 'admin') && (
                         <Tooltip>
                             <TooltipTrigger asChild>
                                 <button 
@@ -80,7 +98,27 @@ export function Sidebar({ currentView, currentChannelId, onViewChange, currentPr
                  </div>
              </ScrollArea>
 
-             <div className="mt-auto pb-4">
+             {/* Bottom Actions: Admin/Settings & User */}
+             <div className="mt-auto pb-4 flex flex-col gap-3 items-center">
+                 {currentUserRole === 'admin' && (
+                     <Tooltip>
+                        <TooltipTrigger asChild>
+                            <button
+                                onClick={() => onViewChange("settings")}
+                                className={cn(
+                                    "w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-200",
+                                    isSettingsView 
+                                        ? "bg-purple-600 text-white shadow-md ring-2 ring-purple-600 ring-offset-2 ring-offset-background" 
+                                        : "hover:bg-muted text-muted-foreground hover:text-foreground"
+                                )}
+                            >
+                                <Building2 className="w-5 h-5" />
+                            </button>
+                        </TooltipTrigger>
+                        <TooltipContent side="right">Company Settings</TooltipContent>
+                     </Tooltip>
+                 )}
+
                  <Tooltip>
                      <TooltipTrigger asChild>
                         <div className="relative group cursor-pointer">
@@ -100,114 +138,163 @@ export function Sidebar({ currentView, currentChannelId, onViewChange, currentPr
              </div>
         </div>
 
-        {/* Secondary Sidebar - Project Context */}
-        <div className="w-60 flex flex-col bg-muted/5">
-             <div className="h-16 flex items-center px-5 border-b border-border/40 shrink-0">
-                 <div className="flex flex-col overflow-hidden">
-                    <h2 className="font-display font-bold text-lg truncate leading-tight">
-                        {currentProject.name}
-                    </h2>
-                    <span className="text-xs text-muted-foreground truncate">{currentProject.description}</span>
-                 </div>
-             </div>
-
-             <div className="p-3">
-                 <Button className="w-full justify-start gap-2 shadow-sm" onClick={() => {
-                     const event = new CustomEvent('openNewTaskModal');
-                     window.dispatchEvent(event);
-                 }}>
-                     <Plus className="w-4 h-4" /> New Task
-                 </Button>
-             </div>
-
-             <ScrollArea className="flex-1 px-3">
-                 <div className="space-y-6 py-2">
-                     <div className="space-y-1">
-                        <Button 
-                            variant={currentView === "tasks" ? "secondary" : "ghost"} 
-                            className={cn("w-full justify-start font-medium h-9", currentView === "tasks" && "bg-background shadow-sm text-primary")}
-                            onClick={() => onViewChange("tasks")}
-                        >
-                            <Briefcase className="w-4 h-4 mr-2 opacity-70" />
-                            Tasks & Board
-                        </Button>
-                         <Button 
-                            variant={currentView === "team" ? "secondary" : "ghost"} 
-                            className={cn("w-full justify-start font-medium h-9", currentView === "team" && "bg-background shadow-sm text-primary")}
-                            onClick={() => onViewChange("team")}
-                        >
-                            <Users className="w-4 h-4 mr-2 opacity-70" />
-                            Members & Access
-                        </Button>
+        {/* Secondary Sidebar - Context Aware */}
+        <div className="w-60 flex flex-col bg-muted/5 animate-in slide-in-from-left-2 duration-200">
+             {isSettingsView ? (
+                 <div className="flex-1 flex flex-col">
+                     <div className="h-16 flex items-center px-5 border-b border-border/40 shrink-0">
+                         <h2 className="font-display font-bold text-lg">Administration</h2>
                      </div>
-
-                     <div>
-                        <div className="flex items-center justify-between px-2 mb-2 group">
-                            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Channels</h3>
-                            <Plus 
-                                className="w-3.5 h-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 cursor-pointer hover:text-primary transition-opacity" 
-                                onClick={onAddChannel}
-                            />
-                        </div>
-                        <div className="space-y-0.5">
-                            {projectChannels.length > 0 ? projectChannels.map(channel => (
-                                <Button 
-                                    key={channel.id}
-                                    variant={currentView === "messages" && currentChannelId === channel.id ? "secondary" : "ghost"} 
-                                    className={cn(
-                                        "w-full justify-start h-8 font-normal text-muted-foreground hover:text-foreground px-2", 
-                                        currentView === "messages" && currentChannelId === channel.id && "bg-background shadow-sm text-primary font-medium"
-                                    )}
-                                    onClick={() => onViewChange("messages", channel.id)}
-                                >
-                                    {channel.type === 'private' ? <Lock className="w-3.5 h-3.5 mr-2 opacity-70" /> : <Hash className="w-3.5 h-3.5 mr-2 opacity-70" />}
-                                    <span className="truncate">{channel.name}</span>
-                                </Button>
-                            )) : (
-                                <p className="text-[10px] text-muted-foreground px-2 italic">No channels yet</p>
-                            )}
-                        </div>
-                    </div>
-
-                    <div>
-                        <div className="flex items-center justify-between px-2 mb-2 group">
-                            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Direct Messages</h3>
-                        </div>
-                        <div className="space-y-0.5">
-                            {projectMembers.map(user => (
-                                <Button
-                                    key={user.id}
-                                    variant={currentView === "messages" && currentChannelId === `dm-${user.id}` ? "secondary" : "ghost"} 
-                                    className={cn(
-                                        "w-full justify-start h-8 font-normal text-muted-foreground hover:text-foreground px-2", 
-                                        currentView === "messages" && currentChannelId === `dm-${user.id}` && "bg-background shadow-sm text-primary font-medium"
-                                    )}
-                                    onClick={() => onViewChange("messages", `dm-${user.id}`)}
-                                >
-                                    <div className="relative mr-2">
-                                        <Avatar className="h-4 w-4">
-                                            <AvatarImage src={user.avatar} />
-                                            <AvatarFallback>{user.name[0]}</AvatarFallback>
-                                        </Avatar>
-                                        <span className={cn(
-                                            "absolute -bottom-0.5 -right-0.5 w-1.5 h-1.5 rounded-full border border-background",
-                                            user.status === 'online' ? "bg-green-500" : 
-                                            user.status === 'busy' ? "bg-red-500" : "bg-slate-400"
-                                        )} />
-                                    </div>
-                                    <span className="truncate">{user.name}</span>
-                                </Button>
-                            ))}
-                        </div>
-                    </div>
+                     <ScrollArea className="flex-1 px-3 py-4">
+                         <div className="space-y-1">
+                             <Button variant="ghost" className="w-full justify-start font-medium bg-background shadow-sm text-primary">
+                                 <Settings className="w-4 h-4 mr-2" />
+                                 General
+                             </Button>
+                             <Button variant="ghost" className="w-full justify-start font-medium text-muted-foreground">
+                                 <Users className="w-4 h-4 mr-2" />
+                                 Users & Roles
+                             </Button>
+                             <Button variant="ghost" className="w-full justify-start font-medium text-muted-foreground">
+                                 <Briefcase className="w-4 h-4 mr-2" />
+                                 Billing
+                             </Button>
+                         </div>
+                     </ScrollArea>
                  </div>
-             </ScrollArea>
+             ) : (
+                 <>
+                    <div className="h-16 flex items-center px-5 border-b border-border/40 shrink-0">
+                        <div className="flex flex-col overflow-hidden">
+                            <h2 className="font-display font-bold text-lg truncate leading-tight">
+                                {currentProject.name}
+                            </h2>
+                            <span className="text-xs text-muted-foreground truncate">{currentProject.description}</span>
+                        </div>
+                    </div>
+
+                    <div className="p-3">
+                        <Button className="w-full justify-start gap-2 shadow-sm" onClick={() => {
+                            const event = new CustomEvent('openNewTaskModal');
+                            window.dispatchEvent(event);
+                        }}>
+                            <Plus className="w-4 h-4" /> New Task
+                        </Button>
+                    </div>
+
+                    <ScrollArea className="flex-1 px-3">
+                        <div className="space-y-6 py-2">
+                            <div className="space-y-1">
+                                <Button 
+                                    variant={currentView === "tasks" ? "secondary" : "ghost"} 
+                                    className={cn("w-full justify-start font-medium h-9", currentView === "tasks" && "bg-background shadow-sm text-primary")}
+                                    onClick={() => onViewChange("tasks")}
+                                >
+                                    <Briefcase className="w-4 h-4 mr-2 opacity-70" />
+                                    Tasks & Board
+                                </Button>
+                                <Button 
+                                    variant={currentView === "team" ? "secondary" : "ghost"} 
+                                    className={cn("w-full justify-start font-medium h-9", currentView === "team" && "bg-background shadow-sm text-primary")}
+                                    onClick={() => onViewChange("team")}
+                                >
+                                    <Users className="w-4 h-4 mr-2 opacity-70" />
+                                    Members & Access
+                                </Button>
+                            </div>
+
+                            <div>
+                                <div className="flex items-center justify-between px-2 mb-2 group">
+                                    <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Channels</h3>
+                                    <Plus 
+                                        className="w-3.5 h-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 cursor-pointer hover:text-primary transition-opacity" 
+                                        onClick={onAddChannel}
+                                    />
+                                </div>
+                                <div className="space-y-0.5">
+                                    {projectChannels.length > 0 ? projectChannels.map(channel => (
+                                        <Button 
+                                            key={channel.id}
+                                            variant={currentView === "messages" && currentChannelId === channel.id ? "secondary" : "ghost"} 
+                                            className={cn(
+                                                "w-full justify-start h-8 font-normal text-muted-foreground hover:text-foreground px-2", 
+                                                currentView === "messages" && currentChannelId === channel.id && "bg-background shadow-sm text-primary font-medium"
+                                            )}
+                                            onClick={() => onViewChange("messages", channel.id)}
+                                        >
+                                            {channel.type === 'private' ? <Lock className="w-3.5 h-3.5 mr-2 opacity-70" /> : <Hash className="w-3.5 h-3.5 mr-2 opacity-70" />}
+                                            <span className="truncate">{channel.name}</span>
+                                        </Button>
+                                    )) : (
+                                        <p className="text-[10px] text-muted-foreground px-2 italic">No channels yet</p>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div>
+                                <div className="flex items-center justify-between px-2 mb-2 group">
+                                    <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Direct Messages</h3>
+                                </div>
+                                <div className="space-y-0.5">
+                                    {projectMembers.map(user => (
+                                        <Button
+                                            key={user.id}
+                                            variant={currentView === "messages" && currentChannelId === `dm-${user.id}` ? "secondary" : "ghost"} 
+                                            className={cn(
+                                                "w-full justify-start h-8 font-normal text-muted-foreground hover:text-foreground px-2", 
+                                                currentView === "messages" && currentChannelId === `dm-${user.id}` && "bg-background shadow-sm text-primary font-medium"
+                                            )}
+                                            onClick={() => onViewChange("messages", `dm-${user.id}`)}
+                                        >
+                                            <div className="relative mr-2">
+                                                <Avatar className="h-4 w-4">
+                                                    <AvatarImage src={user.avatar} />
+                                                    <AvatarFallback>{user.name[0]}</AvatarFallback>
+                                                </Avatar>
+                                                <span className={cn(
+                                                    "absolute -bottom-0.5 -right-0.5 w-1.5 h-1.5 rounded-full border border-background",
+                                                    user.status === 'online' ? "bg-green-500" : 
+                                                    user.status === 'busy' ? "bg-red-500" : "bg-slate-400"
+                                                )} />
+                                            </div>
+                                            <span className="truncate">{user.name}</span>
+                                        </Button>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    </ScrollArea>
+                 </>
+             )}
              
              <div className="p-4 border-t border-border/40 text-xs text-muted-foreground flex items-center gap-2 cursor-pointer hover:text-foreground transition-colors">
                  <LogOut className="w-3.5 h-3.5" />
                  Log out
              </div>
         </div>
+
+        {/* Command Palette for Quick Project Finding */}
+        <CommandDialog open={projectSearchOpen} onOpenChange={setProjectSearchOpen}>
+            <CommandInput placeholder="Search projects..." />
+            <CommandList>
+                <CommandEmpty>No results found.</CommandEmpty>
+                <CommandGroup heading="Projects">
+                    {PROJECTS.map(project => (
+                        <CommandItem 
+                            key={project.id}
+                            onSelect={() => {
+                                onProjectChange(project.id);
+                                if (isSettingsView) onViewChange("tasks");
+                                setProjectSearchOpen(false);
+                            }}
+                        >
+                            <LayoutGrid className="mr-2 h-4 w-4" />
+                            <span>{project.name}</span>
+                        </CommandItem>
+                    ))}
+                </CommandGroup>
+            </CommandList>
+        </CommandDialog>
     </div>
   );
 }
@@ -235,7 +322,7 @@ export function Header({ title, view, currentUserRole, onRoleChange }: HeaderPro
         {/* Role Switcher for Demo */}
         <div className="flex items-center gap-2 mr-4 bg-muted/50 p-1 rounded-lg border border-border/50">
             <span className="text-xs font-medium px-2 text-muted-foreground">View as:</span>
-            {(['manager', 'employee', 'client'] as const).map(role => (
+            {(['admin', 'manager', 'employee', 'client'] as const).map(role => (
                 <button
                     key={role}
                     onClick={() => onRoleChange(role)}
