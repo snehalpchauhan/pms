@@ -7,7 +7,11 @@ import {
   DragEndEvent,
   closestCorners,
   defaultDropAnimationSideEffects,
-  DropAnimation
+  DropAnimation,
+  useSensor,
+  useSensors,
+  PointerSensor,
+  KeyboardSensor
 } from "@dnd-kit/core";
 import { Task, Status, Project } from "@/lib/mockData";
 import { TaskCard } from "./TaskCard";
@@ -81,6 +85,15 @@ export default function Board({ project, tasks, onTaskClick }: BoardProps) {
        setLocalTasks(tasks);
   }
 
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
+    useSensor(KeyboardSensor)
+  );
+
   const handleDragStart = (event: DragStartEvent) => {
     setActiveTask(event.active.data.current?.task);
   };
@@ -129,6 +142,7 @@ export default function Board({ project, tasks, onTaskClick }: BoardProps) {
     <div className="flex-1 h-full overflow-hidden flex flex-col bg-background/50">
        <div className="flex-1 overflow-x-auto overflow-y-hidden">
           <DndContext 
+            sensors={sensors}
             collisionDetection={closestCorners}
             onDragStart={handleDragStart} 
             onDragEnd={handleDragEnd}
