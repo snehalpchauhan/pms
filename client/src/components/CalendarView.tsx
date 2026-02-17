@@ -74,9 +74,6 @@ export default function CalendarView({ project, tasks, onTaskClick }: CalendarVi
                         <Button variant="ghost" size="icon" onClick={prev} className="h-8 w-8">
                             <ChevronLeft className="h-4 w-4" />
                         </Button>
-                        <Button variant="ghost" size="sm" onClick={goToToday} className="h-8 px-3 text-xs font-medium border-x border-border/50 rounded-none">
-                            Today
-                        </Button>
                         <Button variant="ghost" size="icon" onClick={next} className="h-8 w-8">
                             <ChevronRight className="h-4 w-4" />
                         </Button>

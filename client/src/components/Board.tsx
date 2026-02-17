@@ -19,6 +19,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { isPast, isToday, isTomorrow, isThisWeek } from "date-fns";
 
 const dropAnimation: DropAnimation = {
   sideEffects: defaultDropAnimationSideEffects({
@@ -43,6 +44,30 @@ function Column({ id, title, tasks, color, onTaskClick }: ColumnProps) {
     id: id,
   });
 
+  const getGroup = (task: Task) => {
+    if (!task.dueDate) return 'Later';
+    const date = new Date(task.dueDate);
+    if (isPast(date) && !isToday(date)) return 'Overdue'; // Group overdue with Today or separate? User asked for Today, This Week. Let's do: Today (incl Overdue for urgency), This Week, Later.
+    if (isToday(date)) return 'Today';
+    if (isTomorrow(date)) return 'This Week'; // Tomorrow is part of this week usually
+    if (isThisWeek(date, { weekStartsOn: 1 })) return 'This Week';
+    return 'Later';
+  };
+
+  // Group tasks
+  const groupedTasks: Record<string, Task[]> = {
+    'Today & Overdue': [],
+    'This Week': [],
+    'Later': []
+  };
+
+  tasks.forEach(task => {
+      const group = getGroup(task);
+      if (group === 'Overdue' || group === 'Today') groupedTasks['Today & Overdue'].push(task);
+      else if (group === 'This Week') groupedTasks['This Week'].push(task);
+      else groupedTasks['Later'].push(task);
+  });
+
   return (
     <div className="flex flex-col h-full min-w-[320px] max-w-[320px] bg-muted/30 rounded-xl border border-border/60 backdrop-blur-md shadow-sm">
       <div className="p-4 pb-3 flex items-center justify-between border-b border-border/40">
@@ -60,10 +85,34 @@ function Column({ id, title, tasks, color, onTaskClick }: ColumnProps) {
       
       <div className="flex-1 p-3 overflow-hidden">
         <ScrollArea className="h-full pr-3 -mr-3">
-            <div ref={setNodeRef} className="space-y-3 min-h-[150px] pb-4">
-            {tasks.map((task) => (
-                <TaskCard key={task.id} task={task} onClick={onTaskClick} />
-            ))}
+            <div ref={setNodeRef} className="min-h-[150px] pb-4 space-y-4">
+                {Object.entries(groupedTasks).map(([groupName, groupTasks]) => {
+                    if (groupTasks.length === 0) return null;
+                    return (
+                        <div key={groupName} className="space-y-2">
+                             <div className="flex items-center gap-2 px-1">
+                                <h4 className={cn(
+                                    "text-[10px] font-bold uppercase tracking-wider",
+                                    groupName === 'Today & Overdue' ? "text-orange-500" : 
+                                    groupName === 'This Week' ? "text-primary" : "text-muted-foreground"
+                                )}>
+                                    {groupName}
+                                </h4>
+                                <div className="h-px flex-1 bg-border/50" />
+                            </div>
+                            <div className="space-y-3">
+                                {groupTasks.map((task) => (
+                                    <TaskCard key={task.id} task={task} onClick={onTaskClick} />
+                                ))}
+                            </div>
+                        </div>
+                    );
+                })}
+                {tasks.length === 0 && (
+                    <div className="text-center py-8 text-xs text-muted-foreground italic">
+                        No tasks
+                    </div>
+                )}
             </div>
         </ScrollArea>
       </div>
