@@ -6,6 +6,7 @@ import { FolderKanban, ListTodo, Filter } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { TaskDetailPage } from "./TaskDetailPage";
 
 interface ProjectTasksViewProps {
     project: Project;
@@ -14,6 +15,7 @@ interface ProjectTasksViewProps {
 
 export default function ProjectTasksView({ project, tasks }: ProjectTasksViewProps) {
     const [filter, setFilter] = useState("all");
+    const [selectedTask, setSelectedTask] = useState<Task | null>(null);
 
     // In a real app, current user ID would come from context
     const currentUserId = "u1"; 
@@ -24,7 +26,7 @@ export default function ProjectTasksView({ project, tasks }: ProjectTasksViewPro
     });
 
     return (
-        <div className="h-full flex flex-col overflow-hidden">
+        <div className="h-full flex flex-col overflow-hidden relative">
             <Tabs defaultValue="board" className="flex-1 flex flex-col h-full overflow-hidden">
                 <div className="px-6 py-4 border-b border-border/40 flex items-center justify-between shrink-0 bg-background/50 backdrop-blur-sm z-10">
                     <TabsList className="grid w-[200px] grid-cols-2">
@@ -55,14 +57,29 @@ export default function ProjectTasksView({ project, tasks }: ProjectTasksViewPro
                 <div className="flex-1 overflow-hidden relative">
                      <TabsContent value="board" className="h-full m-0 data-[state=active]:flex flex-col">
                         <div className="flex-1 overflow-hidden">
-                            <Board project={project} tasks={filteredTasks} />
+                            <Board 
+                                project={project} 
+                                tasks={filteredTasks} 
+                                onTaskClick={setSelectedTask} 
+                            />
                         </div>
                     </TabsContent>
                     <TabsContent value="list" className="h-full m-0 data-[state=active]:flex flex-col overflow-y-auto">
-                        <TaskListView project={project} tasks={filteredTasks} />
+                        <TaskListView 
+                            project={project} 
+                            tasks={filteredTasks} 
+                            onTaskClick={setSelectedTask} 
+                        />
                     </TabsContent>
                 </div>
             </Tabs>
+            
+            {selectedTask && (
+                <TaskDetailPage 
+                    task={selectedTask} 
+                    onClose={() => setSelectedTask(null)} 
+                />
+            )}
         </div>
     );
 }

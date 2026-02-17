@@ -15,6 +15,7 @@ import { PROJECTS, Task, INITIAL_TASKS } from "@/lib/mockData";
 function App() {
   const [currentView, setCurrentView] = useState<"tasks" | "messages" | "team">("tasks");
   const [currentProjectId, setCurrentProjectId] = useState("p1");
+  const [currentChannelId, setCurrentChannelId] = useState<string | undefined>(undefined);
   const [currentUserRole, setCurrentUserRole] = useState("manager"); // Demo state for role switching
   
   const [isNewTaskOpen, setIsNewTaskOpen] = useState(false);
@@ -51,13 +52,21 @@ function App() {
       console.log("Creating new channel:", newChannel);
   };
 
+  const handleViewChange = (view: "tasks" | "messages" | "team", channelId?: string) => {
+      setCurrentView(view);
+      if (channelId) {
+          setCurrentChannelId(channelId);
+      }
+  };
+
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <div className="flex h-screen bg-background overflow-hidden font-sans text-foreground selection:bg-primary/20">
           <Sidebar 
             currentView={currentView} 
-            onViewChange={setCurrentView}
+            currentChannelId={currentChannelId}
+            onViewChange={handleViewChange}
             currentProject={currentProject}
             onProjectChange={(id) => {
                 setCurrentProjectId(id);
@@ -78,7 +87,7 @@ function App() {
              />
              
              <main className="flex-1 overflow-hidden relative z-[2]">
-                {currentView === "messages" && <MessagesView project={currentProject} />}
+                {currentView === "messages" && <MessagesView project={currentProject} channelId={currentChannelId} />}
                 {currentView === "team" && <TeamView project={currentProject} currentUserRole={currentUserRole} />}
                 {currentView === "tasks" && <ProjectTasksView project={currentProject} tasks={allTasks.filter(t => t.projectId === currentProjectId)} />}
              </main>

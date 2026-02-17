@@ -11,7 +11,6 @@ import {
 } from "@dnd-kit/core";
 import { Task, Status, Project } from "@/lib/mockData";
 import { TaskCard } from "./TaskCard";
-import { TaskDetailModal } from "./TaskDetailModal";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { Plus } from "lucide-react";
@@ -70,20 +69,14 @@ function Column({ id, title, tasks, color, onTaskClick }: ColumnProps) {
 
 interface BoardProps {
     project: Project;
-    tasks: Task[]; // Receive tasks as props
+    tasks: Task[];
+    onTaskClick?: (t: Task) => void;
 }
 
-export default function Board({ project, tasks }: BoardProps) {
-  // Use tasks from props, but we still need local state if we want optimistic updates in this mockup
-  // However, since App.tsx owns the state now, ideally we'd lift onDragEnd up.
-  // For this mockup, we'll just duplicate state locally to show interaction working within the view
-  // In a real app, `onDragEnd` would call a mutation.
-  
+export default function Board({ project, tasks, onTaskClick }: BoardProps) {
   const [localTasks, setLocalTasks] = useState<Task[]>(tasks);
   const [activeTask, setActiveTask] = useState<Task | null>(null);
-  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
 
-  // Sync props to local state if they change (e.g. switching projects)
   if (localTasks !== tasks && localTasks[0]?.projectId !== project.id) {
        setLocalTasks(tasks);
   }
@@ -108,14 +101,11 @@ export default function Board({ project, tasks }: BoardProps) {
         return;
     }
 
-    // Find the status to move to
     let newStatus: Status | undefined;
 
-    // 1. Dropped on a Column
     if (project.columns.some(col => col.id === overId)) {
         newStatus = overId as Status;
     } 
-    // 2. Dropped on another Task
     else {
         const overTask = localTasks.find(t => t.id === overId);
         if (overTask) {
@@ -151,11 +141,10 @@ export default function Board({ project, tasks }: BoardProps) {
                         title={col.title} 
                         color={col.color}
                         tasks={localTasks.filter(t => t.status === col.id)}
-                        onTaskClick={setSelectedTask}
+                        onTaskClick={onTaskClick || (() => {})}
                     />
                 ))}
                 
-                {/* Add Column Button */}
                 <div className="min-w-[320px] max-w-[320px] h-[100px] border-2 border-dashed border-border/50 rounded-xl flex items-center justify-center hover:bg-muted/10 transition-colors cursor-pointer group">
                     <div className="flex items-center gap-2 text-muted-foreground group-hover:text-primary transition-colors">
                         <Plus className="w-5 h-5" />
@@ -173,12 +162,6 @@ export default function Board({ project, tasks }: BoardProps) {
             </DragOverlay>
           </DndContext>
        </div>
-       
-       <TaskDetailModal 
-          task={selectedTask} 
-          open={!!selectedTask} 
-          onOpenChange={(open) => !open && setSelectedTask(null)} 
-       />
     </div>
   );
 }

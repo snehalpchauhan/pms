@@ -5,15 +5,14 @@ import { Button } from "@/components/ui/button";
 import { CheckCircle2, Circle, Clock, MoreHorizontal } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
-import { TaskDetailModal } from "./TaskDetailModal";
 
 interface TaskListViewProps {
     tasks: Task[];
     project: Project;
+    onTaskClick?: (t: Task) => void;
 }
 
-export default function TaskListView({ tasks, project }: TaskListViewProps) {
-    const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+export default function TaskListView({ tasks, project, onTaskClick }: TaskListViewProps) {
     
     // Filter for "My Tasks" - in a real app check auth user ID
     // For demo we assume current user is "u1"
@@ -32,8 +31,8 @@ export default function TaskListView({ tasks, project }: TaskListViewProps) {
         <div className="p-8 max-w-5xl mx-auto h-full overflow-y-auto">
             <div className="flex items-center justify-between mb-8">
                 <div>
-                    <h2 className="text-3xl font-display font-bold text-foreground">My Tasks</h2>
-                    <p className="text-muted-foreground mt-1">Tasks assigned to you in <span className="font-medium text-foreground">{project.name}</span></p>
+                    <h2 className="text-3xl font-display font-bold text-foreground">Task List</h2>
+                    <p className="text-muted-foreground mt-1">All tasks in <span className="font-medium text-foreground">{project.name}</span></p>
                 </div>
             </div>
 
@@ -46,11 +45,11 @@ export default function TaskListView({ tasks, project }: TaskListViewProps) {
                 </div>
 
                 <div className="divide-y divide-border/50">
-                    {myTasks.length > 0 ? myTasks.map(task => (
+                    {tasks.length > 0 ? tasks.map(task => (
                         <div 
                             key={task.id} 
                             className="grid grid-cols-12 gap-4 p-4 items-center hover:bg-muted/20 transition-colors cursor-pointer group"
-                            onClick={() => setSelectedTask(task)}
+                            onClick={() => onTaskClick && onTaskClick(task)}
                         >
                             <div className="col-span-6 flex items-center gap-3">
                                 {getStatusIcon(task.status)}
@@ -94,17 +93,11 @@ export default function TaskListView({ tasks, project }: TaskListViewProps) {
                         </div>
                     )) : (
                         <div className="p-12 text-center text-muted-foreground">
-                            <p>No tasks assigned to you in this project yet.</p>
+                            <p>No tasks found.</p>
                         </div>
                     )}
                 </div>
             </div>
-            
-            <TaskDetailModal 
-                task={selectedTask} 
-                open={!!selectedTask} 
-                onOpenChange={(open) => !open && setSelectedTask(null)} 
-            />
         </div>
     );
 }

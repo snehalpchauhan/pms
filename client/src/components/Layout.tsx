@@ -13,7 +13,8 @@ import { Badge } from "@/components/ui/badge";
 
 interface SidebarProps {
     currentView: "tasks" | "messages" | "team";
-    onViewChange: (view: "tasks" | "messages" | "team") => void;
+    currentChannelId?: string; // Track selected channel
+    onViewChange: (view: "tasks" | "messages" | "team", channelId?: string) => void;
     currentProject: Project;
     onProjectChange: (projectId: string) => void;
     onAddProject: () => void;
@@ -21,8 +22,9 @@ interface SidebarProps {
     currentUserRole: string;
 }
 
-export function Sidebar({ currentView, onViewChange, currentProject, onProjectChange, onAddProject, onAddChannel, currentUserRole }: SidebarProps) {
+export function Sidebar({ currentView, currentChannelId, onViewChange, currentProject, onProjectChange, onAddProject, onAddChannel, currentUserRole }: SidebarProps) {
   const projectChannels = CHANNELS.filter(c => c.projectId === currentProject.id);
+  const projectMembers = Object.values(USERS).filter(u => currentProject.members?.includes(u.id));
 
   return (
     <div className="flex h-screen bg-sidebar border-r border-border shadow-2xl z-20">
@@ -151,9 +153,12 @@ export function Sidebar({ currentView, onViewChange, currentProject, onProjectCh
                             {projectChannels.length > 0 ? projectChannels.map(channel => (
                                 <Button 
                                     key={channel.id}
-                                    variant={currentView === "messages" ? "secondary" : "ghost"} 
-                                    className={cn("w-full justify-start h-8 font-normal text-muted-foreground hover:text-foreground px-2", currentView === "messages" && "bg-background shadow-sm text-primary font-medium")}
-                                    onClick={() => onViewChange("messages")}
+                                    variant={currentView === "messages" && currentChannelId === channel.id ? "secondary" : "ghost"} 
+                                    className={cn(
+                                        "w-full justify-start h-8 font-normal text-muted-foreground hover:text-foreground px-2", 
+                                        currentView === "messages" && currentChannelId === channel.id && "bg-background shadow-sm text-primary font-medium"
+                                    )}
+                                    onClick={() => onViewChange("messages", channel.id)}
                                 >
                                     {channel.type === 'private' ? <Lock className="w-3.5 h-3.5 mr-2 opacity-70" /> : <Hash className="w-3.5 h-3.5 mr-2 opacity-70" />}
                                     <span className="truncate">{channel.name}</span>
@@ -161,6 +166,38 @@ export function Sidebar({ currentView, onViewChange, currentProject, onProjectCh
                             )) : (
                                 <p className="text-[10px] text-muted-foreground px-2 italic">No channels yet</p>
                             )}
+                        </div>
+                    </div>
+
+                    <div>
+                        <div className="flex items-center justify-between px-2 mb-2 group">
+                            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Direct Messages</h3>
+                        </div>
+                        <div className="space-y-0.5">
+                            {projectMembers.map(user => (
+                                <Button
+                                    key={user.id}
+                                    variant={currentView === "messages" && currentChannelId === `dm-${user.id}` ? "secondary" : "ghost"} 
+                                    className={cn(
+                                        "w-full justify-start h-8 font-normal text-muted-foreground hover:text-foreground px-2", 
+                                        currentView === "messages" && currentChannelId === `dm-${user.id}` && "bg-background shadow-sm text-primary font-medium"
+                                    )}
+                                    onClick={() => onViewChange("messages", `dm-${user.id}`)}
+                                >
+                                    <div className="relative mr-2">
+                                        <Avatar className="h-4 w-4">
+                                            <AvatarImage src={user.avatar} />
+                                            <AvatarFallback>{user.name[0]}</AvatarFallback>
+                                        </Avatar>
+                                        <span className={cn(
+                                            "absolute -bottom-0.5 -right-0.5 w-1.5 h-1.5 rounded-full border border-background",
+                                            user.status === 'online' ? "bg-green-500" : 
+                                            user.status === 'busy' ? "bg-red-500" : "bg-slate-400"
+                                        )} />
+                                    </div>
+                                    <span className="truncate">{user.name}</span>
+                                </Button>
+                            ))}
                         </div>
                     </div>
                  </div>
