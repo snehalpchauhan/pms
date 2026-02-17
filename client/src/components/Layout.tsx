@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { NotificationsPopover } from "@/components/NotificationsPopover";
 
 interface SidebarProps {
     currentView: "tasks" | "messages" | "team" | "settings" | "profile";
@@ -375,10 +376,7 @@ export function Header({ title, view, currentUserRole, onRoleChange }: HeaderPro
         
         <Separator orientation="vertical" className="h-6 mx-2" />
 
-        <Button variant="ghost" size="icon" className="text-muted-foreground relative">
-          <Bell className="w-5 h-5" />
-          <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border border-background"></span>
-        </Button>
+        <NotificationsPopover />
       </div>
     </header>
   );
