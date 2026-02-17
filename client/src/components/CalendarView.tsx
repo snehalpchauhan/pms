@@ -3,7 +3,7 @@ import { Project, Task, Status } from "@/lib/mockData";
 import { TaskCard } from "./TaskCard";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
-import { Plus, ChevronLeft, ChevronRight, Calendar as CalendarIcon } from "lucide-react";
+import { Plus, ChevronLeft, ChevronRight, Calendar as CalendarIcon, Filter } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths, isToday } from "date-fns";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -35,9 +35,6 @@ export default function CalendarView({ project, tasks, onTaskClick }: CalendarVi
         <div className="flex flex-col h-full bg-background/50">
             <div className="flex items-center justify-between px-6 py-4 border-b border-border/40 bg-background/30 backdrop-blur-sm">
                 <div className="flex items-center gap-4">
-                    <h2 className="text-xl font-display font-bold">
-                        {format(currentDate, "MMMM yyyy")}
-                    </h2>
                     <div className="flex items-center rounded-md border border-border/50 bg-background shadow-sm">
                         <Button variant="ghost" size="icon" onClick={prevMonth} className="h-8 w-8">
                             <ChevronLeft className="h-4 w-4" />
@@ -49,6 +46,9 @@ export default function CalendarView({ project, tasks, onTaskClick }: CalendarVi
                             <ChevronRight className="h-4 w-4" />
                         </Button>
                     </div>
+                    <h2 className="text-xl font-display font-bold min-w-[150px]">
+                        {format(currentDate, "MMMM yyyy")}
+                    </h2>
                 </div>
             </div>
 
@@ -68,6 +68,7 @@ export default function CalendarView({ project, tasks, onTaskClick }: CalendarVi
                         const isCurrentMonth = isSameMonth(day, monthStart);
                         const dayTasks = tasks.filter(task => {
                             if (!task.dueDate) return false;
+                            // Ensure we're comparing just the date part, ignoring time
                             return isSameDay(new Date(task.dueDate), day);
                         });
 
