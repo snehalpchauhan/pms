@@ -115,13 +115,13 @@ export function NewTaskModal({ open, onOpenChange, project, onSave }: NewTaskMod
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-[700px] bg-card/95 backdrop-blur-xl border-border/60 max-h-[90vh] overflow-hidden flex flex-col p-0 gap-0">
+            <DialogContent className="sm:max-w-[700px] bg-card/95 backdrop-blur-xl border-border/60 h-[90vh] overflow-hidden flex flex-col p-0 gap-0">
                 <DialogHeader className="px-6 py-4 border-b border-border/40 shrink-0">
                     <DialogTitle className="font-display text-xl">Create New Task</DialogTitle>
                 </DialogHeader>
                 
-                <ScrollArea className="flex-1 px-6 py-6">
-                    <div className="grid gap-6">
+                <ScrollArea className="flex-1">
+                    <div className="p-6 grid gap-6">
                         {/* 1. Task Title */}
                         <div className="space-y-2">
                             <Label htmlFor="title" className="text-xs uppercase font-semibold text-muted-foreground">Task Title</Label>
