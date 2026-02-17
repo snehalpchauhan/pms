@@ -1,16 +1,23 @@
-import { USERS } from "@/lib/mockData";
+import { USERS, Project } from "@/lib/mockData";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Mail, MoreHorizontal, Plus } from "lucide-react";
 
-export default function TeamView() {
+interface TeamViewProps {
+    project: Project;
+}
+
+export default function TeamView({ project }: TeamViewProps) {
+    // Filter users who are members of this project
+    const projectMembers = Object.values(USERS).filter(u => project.members?.includes(u.id));
+
   return (
     <div className="p-8 space-y-8 bg-background/50 h-full overflow-y-auto">
         <div className="flex items-center justify-between">
             <div>
-                <h2 className="text-3xl font-display font-bold text-foreground">Team Members</h2>
-                <p className="text-muted-foreground mt-1">Manage who has access to this workspace.</p>
+                <h2 className="text-3xl font-display font-bold text-foreground">Project Team</h2>
+                <p className="text-muted-foreground mt-1">Members working on <span className="font-medium text-foreground">{project.name}</span></p>
             </div>
             <Button>
                 <Plus className="w-4 h-4 mr-2" />
@@ -19,7 +26,7 @@ export default function TeamView() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {Object.values(USERS).map(user => (
+            {projectMembers.map(user => (
                 <Card key={user.id} className="hover:shadow-md transition-shadow border-border/60">
                     <CardHeader className="flex flex-row items-center gap-4 pb-2">
                         <Avatar className="h-12 w-12 border border-border">
@@ -54,7 +61,7 @@ export default function TeamView() {
                  <div className="w-10 h-10 rounded-full bg-muted/50 flex items-center justify-center group-hover:bg-primary/10 group-hover:text-primary transition-colors">
                     <Plus className="w-5 h-5 text-muted-foreground group-hover:text-primary" />
                  </div>
-                 <span className="font-medium text-muted-foreground group-hover:text-primary transition-colors">Invite New Member</span>
+                 <span className="font-medium text-muted-foreground group-hover:text-primary transition-colors">Add Team Member</span>
             </button>
         </div>
     </div>

@@ -9,12 +9,12 @@ import {
   defaultDropAnimationSideEffects,
   DropAnimation
 } from "@dnd-kit/core";
-import { Task, Status, INITIAL_TASKS, Project } from "@/lib/mockData";
+import { Task, Status, Project } from "@/lib/mockData";
 import { TaskCard } from "./TaskCard";
 import { TaskDetailModal } from "./TaskDetailModal";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
-import { Plus, Settings2 } from "lucide-react";
+import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const dropAnimation: DropAnimation = {
@@ -70,13 +70,23 @@ function Column({ id, title, tasks, color, onTaskClick }: ColumnProps) {
 
 interface BoardProps {
     project: Project;
+    tasks: Task[]; // Receive tasks as props
 }
 
-export default function Board({ project }: BoardProps) {
-  // Filter tasks by project ID
-  const [tasks, setTasks] = useState<Task[]>(INITIAL_TASKS.filter(t => t.projectId === project.id));
+export default function Board({ project, tasks }: BoardProps) {
+  // Use tasks from props, but we still need local state if we want optimistic updates in this mockup
+  // However, since App.tsx owns the state now, ideally we'd lift onDragEnd up.
+  // For this mockup, we'll just duplicate state locally to show interaction working within the view
+  // In a real app, `onDragEnd` would call a mutation.
+  
+  const [localTasks, setLocalTasks] = useState<Task[]>(tasks);
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+
+  // Sync props to local state if they change (e.g. switching projects)
+  if (localTasks !== tasks && localTasks[0]?.projectId !== project.id) {
+       setLocalTasks(tasks);
+  }
 
   const handleDragStart = (event: DragStartEvent) => {
     setActiveTask(event.active.data.current?.task);
@@ -107,14 +117,14 @@ export default function Board({ project }: BoardProps) {
     } 
     // 2. Dropped on another Task
     else {
-        const overTask = tasks.find(t => t.id === overId);
+        const overTask = localTasks.find(t => t.id === overId);
         if (overTask) {
             newStatus = overTask.status;
         }
     }
 
     if (newStatus) {
-        setTasks(prev => prev.map(t => {
+        setLocalTasks(prev => prev.map(t => {
             if (t.id === activeId) {
                 return { ...t, status: newStatus as Status };
             }
@@ -140,7 +150,7 @@ export default function Board({ project }: BoardProps) {
                         id={col.id} 
                         title={col.title} 
                         color={col.color}
-                        tasks={tasks.filter(t => t.status === col.id)}
+                        tasks={localTasks.filter(t => t.status === col.id)}
                         onTaskClick={setSelectedTask}
                     />
                 ))}
