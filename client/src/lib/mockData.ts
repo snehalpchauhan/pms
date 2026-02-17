@@ -35,6 +35,13 @@ export interface User {
   email?: string;
 }
 
+export interface Recurrence {
+  frequency: "daily" | "weekly" | "monthly" | "custom";
+  interval?: number;
+  daysOfWeek?: number[]; // 0-6 where 0 is Sunday
+  customCron?: string;
+}
+
 export interface Task {
   id: string;
   title: string;
@@ -43,7 +50,9 @@ export interface Task {
   priority: Priority;
   tags: string[];
   assignees: string[];
+  startDate?: string;
   dueDate?: string;
+  recurrence?: Recurrence;
   comments: Comment[];
   attachments: Attachment[];
   coverImage?: string;
