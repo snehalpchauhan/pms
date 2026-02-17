@@ -3,6 +3,7 @@ import ProjectTasksView from "@/components/ProjectTasksView";
 import MessagesView from "@/components/MessagesView";
 import TeamView from "@/components/TeamView";
 import CompanySettingsView from "@/components/CompanySettingsView";
+import UserProfileView from "@/components/UserProfileView";
 import { NewTaskModal } from "@/components/NewTaskModal";
 import { NewProjectModal } from "@/components/NewProjectModal";
 import { NewChannelModal } from "@/components/NewChannelModal";
@@ -14,7 +15,7 @@ import { useState, useEffect } from "react";
 import { PROJECTS, Task, INITIAL_TASKS } from "@/lib/mockData";
 
 function App() {
-  const [currentView, setCurrentView] = useState<"tasks" | "messages" | "team" | "settings">("tasks");
+  const [currentView, setCurrentView] = useState<"tasks" | "messages" | "team" | "settings" | "profile">("tasks");
   const [currentProjectId, setCurrentProjectId] = useState("p1");
   const [currentChannelId, setCurrentChannelId] = useState<string | undefined>(undefined);
   const [currentUserRole, setCurrentUserRole] = useState("admin"); // Default to admin for demo
@@ -53,7 +54,7 @@ function App() {
       console.log("Creating new channel:", newChannel);
   };
 
-  const handleViewChange = (view: "tasks" | "messages" | "team" | "settings", channelId?: string) => {
+  const handleViewChange = (view: "tasks" | "messages" | "team" | "settings" | "profile", channelId?: string) => {
       setCurrentView(view);
       if (channelId) {
           setCurrentChannelId(channelId);
@@ -81,8 +82,8 @@ function App() {
           <div className="flex-1 flex flex-col h-full overflow-hidden relative z-0">
              <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 pointer-events-none mix-blend-overlay z-[1]" />
              
-             {/* Only show header if NOT in settings view */}
-             {currentView !== "settings" && (
+             {/* Only show header if NOT in settings/profile view */}
+             {currentView !== "settings" && currentView !== "profile" && (
                  <Header 
                     title={currentProject.name} 
                     view={currentView} 
@@ -93,6 +94,7 @@ function App() {
              
              <main className="flex-1 overflow-hidden relative z-[2]">
                 {currentView === "settings" && <CompanySettingsView />}
+                {currentView === "profile" && <UserProfileView currentUserRole={currentUserRole} />}
                 {currentView === "messages" && <MessagesView project={currentProject} channelId={currentChannelId} />}
                 {currentView === "team" && <TeamView project={currentProject} currentUserRole={currentUserRole} />}
                 {currentView === "tasks" && <ProjectTasksView project={currentProject} tasks={allTasks.filter(t => t.projectId === currentProjectId)} />}

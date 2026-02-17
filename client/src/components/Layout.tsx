@@ -1,4 +1,4 @@
-import { Plus, LayoutGrid, CheckSquare, Settings, Users, MessageSquare, Bell, Search, Hash, Lock, ListTodo, FolderKanban, LogOut, Briefcase, Building2 } from "lucide-react";
+import { Plus, LayoutGrid, CheckSquare, Settings, Users, MessageSquare, Bell, Search, Hash, Lock, ListTodo, FolderKanban, LogOut, Briefcase, Building2, User, Shield, Key } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,9 +13,9 @@ import { Badge } from "@/components/ui/badge";
 import { CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 
 interface SidebarProps {
-    currentView: "tasks" | "messages" | "team" | "settings";
+    currentView: "tasks" | "messages" | "team" | "settings" | "profile";
     currentChannelId?: string; 
-    onViewChange: (view: "tasks" | "messages" | "team" | "settings", channelId?: string) => void;
+    onViewChange: (view: "tasks" | "messages" | "team" | "settings" | "profile", channelId?: string) => void;
     currentProject: Project;
     onProjectChange: (projectId: string) => void;
     onAddProject: () => void;
@@ -28,8 +28,10 @@ export function Sidebar({ currentView, currentChannelId, onViewChange, currentPr
   const projectChannels = CHANNELS.filter(c => c.projectId === currentProject.id);
   const projectMembers = Object.values(USERS).filter(u => currentProject.members?.includes(u.id));
 
-  // Determine if we're in the "Settings" context (outside a project)
+  // Determine if we're in a "Global" context (outside a project)
+  const isGlobalView = currentView === "settings" || currentView === "profile";
   const isSettingsView = currentView === "settings";
+  const isProfileView = currentView === "profile";
 
   return (
     <div className="flex h-screen bg-sidebar border-r border-border shadow-2xl z-20">
@@ -59,17 +61,17 @@ export function Sidebar({ currentView, currentChannelId, onViewChange, currentPr
                                 <button
                                     onClick={() => {
                                         onProjectChange(project.id);
-                                        if (isSettingsView) onViewChange("tasks");
+                                        if (isGlobalView) onViewChange("tasks");
                                     }}
                                     className={cn(
                                         "w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-200 relative group",
-                                        !isSettingsView && currentProject.id === project.id 
+                                        !isGlobalView && currentProject.id === project.id 
                                             ? "bg-primary text-primary-foreground shadow-md ring-2 ring-primary ring-offset-2 ring-offset-background" 
                                             : "bg-muted hover:bg-muted-foreground/20 text-muted-foreground hover:text-foreground"
                                     )}
                                 >
                                     <span className="font-bold text-sm">{project.name.substring(0, 2).toUpperCase()}</span>
-                                    {!isSettingsView && currentProject.id === project.id && (
+                                    {!isGlobalView && currentProject.id === project.id && (
                                         <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-[18px] w-1 h-8 bg-primary rounded-r-full" />
                                     )}
                                 </button>
@@ -121,8 +123,11 @@ export function Sidebar({ currentView, currentChannelId, onViewChange, currentPr
 
                  <Tooltip>
                      <TooltipTrigger asChild>
-                        <div className="relative group cursor-pointer">
-                            <Avatar className="h-10 w-10 border-2 border-background ring-1 ring-border/20 group-hover:ring-primary/50 transition-all">
+                        <div 
+                            className="relative group cursor-pointer"
+                            onClick={() => onViewChange("profile")}
+                        >
+                            <Avatar className={cn("h-10 w-10 border-2 transition-all", isProfileView ? "ring-2 ring-primary border-background" : "border-background ring-1 ring-border/20 group-hover:ring-primary/50")}>
                                 <AvatarImage src={avatar1} />
                                 <AvatarFallback>JD</AvatarFallback>
                             </Avatar>
@@ -132,7 +137,7 @@ export function Sidebar({ currentView, currentChannelId, onViewChange, currentPr
                         </div>
                      </TooltipTrigger>
                      <TooltipContent side="right">
-                         <p className="capitalize">Role: {currentUserRole}</p>
+                         <p className="capitalize">My Profile</p>
                      </TooltipContent>
                  </Tooltip>
              </div>
@@ -162,6 +167,28 @@ export function Sidebar({ currentView, currentChannelId, onViewChange, currentPr
                          </div>
                      </ScrollArea>
                  </div>
+             ) : isProfileView ? (
+                <div className="flex-1 flex flex-col">
+                    <div className="h-16 flex items-center px-5 border-b border-border/40 shrink-0">
+                        <h2 className="font-display font-bold text-lg">Account</h2>
+                    </div>
+                    <ScrollArea className="flex-1 px-3 py-4">
+                        <div className="space-y-1">
+                            <Button variant="ghost" className="w-full justify-start font-medium bg-background shadow-sm text-primary">
+                                <User className="w-4 h-4 mr-2" />
+                                My Profile
+                            </Button>
+                            <Button variant="ghost" className="w-full justify-start font-medium text-muted-foreground">
+                                <Shield className="w-4 h-4 mr-2" />
+                                Security
+                            </Button>
+                            <Button variant="ghost" className="w-full justify-start font-medium text-muted-foreground">
+                                <Bell className="w-4 h-4 mr-2" />
+                                Notifications
+                            </Button>
+                        </div>
+                    </ScrollArea>
+                </div>
              ) : (
                  <>
                     <div className="h-16 flex items-center px-5 border-b border-border/40 shrink-0">
@@ -284,7 +311,7 @@ export function Sidebar({ currentView, currentChannelId, onViewChange, currentPr
                             key={project.id}
                             onSelect={() => {
                                 onProjectChange(project.id);
-                                if (isSettingsView) onViewChange("tasks");
+                                if (isGlobalView) onViewChange("tasks");
                                 setProjectSearchOpen(false);
                             }}
                         >
