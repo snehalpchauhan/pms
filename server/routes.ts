@@ -52,11 +52,13 @@ export async function registerRoutes(
         const assignees = await storage.getTaskAssignees(task.id);
         const checklist = await storage.getChecklistItems(task.id);
         const taskAttachments = await storage.getAttachments(task.id);
+        const taskComments = await storage.getComments(task.id);
         return {
           ...task,
           assignees: assignees.map(({ password, ...u }) => u),
           checklist,
           attachments: taskAttachments,
+          comments: taskComments,
         };
       })
     );

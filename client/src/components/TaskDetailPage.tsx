@@ -14,6 +14,9 @@ import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { Task, ChecklistItem, Attachment } from "@/lib/mockData";
 import { useAppData } from "@/hooks/useAppData";
+import { useAuth } from "@/hooks/useAuth";
+import { apiRequest } from "@/lib/queryClient";
+import { useQueryClient } from "@tanstack/react-query";
 import { Calendar, Paperclip, Tag, User as UserIcon, CheckCircle2, MoreHorizontal, MessageSquare, Plus, X, Reply, Clock, History, AlertCircle, FileText, Activity, Repeat, CalendarCheck, ArrowRight, CheckSquare, Trash2, Download } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
@@ -26,6 +29,62 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 
+function CommentItem({ comment, users, currentUserId }: { comment: any; users: any; currentUserId: string }) {
+  const author = users[comment.authorId];
+  const [isReplying, setIsReplying] = useState(false);
+  const [replyInput, setReplyInput] = useState("");
+  
+  const formattedDate = comment.createdAt ? (() => {
+    try {
+      const d = new Date(comment.createdAt);
+      if (!isNaN(d.getTime())) return format(d, "MMM d, h:mm a");
+      return comment.createdAt;
+    } catch { return comment.createdAt; }
+  })() : "Just now";
+
+  return (
+    <div className="flex gap-3 group">
+      <Avatar className="h-8 w-8 mt-0.5">
+        <AvatarImage src={author?.avatar} />
+        <AvatarFallback className="text-[10px]">{author?.name?.[0] || "U"}</AvatarFallback>
+      </Avatar>
+      <div className="flex-1 space-y-1">
+        <div className="bg-muted/30 px-3 py-2 rounded-2xl rounded-tl-sm inline-block max-w-[90%] border border-border/30">
+          <div className="font-semibold text-xs text-foreground mb-0.5">{author?.name || "Unknown"}</div>
+          <div className="text-sm text-foreground/90 leading-snug">{comment.content}</div>
+        </div>
+        <div className="flex items-center gap-3 pl-1">
+          <span className="text-[10px] text-muted-foreground font-medium hover:underline cursor-pointer">Like</span>
+          <span className="text-[10px] text-muted-foreground font-medium hover:underline cursor-pointer" onClick={() => setIsReplying(!isReplying)}>Reply</span>
+          <span className="text-[10px] text-muted-foreground">{formattedDate}</span>
+        </div>
+        {comment.attachments && comment.attachments.length > 0 && (
+          <div className="flex gap-2 mt-1 flex-wrap pl-1">
+            {comment.attachments.map((att: any) => (
+              <div key={att.id} className="flex items-center gap-2 bg-background border border-border rounded-md px-2 py-1 text-xs text-foreground shadow-sm cursor-pointer hover:bg-muted/50">
+                <Paperclip className="w-3 h-3 text-muted-foreground" />
+                <span className="font-medium truncate max-w-[150px]">{att.name}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        {isReplying && (
+          <div className="flex gap-2 mt-2 pl-1 animate-in fade-in slide-in-from-top-1 duration-200">
+            <Avatar className="h-6 w-6">
+              <AvatarImage src={users[currentUserId]?.avatar} />
+              <AvatarFallback>ME</AvatarFallback>
+            </Avatar>
+            <div className="flex-1 flex gap-2">
+              <Input value={replyInput} onChange={(e) => setReplyInput(e.target.value)} placeholder="Write a reply..." className="h-8 text-xs bg-muted/20" autoFocus />
+              <Button size="sm" className="h-8 px-3 text-xs">Reply</Button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 interface TaskDetailPageProps {
   task: Task;
   onClose: () => void;
@@ -33,33 +92,89 @@ interface TaskDetailPageProps {
 
 export function TaskDetailPage({ task, onClose }: TaskDetailPageProps) {
   const { users } = useAppData();
+  const { user: currentUser } = useAuth();
+  const queryClient = useQueryClient();
   const [commentInput, setCommentInput] = useState("");
+  const [comments, setComments] = useState(task.comments || []);
   const [status, setStatus] = useState(task.status);
   const [checklist, setChecklist] = useState<ChecklistItem[]>(task.checklist || []);
   const [newChecklistInput, setNewChecklistInput] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>(task.attachments || []);
   const [assignees, setAssignees] = useState<string[]>(task.assignees || []);
 
-  const toggleChecklistItem = (id: string) => {
-      setChecklist(checklist.map(item => 
-          item.id === id ? { ...item, completed: !item.completed } : item
+  const numericTaskId = Number(task.id);
+  const numericProjectId = Number(task.projectId);
+
+  const invalidateTasks = () => {
+    queryClient.invalidateQueries({ queryKey: ["/api/projects", numericProjectId, "tasks"] });
+  };
+
+  const toggleChecklistItem = async (id: string) => {
+      const item = checklist.find(i => i.id === id);
+      if (!item) return;
+      const newCompleted = !item.completed;
+      setChecklist(checklist.map(i => 
+          i.id === id ? { ...i, completed: newCompleted } : i
       ));
+      try {
+        await apiRequest("PATCH", `/api/checklist/${id}`, { completed: newCompleted });
+        invalidateTasks();
+      } catch (e) {
+        setChecklist(checklist);
+      }
   };
 
-  const addChecklistItem = () => {
+  const addChecklistItem = async () => {
       if (!newChecklistInput.trim()) return;
-      const newItem: ChecklistItem = {
-          id: `cl-${Date.now()}`,
-          text: newChecklistInput,
-          completed: false
-      };
-      setChecklist([...checklist, newItem]);
-      setNewChecklistInput("");
+      try {
+        const res = await apiRequest("POST", `/api/tasks/${numericTaskId}/checklist`, { text: newChecklistInput.trim() });
+        const created = await res.json();
+        const newItem: ChecklistItem = {
+          id: String(created.id),
+          text: created.text,
+          completed: created.completed,
+        };
+        setChecklist([...checklist, newItem]);
+        setNewChecklistInput("");
+        invalidateTasks();
+      } catch (e) {
+        console.error("Failed to add checklist item:", e);
+      }
   };
 
-  const removeChecklistItem = (id: string) => {
+  const removeChecklistItem = async (id: string) => {
       setChecklist(checklist.filter(item => item.id !== id));
+      try {
+        await apiRequest("DELETE", `/api/checklist/${id}`);
+        invalidateTasks();
+      } catch (e) {
+        console.error("Failed to remove checklist item:", e);
+      }
   };
+
+  const handlePostComment = async () => {
+      if (!commentInput.trim()) return;
+      try {
+        const res = await apiRequest("POST", `/api/tasks/${numericTaskId}/comments`, {
+          content: commentInput.trim(),
+          type: "comment",
+        });
+        const created = await res.json();
+        setComments(prev => [...prev, {
+          id: String(created.id),
+          authorId: String(created.authorId),
+          content: created.content,
+          createdAt: created.createdAt || "Just now",
+          type: created.type || "comment",
+        }]);
+        setCommentInput("");
+        invalidateTasks();
+      } catch (e) {
+        console.error("Failed to post comment:", e);
+      }
+  };
+
+  const currentUserId = currentUser ? String(currentUser.id) : "";
 
   const handleAttachmentUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
       if (e.target.files) {
@@ -399,8 +514,8 @@ export function TaskDetailPage({ task, onClose }: TaskDetailPageProps) {
                              {/* Comment Input */}
                              <div className="flex gap-3">
                                 <Avatar className="h-8 w-8 mt-1">
-                                    <AvatarImage src={users["u1"]?.avatar} />
-                                    <AvatarFallback>ME</AvatarFallback>
+                                    <AvatarImage src={users[currentUserId]?.avatar} />
+                                    <AvatarFallback>{currentUser?.name?.[0] || "ME"}</AvatarFallback>
                                 </Avatar>
                                 <div className="flex-1 space-y-2">
                                     <div className="relative group">
@@ -408,7 +523,13 @@ export function TaskDetailPage({ task, onClose }: TaskDetailPageProps) {
                                             value={commentInput}
                                             onChange={(e) => setCommentInput(e.target.value)}
                                             placeholder="Write a comment..." 
-                                            className="min-h-[80px] resize-none bg-muted/20 focus:bg-background focus:ring-1 focus:ring-primary/20 border-border/60 shadow-sm p-3 pr-12 text-sm rounded-lg transition-all" 
+                                            className="min-h-[80px] resize-none bg-muted/20 focus:bg-background focus:ring-1 focus:ring-primary/20 border-border/60 shadow-sm p-3 pr-12 text-sm rounded-lg transition-all"
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                                                    e.preventDefault();
+                                                    handlePostComment();
+                                                }
+                                            }}
                                         />
                                         <div className="absolute bottom-2 right-2 flex gap-1 opacity-50 group-hover:opacity-100 transition-opacity">
                                             <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-foreground rounded-full">
@@ -417,87 +538,27 @@ export function TaskDetailPage({ task, onClose }: TaskDetailPageProps) {
                                         </div>
                                     </div>
                                     <div className="flex justify-end">
-                                        <Button size="sm" className="h-8 px-4 text-xs font-medium">Comment</Button>
+                                        <Button size="sm" className="h-8 px-4 text-xs font-medium" onClick={handlePostComment} data-testid="button-post-comment">Comment</Button>
                                     </div>
                                 </div>
                             </div>
 
                             {/* Comment Stream - Compact FB Style */}
                             <div className="space-y-4">
-                                {task.comments.filter(c => c.type !== 'system').map((comment) => {
-                                    const author = users[comment.authorId];
-                                    const [isReplying, setIsReplying] = useState(false);
-                                    const [replyInput, setReplyInput] = useState("");
-
-                                    return (
-                                        <div key={comment.id} className="flex gap-3 group">
-                                            <Avatar className="h-8 w-8 mt-0.5">
-                                                <AvatarImage src={author?.avatar} />
-                                                <AvatarFallback className="text-[10px]">UA</AvatarFallback>
-                                            </Avatar>
-                                            
-                                            <div className="flex-1 space-y-1">
-                                                <div className="bg-muted/30 px-3 py-2 rounded-2xl rounded-tl-sm inline-block max-w-[90%] border border-border/30">
-                                                    <div className="font-semibold text-xs text-foreground mb-0.5">
-                                                        {author?.name}
-                                                    </div>
-                                                    <div className="text-sm text-foreground/90 leading-snug">
-                                                        {comment.content}
-                                                    </div>
-                                                </div>
-                                                
-                                                <div className="flex items-center gap-3 pl-1">
-                                                    <span className="text-[10px] text-muted-foreground font-medium hover:underline cursor-pointer">Like</span>
-                                                    <span 
-                                                        className="text-[10px] text-muted-foreground font-medium hover:underline cursor-pointer"
-                                                        onClick={() => setIsReplying(!isReplying)}
-                                                    >
-                                                        Reply
-                                                    </span>
-                                                    <span className="text-[10px] text-muted-foreground">{comment.createdAt}</span>
-                                                </div>
-
-                                                {/* Attachments in comment */}
-                                                {comment.attachments && comment.attachments.length > 0 && (
-                                                    <div className="flex gap-2 mt-1 flex-wrap pl-1">
-                                                        {comment.attachments.map(att => (
-                                                            <div key={att.id} className="flex items-center gap-2 bg-background border border-border rounded-md px-2 py-1 text-xs text-foreground shadow-sm cursor-pointer hover:bg-muted/50">
-                                                                <Paperclip className="w-3 h-3 text-muted-foreground" />
-                                                                <span className="font-medium truncate max-w-[150px]">{att.name}</span>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                )}
-
-                                                {/* Reply Input */}
-                                                {isReplying && (
-                                                    <div className="flex gap-2 mt-2 pl-1 animate-in fade-in slide-in-from-top-1 duration-200">
-                                                        <Avatar className="h-6 w-6">
-                                                            <AvatarImage src={users["u1"]?.avatar} />
-                                                            <AvatarFallback>ME</AvatarFallback>
-                                                        </Avatar>
-                                                        <div className="flex-1 flex gap-2">
-                                                            <Input 
-                                                                value={replyInput}
-                                                                onChange={(e) => setReplyInput(e.target.value)}
-                                                                placeholder="Write a reply..." 
-                                                                className="h-8 text-xs bg-muted/20"
-                                                                autoFocus
-                                                            />
-                                                            <Button size="sm" className="h-8 px-3 text-xs">Reply</Button>
-                                                        </div>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </div>
-                                    )
-                                })}
+                                {comments.filter(c => c.type !== 'system').map((comment) => (
+                                    <CommentItem key={comment.id} comment={comment} users={users} currentUserId={currentUserId} />
+                                ))}
+                                {comments.filter(c => c.type !== 'system').length === 0 && (
+                                    <div className="text-center text-sm text-muted-foreground py-6">
+                                        No comments yet. Be the first to comment.
+                                    </div>
+                                )}
                             </div>
                         </TabsContent>
 
                         <TabsContent value="logs" className="space-y-4 mt-0 pt-2">
                              <div className="relative pl-6 ml-3 space-y-6 border-l-2 border-border/40 pb-4">
-                                {task.comments.filter(c => c.type === 'system').map((log) => {
+                                {comments.filter(c => c.type === 'system').map((log) => {
                                     const author = users[log.authorId];
                                     return (
                                         <div key={log.id} className="relative">
