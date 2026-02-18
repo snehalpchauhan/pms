@@ -6,7 +6,9 @@ import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import avatar1 from "@/assets/avatar-1.png";
-import { PROJECTS, CHANNELS, Project, USERS } from "@/lib/mockData";
+import { Project } from "@/lib/mockData";
+import { useAppData } from "@/hooks/useAppData";
+import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
@@ -25,9 +27,11 @@ interface SidebarProps {
 }
 
 export function Sidebar({ currentView, currentChannelId, onViewChange, currentProject, onProjectChange, onAddProject, onAddChannel, currentUserRole }: SidebarProps) {
+  const { users, projects, channels } = useAppData();
+  const { logout } = useAuth();
   const [projectSearchOpen, setProjectSearchOpen] = useState(false);
-  const projectChannels = CHANNELS.filter(c => c.projectId === currentProject.id);
-  const projectMembers = Object.values(USERS).filter(u => currentProject.members?.includes(u.id));
+  const projectChannels = channels.filter(c => c.projectId === currentProject.id);
+  const projectMembers = Object.values(users);
 
   // Determine if we're in a "Global" context (outside a project)
   const isGlobalView = currentView === "settings" || currentView === "profile";
@@ -56,7 +60,7 @@ export function Sidebar({ currentView, currentChannelId, onViewChange, currentPr
              {/* Projects List */}
              <ScrollArea className="flex-1 w-full px-3 gap-3 flex flex-col items-center">
                  <div className="flex flex-col gap-3 items-center w-full py-2">
-                    {PROJECTS.map(project => (
+                    {projects.map(project => (
                         <Tooltip key={project.id}>
                             <TooltipTrigger asChild>
                                 <button
@@ -295,7 +299,7 @@ export function Sidebar({ currentView, currentChannelId, onViewChange, currentPr
                  </>
              )}
              
-             <div className="p-4 border-t border-border/40 text-xs text-muted-foreground flex items-center gap-2 cursor-pointer hover:text-foreground transition-colors">
+             <div className="p-4 border-t border-border/40 text-xs text-muted-foreground flex items-center gap-2 cursor-pointer hover:text-foreground transition-colors" onClick={() => logout()}>
                  <LogOut className="w-3.5 h-3.5" />
                  Log out
              </div>
@@ -307,7 +311,7 @@ export function Sidebar({ currentView, currentChannelId, onViewChange, currentPr
             <CommandList>
                 <CommandEmpty>No results found.</CommandEmpty>
                 <CommandGroup heading="Projects">
-                    {PROJECTS.map(project => (
+                    {projects.map(project => (
                         <CommandItem 
                             key={project.id}
                             onSelect={() => {
@@ -347,25 +351,6 @@ export function Header({ title, view, currentUserRole, onRoleChange }: HeaderPro
       </div>
 
       <div className="flex items-center gap-3">
-        {/* Role Switcher for Demo */}
-        <div className="flex items-center gap-2 mr-4 bg-muted/50 p-1 rounded-lg border border-border/50">
-            <span className="text-xs font-medium px-2 text-muted-foreground">View as:</span>
-            {(['admin', 'manager', 'employee', 'client'] as const).map(role => (
-                <button
-                    key={role}
-                    onClick={() => onRoleChange(role)}
-                    className={cn(
-                        "text-[10px] uppercase font-bold px-2 py-1 rounded-md transition-all",
-                        currentUserRole === role 
-                            ? "bg-primary text-primary-foreground shadow-sm" 
-                            : "hover:bg-background text-muted-foreground"
-                    )}
-                >
-                    {role}
-                </button>
-            ))}
-        </div>
-
         <div className="relative w-48 hidden lg:block">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input 

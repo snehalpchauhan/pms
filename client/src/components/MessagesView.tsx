@@ -4,9 +4,13 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Hash, Phone, Video, Info, Plus, Smile, Paperclip, Lock, ArrowLeft } from "lucide-react";
-import { USERS, CHANNELS, MESSAGES, Message, Project } from "@/lib/mockData";
-import { useState, useEffect } from "react";
+import { Message, Project } from "@/lib/mockData";
+import { useState } from "react";
 import { cn } from "@/lib/utils";
+import { useAppData } from "@/hooks/useAppData";
+import { useAuth } from "@/hooks/useAuth";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
 
 interface MessagesViewProps {
     project: Project;
@@ -15,29 +19,47 @@ interface MessagesViewProps {
 
 export default function MessagesView({ project, channelId }: MessagesViewProps) {
     const [input, setInput] = useState("");
-    const [messages, setMessages] = useState<Message[]>(MESSAGES);
+    const { users, channels } = useAppData();
+    const { user } = useAuth();
+    const queryClient = useQueryClient();
 
-    // Default to first channel if none selected
-    const activeChannelId = channelId || CHANNELS.find(c => c.projectId === project.id)?.id;
-    const activeChannel = CHANNELS.find(c => c.id === activeChannelId);
+    const activeChannelId = channelId || channels.find(c => c.projectId === project.id)?.id;
+    const activeChannel = channels.find(c => c.id === activeChannelId);
     
-    // Check if it's a DM (starts with dm-)
     const isDM = activeChannelId?.startsWith('dm-');
-    const dmUser = isDM ? USERS[activeChannelId!.replace('dm-', '')] : null;
+    const dmUser = isDM ? users[activeChannelId!.replace('dm-', '')] : null;
 
-    const channelMessages = messages.filter(m => m.channelId === activeChannelId);
+    const numericChannelId = activeChannelId && !isDM ? Number(activeChannelId) : null;
+    const { data: rawMessages } = useQuery<any[]>({
+        queryKey: ["/api/channels", numericChannelId, "messages"],
+        queryFn: async () => {
+            if (!numericChannelId) return [];
+            const res = await fetch(`/api/channels/${numericChannelId}/messages`, { credentials: "include" });
+            if (!res.ok) return [];
+            return res.json();
+        },
+        enabled: !!numericChannelId,
+    });
 
-    const handleSend = () => {
-        if (!input.trim() || !activeChannelId) return;
-        const newMsg: Message = {
-            id: `new-${Date.now()}`,
-            channelId: activeChannelId,
-            authorId: "u1", // Current user
-            content: input,
-            createdAt: "Just now"
-        };
-        setMessages([...messages, newMsg]);
-        setInput("");
+    const channelMessages: Message[] = (rawMessages || []).map((m: any) => ({
+        id: String(m.id),
+        channelId: String(m.channelId),
+        authorId: String(m.authorId),
+        content: m.content,
+        createdAt: m.createdAt || "Just now",
+    }));
+
+    const handleSend = async () => {
+        if (!input.trim() || !numericChannelId) return;
+        try {
+            await apiRequest("POST", `/api/channels/${numericChannelId}/messages`, {
+                content: input,
+            });
+            queryClient.invalidateQueries({ queryKey: ["/api/channels", numericChannelId, "messages"] });
+            setInput("");
+        } catch (e) {
+            console.error("Failed to send message:", e);
+        }
     };
 
     if (!activeChannel && !isDM) {
@@ -116,7 +138,7 @@ export default function MessagesView({ project, channelId }: MessagesViewProps) 
                     </div>
 
                     {channelMessages.map((msg, idx) => {
-                        const author = USERS[msg.authorId];
+                        const author = users[msg.authorId];
                         const prevMsg = channelMessages[idx - 1];
                         const isSequence = prevMsg && prevMsg.authorId === msg.authorId;
 

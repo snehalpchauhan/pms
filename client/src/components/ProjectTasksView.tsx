@@ -1,4 +1,5 @@
 import { Project, Task } from "@/lib/mockData";
+import { useAuth } from "@/hooks/useAuth";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import Board from "./Board";
 import TaskListView from "./TaskListView";
@@ -16,11 +17,10 @@ interface ProjectTasksViewProps {
 }
 
 export default function ProjectTasksView({ project, tasks }: ProjectTasksViewProps) {
+    const { user } = useAuth();
+    const currentUserId = user ? String(user.id) : "";
     const [filter, setFilter] = useState("all");
     const [selectedTask, setSelectedTask] = useState<Task | null>(null);
-
-    // In a real app, current user ID would come from context
-    const currentUserId = "u1"; 
 
     const filteredTasks = tasks.filter(t => {
         if (filter === "mine") return t.assignees.includes(currentUserId);

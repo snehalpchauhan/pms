@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { Badge } from "@/components/ui/badge";
 import { Upload, User, Lock, Bell, Mail, Shield, Camera } from "lucide-react";
 import { useState } from "react";
-import { USERS } from "@/lib/mockData";
+import { useAppData } from "@/hooks/useAppData";
 import { Switch } from "@/components/ui/switch";
 
 interface UserProfileViewProps {
@@ -16,13 +16,13 @@ interface UserProfileViewProps {
 }
 
 export default function UserProfileView({ currentUserRole }: UserProfileViewProps) {
-    // Mock current user data - in a real app this would come from auth context
+    const { users } = useAppData();
     const [user, setUser] = useState({
         name: "Jane Doe",
         email: "jane@example.com",
         role: currentUserRole,
         title: "Product Manager",
-        avatar: USERS["u1"].avatar
+        avatar: users["u1"]?.avatar || ""
     });
 
     const [isLoading, setIsLoading] = useState(false);

@@ -12,7 +12,8 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
-import { Task, USERS, ChecklistItem, Attachment } from "@/lib/mockData";
+import { Task, ChecklistItem, Attachment } from "@/lib/mockData";
+import { useAppData } from "@/hooks/useAppData";
 import { Calendar, Paperclip, Tag, User as UserIcon, CheckCircle2, MoreHorizontal, MessageSquare, Plus, X, Reply, Clock, History, AlertCircle, FileText, Activity, Repeat, CalendarCheck, ArrowRight, CheckSquare, Trash2, Download } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
@@ -31,6 +32,7 @@ interface TaskDetailPageProps {
 }
 
 export function TaskDetailPage({ task, onClose }: TaskDetailPageProps) {
+  const { users } = useAppData();
   const [commentInput, setCommentInput] = useState("");
   const [status, setStatus] = useState(task.status);
   const [checklist, setChecklist] = useState<ChecklistItem[]>(task.checklist || []);
@@ -166,7 +168,7 @@ export function TaskDetailPage({ task, onClose }: TaskDetailPageProps) {
                              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Assignees</div>
                              <div className="flex flex-wrap gap-2">
                                 {assignees.map(id => {
-                                    const user = USERS[id];
+                                    const user = users[id];
                                     return user ? (
                                         <div key={id} className="flex items-center gap-2 bg-background border border-border/50 rounded-full pl-1 pr-3 py-1 shadow-sm">
                                             <Avatar className="h-5 w-5">
@@ -189,7 +191,7 @@ export function TaskDetailPage({ task, onClose }: TaskDetailPageProps) {
                                     <PopoverContent className="w-60 p-2" align="start">
                                         <div className="space-y-1">
                                             <div className="text-xs font-semibold text-muted-foreground px-2 py-1.5">Add Assignee</div>
-                                            {Object.values(USERS).filter(u => !assignees.includes(u.id)).map(user => (
+                                            {Object.values(users).filter(u => !assignees.includes(u.id)).map(user => (
                                                 <button 
                                                     key={user.id}
                                                     onClick={() => toggleAssignee(user.id)}
@@ -202,7 +204,7 @@ export function TaskDetailPage({ task, onClose }: TaskDetailPageProps) {
                                                     <span>{user.name}</span>
                                                 </button>
                                             ))}
-                                            {Object.values(USERS).filter(u => !assignees.includes(u.id)).length === 0 && (
+                                            {Object.values(users).filter(u => !assignees.includes(u.id)).length === 0 && (
                                                 <div className="text-xs text-muted-foreground px-2 py-2 italic">All users assigned</div>
                                             )}
                                         </div>
@@ -397,7 +399,7 @@ export function TaskDetailPage({ task, onClose }: TaskDetailPageProps) {
                              {/* Comment Input */}
                              <div className="flex gap-3">
                                 <Avatar className="h-8 w-8 mt-1">
-                                    <AvatarImage src={USERS["u1"].avatar} />
+                                    <AvatarImage src={users["u1"]?.avatar} />
                                     <AvatarFallback>ME</AvatarFallback>
                                 </Avatar>
                                 <div className="flex-1 space-y-2">
@@ -423,7 +425,7 @@ export function TaskDetailPage({ task, onClose }: TaskDetailPageProps) {
                             {/* Comment Stream - Compact FB Style */}
                             <div className="space-y-4">
                                 {task.comments.filter(c => c.type !== 'system').map((comment) => {
-                                    const author = USERS[comment.authorId];
+                                    const author = users[comment.authorId];
                                     const [isReplying, setIsReplying] = useState(false);
                                     const [replyInput, setReplyInput] = useState("");
 
@@ -471,7 +473,7 @@ export function TaskDetailPage({ task, onClose }: TaskDetailPageProps) {
                                                 {isReplying && (
                                                     <div className="flex gap-2 mt-2 pl-1 animate-in fade-in slide-in-from-top-1 duration-200">
                                                         <Avatar className="h-6 w-6">
-                                                            <AvatarImage src={USERS["u1"].avatar} />
+                                                            <AvatarImage src={users["u1"]?.avatar} />
                                                             <AvatarFallback>ME</AvatarFallback>
                                                         </Avatar>
                                                         <div className="flex-1 flex gap-2">
@@ -496,7 +498,7 @@ export function TaskDetailPage({ task, onClose }: TaskDetailPageProps) {
                         <TabsContent value="logs" className="space-y-4 mt-0 pt-2">
                              <div className="relative pl-6 ml-3 space-y-6 border-l-2 border-border/40 pb-4">
                                 {task.comments.filter(c => c.type === 'system').map((log) => {
-                                    const author = USERS[log.authorId];
+                                    const author = users[log.authorId];
                                     return (
                                         <div key={log.id} className="relative">
                                             <div className="absolute -left-[29px] top-1.5 bg-background rounded-full p-0.5 border border-border">

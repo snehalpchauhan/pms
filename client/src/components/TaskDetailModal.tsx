@@ -11,7 +11,8 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
-import { Task, USERS } from "@/lib/mockData";
+import { Task } from "@/lib/mockData";
+import { useAppData } from "@/hooks/useAppData";
 import { Calendar, Paperclip, Tag, User as UserIcon, CheckCircle2, MoreHorizontal, MessageSquare, Plus, X, Reply } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
@@ -24,6 +25,7 @@ interface TaskDetailModalProps {
 }
 
 export function TaskDetailModal({ task, open, onOpenChange }: TaskDetailModalProps) {
+  const { users } = useAppData();
   const [commentInput, setCommentInput] = useState("");
   
   if (!task) return null;
@@ -136,7 +138,7 @@ export function TaskDetailModal({ task, open, onOpenChange }: TaskDetailModalPro
                             {/* New Comment Input */}
                             <div className="flex gap-4">
                                 <Avatar className="h-9 w-9 border border-border">
-                                    <AvatarImage src={USERS["u1"].avatar} />
+                                    <AvatarImage src={users["u1"]?.avatar} />
                                     <AvatarFallback>ME</AvatarFallback>
                                 </Avatar>
                                 <div className="flex-1 space-y-3">
@@ -162,7 +164,7 @@ export function TaskDetailModal({ task, open, onOpenChange }: TaskDetailModalPro
                             {/* Comment Stream */}
                             <div className="space-y-6 pl-4 border-l-2 border-border/40 ml-4">
                                 {task.comments.map(comment => {
-                                    const author = USERS[comment.authorId];
+                                    const author = users[comment.authorId];
                                     
                                     if (comment.type === 'system') {
                                         return (
@@ -240,7 +242,7 @@ export function TaskDetailModal({ task, open, onOpenChange }: TaskDetailModalPro
                 <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Assignees</h4>
                 <div className="space-y-2">
                     {task.assignees.map(id => {
-                        const user = USERS[id];
+                        const user = users[id];
                         if (!user) return null;
                         return (
                             <div key={id} className="flex items-center gap-3 p-2 rounded-md hover:bg-muted/50 transition-colors cursor-pointer group border border-transparent hover:border-border/50">

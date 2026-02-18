@@ -1,4 +1,5 @@
-import { Task, User, USERS, Priority } from "@/lib/mockData";
+import { Task, User, Priority } from "@/lib/mockData";
+import { useAppData } from "@/hooks/useAppData";
 import { useDraggable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
@@ -28,6 +29,7 @@ const PriorityBadge = ({ priority }: { priority: Priority }) => {
 };
 
 export function TaskCard({ task, onClick }: TaskCardProps) {
+  const { users } = useAppData();
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: task.id,
     data: { task },
@@ -106,7 +108,7 @@ export function TaskCard({ task, onClick }: TaskCardProps) {
 
            <div className="flex -space-x-2">
                 {task.assignees.map((userId) => {
-                    const user = USERS[userId];
+                    const user = users[userId];
                     if(!user) return null;
                     return (
                         <Avatar key={user.id} className="h-6 w-6 border-2 border-background ring-1 ring-border/10">

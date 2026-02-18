@@ -1,4 +1,4 @@
-import { Task, Project, USERS, Status } from "@/lib/mockData";
+import { Task, Project, Status } from "@/lib/mockData";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";

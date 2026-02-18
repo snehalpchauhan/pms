@@ -1,4 +1,5 @@
-import { USERS, Project } from "@/lib/mockData";
+import { Project } from "@/lib/mockData";
+import { useAppData } from "@/hooks/useAppData";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
@@ -16,7 +17,8 @@ interface TeamViewProps {
 }
 
 export default function TeamView({ project, currentUserRole }: TeamViewProps) {
-    const projectMembers = Object.values(USERS).filter(u => project.members?.includes(u.id));
+    const { users } = useAppData();
+    const projectMembers = Object.values(users).filter(u => project.members?.includes(u.id));
     const [isInviteOpen, setIsInviteOpen] = useState(false);
 
     const canManageTeam = currentUserRole === 'manager';

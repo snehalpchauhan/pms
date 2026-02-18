@@ -1,4 +1,5 @@
-import { USERS, User, UserRole } from "@/lib/mockData";
+import { User, UserRole } from "@/lib/mockData";
+import { useAppData } from "@/hooks/useAppData";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,10 +13,11 @@ import { Building2, Upload, Users, Shield, Plus, MoreHorizontal, Search } from "
 import { useState } from "react";
 
 export default function CompanySettingsView() {
+    const { users } = useAppData();
     const [companyName, setCompanyName] = useState("Acme Corp");
     const [searchTerm, setSearchTerm] = useState("");
 
-    const filteredUsers = Object.values(USERS).filter(u => 
+    const filteredUsers = Object.values(users).filter(u => 
         u.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
         u.email?.toLowerCase().includes(searchTerm.toLowerCase())
     );
