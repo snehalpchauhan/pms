@@ -2,6 +2,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import { Hash, Phone, Video, Info, Plus, Smile, Paperclip, Lock, ArrowLeft } from "lucide-react";
 import { USERS, CHANNELS, MESSAGES, Message, Project } from "@/lib/mockData";
 import { useState, useEffect } from "react";
@@ -147,43 +148,43 @@ export default function MessagesView({ project, channelId }: MessagesViewProps) 
 
             {/* Input Area */}
             <div className="p-4 pt-2">
-                <div className="max-w-4xl mx-auto relative bg-muted/30 rounded-xl border border-border/60 focus-within:ring-1 focus-within:ring-primary/30 focus-within:border-primary/50 transition-all shadow-sm">
-                    <div className="flex items-center gap-1 p-2 border-b border-border/30">
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground">
-                            <span className="font-bold text-xs">B</span>
-                        </Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground">
-                            <span className="italic text-xs font-serif">I</span>
-                        </Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground">
-                            <span className="line-through text-xs">S</span>
-                        </Button>
-                        <div className="h-4 w-px bg-border/50 mx-1" />
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground">
-                            <Paperclip className="w-3.5 h-3.5" />
-                        </Button>
-                    </div>
-                    <Input 
-                        className="bg-transparent border-none focus-visible:ring-0 px-4 py-3 min-h-[44px] text-base" 
+                <div className="max-w-4xl mx-auto bg-background rounded-xl border border-border shadow-sm p-4">
+                     <Textarea 
+                        className="min-h-[80px] resize-none border-none focus-visible:ring-0 p-0 text-base shadow-none bg-transparent"
                         placeholder={`Message ${isDM ? dmUser?.name : `#${activeChannel?.name}`}`}
                         value={input}
                         onChange={(e) => setInput(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !e.shiftKey) {
+                                e.preventDefault();
+                                handleSend();
+                            }
+                        }}
                     />
-                    <div className="flex justify-between items-center p-2 pt-0">
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground">
-                            <Plus className="w-4 h-4" />
-                        </Button>
+                    <div className="flex justify-between items-center mt-2 pt-2 border-t border-border/40">
+                        <div className="flex items-center gap-1">
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground">
+                                <Plus className="w-4 h-4" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground">
+                                <span className="font-bold text-xs">B</span>
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground">
+                                <span className="italic text-xs font-serif">I</span>
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground">
+                                <Paperclip className="w-4 h-4" />
+                            </Button>
+                        </div>
                         <div className="flex items-center gap-2">
                             <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground">
-                                <Smile className="w-4 h-4" />
+                                <Smile className="w-5 h-5" />
                             </Button>
-                            <Button size="sm" className="h-7 px-4 font-medium" onClick={handleSend}>Send</Button>
+                            <Button size="sm" className="px-6" onClick={handleSend}>
+                                Send
+                            </Button>
                         </div>
                     </div>
-                </div>
-                <div className="text-center mt-2 text-[10px] text-muted-foreground">
-                    <strong>Shift + Enter</strong> for new line
                 </div>
             </div>
         </div>

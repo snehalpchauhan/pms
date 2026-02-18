@@ -424,6 +424,9 @@ export function TaskDetailPage({ task, onClose }: TaskDetailPageProps) {
                             <div className="space-y-4">
                                 {task.comments.filter(c => c.type !== 'system').map((comment) => {
                                     const author = USERS[comment.authorId];
+                                    const [isReplying, setIsReplying] = useState(false);
+                                    const [replyInput, setReplyInput] = useState("");
+
                                     return (
                                         <div key={comment.id} className="flex gap-3 group">
                                             <Avatar className="h-8 w-8 mt-0.5">
@@ -443,7 +446,12 @@ export function TaskDetailPage({ task, onClose }: TaskDetailPageProps) {
                                                 
                                                 <div className="flex items-center gap-3 pl-1">
                                                     <span className="text-[10px] text-muted-foreground font-medium hover:underline cursor-pointer">Like</span>
-                                                    <span className="text-[10px] text-muted-foreground font-medium hover:underline cursor-pointer">Reply</span>
+                                                    <span 
+                                                        className="text-[10px] text-muted-foreground font-medium hover:underline cursor-pointer"
+                                                        onClick={() => setIsReplying(!isReplying)}
+                                                    >
+                                                        Reply
+                                                    </span>
                                                     <span className="text-[10px] text-muted-foreground">{comment.createdAt}</span>
                                                 </div>
 
@@ -456,6 +464,26 @@ export function TaskDetailPage({ task, onClose }: TaskDetailPageProps) {
                                                                 <span className="font-medium truncate max-w-[150px]">{att.name}</span>
                                                             </div>
                                                         ))}
+                                                    </div>
+                                                )}
+
+                                                {/* Reply Input */}
+                                                {isReplying && (
+                                                    <div className="flex gap-2 mt-2 pl-1 animate-in fade-in slide-in-from-top-1 duration-200">
+                                                        <Avatar className="h-6 w-6">
+                                                            <AvatarImage src={USERS["u1"].avatar} />
+                                                            <AvatarFallback>ME</AvatarFallback>
+                                                        </Avatar>
+                                                        <div className="flex-1 flex gap-2">
+                                                            <Input 
+                                                                value={replyInput}
+                                                                onChange={(e) => setReplyInput(e.target.value)}
+                                                                placeholder="Write a reply..." 
+                                                                className="h-8 text-xs bg-muted/20"
+                                                                autoFocus
+                                                            />
+                                                            <Button size="sm" className="h-8 px-3 text-xs">Reply</Button>
+                                                        </div>
                                                     </div>
                                                 )}
                                             </div>
