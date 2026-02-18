@@ -40,6 +40,7 @@ function AuthenticatedApp() {
   const [currentChannelId, setCurrentChannelId] = useState<string | undefined>(undefined);
 
   const [isNewTaskOpen, setIsNewTaskOpen] = useState(false);
+  const [newTaskDefaultStatus, setNewTaskDefaultStatus] = useState<string>("");
   const [isNewProjectOpen, setIsNewProjectOpen] = useState(false);
   const [isNewChannelOpen, setIsNewChannelOpen] = useState(false);
 
@@ -66,7 +67,15 @@ function AuthenticatedApp() {
   const tasks: Task[] = (rawTasks || []).map(convertTask);
 
   useEffect(() => {
-    const handleOpenNewTask = () => setIsNewTaskOpen(true);
+    const handleOpenNewTask = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.status) {
+        setNewTaskDefaultStatus(detail.status);
+      } else {
+        setNewTaskDefaultStatus("");
+      }
+      setIsNewTaskOpen(true);
+    };
     window.addEventListener('openNewTaskModal', handleOpenNewTask);
     return () => window.removeEventListener('openNewTaskModal', handleOpenNewTask);
   }, []);
@@ -177,9 +186,13 @@ function AuthenticatedApp() {
 
       <NewTaskModal
         open={isNewTaskOpen}
-        onOpenChange={setIsNewTaskOpen}
+        onOpenChange={(open) => {
+          setIsNewTaskOpen(open);
+          if (!open) setNewTaskDefaultStatus("");
+        }}
         project={currentProject}
         onSave={handleTaskCreate}
+        defaultStatus={newTaskDefaultStatus}
       />
 
       <NewProjectModal

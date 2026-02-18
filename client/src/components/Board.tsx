@@ -37,9 +37,10 @@ interface ColumnProps {
   tasks: Task[];
   color: string;
   onTaskClick: (t: Task) => void;
+  onAddTask: (status: string) => void;
 }
 
-function Column({ id, title, tasks, color, onTaskClick }: ColumnProps) {
+function Column({ id, title, tasks, color, onTaskClick, onAddTask }: ColumnProps) {
   const { setNodeRef } = useDroppable({
     id: id,
   });
@@ -80,7 +81,7 @@ function Column({ id, title, tasks, color, onTaskClick }: ColumnProps) {
                 {tasks.length}
             </span>
          </div>
-         <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-foreground -mr-1">
+         <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-foreground -mr-1" onClick={() => onAddTask(id)}>
              <Plus className="w-4 h-4" />
          </Button>
       </div>
@@ -127,13 +128,14 @@ interface BoardProps {
     project: Project;
     tasks: Task[];
     onTaskClick?: (t: Task) => void;
+    onAddTask?: (status: string) => void;
 }
 
-export default function Board({ project, tasks, onTaskClick }: BoardProps) {
+export default function Board({ project, tasks, onTaskClick, onAddTask }: BoardProps) {
   const [localTasks, setLocalTasks] = useState<Task[]>(tasks);
   const [activeTask, setActiveTask] = useState<Task | null>(null);
 
-  if (localTasks !== tasks && localTasks[0]?.projectId !== project.id) {
+  if (JSON.stringify(localTasks) !== JSON.stringify(tasks)) {
        setLocalTasks(tasks);
   }
 
@@ -208,6 +210,7 @@ export default function Board({ project, tasks, onTaskClick }: BoardProps) {
                         color={col.color}
                         tasks={localTasks.filter(t => t.status === col.id)}
                         onTaskClick={onTaskClick || (() => {})}
+                        onAddTask={onAddTask || (() => {})}
                     />
                 ))}
                 

@@ -73,7 +73,11 @@ export default function ProjectTasksView({ project, tasks }: ProjectTasksViewPro
                             <Board 
                                 project={project} 
                                 tasks={filteredTasks} 
-                                onTaskClick={setSelectedTask} 
+                                onTaskClick={setSelectedTask}
+                                onAddTask={(status) => {
+                                    const event = new CustomEvent('openNewTaskModal', { detail: { status } });
+                                    window.dispatchEvent(event);
+                                }}
                             />
                         </div>
                     </TabsContent>

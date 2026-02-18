@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,15 +22,22 @@ interface NewTaskModalProps {
   onOpenChange: (open: boolean) => void;
   project: Project;
   onSave: (task: Partial<Task>) => void;
+  defaultStatus?: string;
 }
 
-export function NewTaskModal({ open, onOpenChange, project, onSave }: NewTaskModalProps) {
-    const [startDate, setStartDate] = useState<Date>();
-    const [endDate, setEndDate] = useState<Date>();
+export function NewTaskModal({ open, onOpenChange, project, onSave, defaultStatus }: NewTaskModalProps) {
+    const [startDate, setStartDate] = useState<Date>(new Date());
+    const [endDate, setEndDate] = useState<Date>(new Date());
     const [title, setTitle] = useState("");
     const [desc, setDesc] = useState("");
     const [priority, setPriority] = useState("medium");
-    const [status, setStatus] = useState(project.columns[0].id);
+    const [status, setStatus] = useState(defaultStatus || project.columns[0]?.id || "todo");
+    
+    useEffect(() => {
+      if (open) {
+        setStatus(defaultStatus || project.columns[0]?.id || "todo");
+      }
+    }, [open, defaultStatus, project.columns]);
     const [attachments, setAttachments] = useState<File[]>([]);
     
     // Checklist State
@@ -61,12 +68,12 @@ export function NewTaskModal({ open, onOpenChange, project, onSave }: NewTaskMod
             description: desc,
             priority: priority as any,
             status: status,
-            startDate: startDate?.toISOString(),
-            dueDate: endDate?.toISOString(), // using endDate as dueDate
+            startDate: startDate ? format(startDate, "yyyy-MM-dd") : undefined,
+            dueDate: endDate ? format(endDate, "yyyy-MM-dd") : undefined,
             recurrence: recurrenceConfig,
             checklist: checklistItems,
             projectId: project.id,
-            assignees: ["u1"], // Default to current user for demo
+            assignees: [],
             tags: ["New"],
             comments: [],
             attachments: attachments.map((f, i) => ({
@@ -80,8 +87,8 @@ export function NewTaskModal({ open, onOpenChange, project, onSave }: NewTaskMod
         // Reset form
         setTitle("");
         setDesc("");
-        setStartDate(undefined);
-        setEndDate(undefined);
+        setStartDate(new Date());
+        setEndDate(new Date());
         setIsRecurring(false);
         setRecurrenceFreq("weekly");
         setChecklistItems([]);
@@ -166,6 +173,7 @@ export function NewTaskModal({ open, onOpenChange, project, onSave }: NewTaskMod
                                     <PopoverContent className="w-auto p-0">
                                         <Calendar
                                             mode="single"
+                                            required
                                             selected={startDate}
                                             onSelect={setStartDate}
                                             initialFocus
@@ -191,6 +199,7 @@ export function NewTaskModal({ open, onOpenChange, project, onSave }: NewTaskMod
                                     <PopoverContent className="w-auto p-0">
                                         <Calendar
                                             mode="single"
+                                            required
                                             selected={endDate}
                                             onSelect={setEndDate}
                                             initialFocus
