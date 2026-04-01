@@ -2,7 +2,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Hash, Phone, Video, Info, Lock } from "lucide-react";
 import { Message, Project } from "@/lib/mockData";
-import { useEffect, useCallback, useRef } from "react";
+import { useEffect, useCallback, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { useAppData } from "@/hooks/useAppData";
 import { useAuth } from "@/hooks/useAuth";
@@ -11,6 +11,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { formatChatMarkdown } from "@/lib/chatMarkdown";
 import { ChatRichComposer } from "@/components/ChatRichComposer";
+import { EditChannelModal } from "@/components/EditChannelModal";
 
 interface MessagesViewProps {
   project: Project;
@@ -29,6 +30,8 @@ export default function MessagesView({ project, channelId }: MessagesViewProps) 
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const [editChannelOpen, setEditChannelOpen] = useState(false);
+  const canManageChannel = user?.role === "admin" || user?.role === "manager";
   const activeChannelId = channelId || channels.find((c) => c.projectId === project.id && c.type !== "direct")?.id;
   const activeChannel = channels.find((c) => c.id === activeChannelId);
 
@@ -182,12 +185,26 @@ export default function MessagesView({ project, channelId }: MessagesViewProps) 
               )}
               <h3 className="font-semibold text-foreground">{activeChannel?.name}</h3>
               <div className="h-4 w-px bg-border mx-2" />
-              <span className="text-xs text-muted-foreground">
-                {activeChannel?.type === "public"
-                  ? (activeChannel.memberCountDisplay ?? activeChannel.members.length)
-                  : activeChannel.members.length}{" "}
-                members
-              </span>
+              {canManageChannel ? (
+                <button
+                  type="button"
+                  className="text-xs text-muted-foreground hover:text-foreground underline-offset-4 hover:underline text-left"
+                  onClick={() => setEditChannelOpen(true)}
+                  title="Edit channel name and members"
+                >
+                  {activeChannel?.type === "public"
+                    ? (activeChannel.memberCountDisplay ?? activeChannel.members.length)
+                    : activeChannel.members.length}{" "}
+                  members
+                </button>
+              ) : (
+                <span className="text-xs text-muted-foreground">
+                  {activeChannel?.type === "public"
+                    ? (activeChannel.memberCountDisplay ?? activeChannel.members.length)
+                    : activeChannel.members.length}{" "}
+                  members
+                </span>
+              )}
             </div>
           )}
         </div>
@@ -311,6 +328,15 @@ export default function MessagesView({ project, channelId }: MessagesViewProps) 
           />
         </div>
       </div>
+
+      {canManageChannel && !isDM && activeChannel ? (
+        <EditChannelModal
+          open={editChannelOpen}
+          onOpenChange={setEditChannelOpen}
+          projectId={project.id}
+          channel={activeChannel}
+        />
+      ) : null}
     </div>
   );
 }

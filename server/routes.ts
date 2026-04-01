@@ -988,6 +988,86 @@ export async function registerRoutes(
     return false;
   }
 
+  function userCanManageChannels(req: express.Request): boolean {
+    const u = req.user as { role?: string } | undefined;
+    return u?.role === "admin" || u?.role === "manager";
+  }
+
+  const patchChannelBodySchema = z.object({
+    name: z.string().min(1).max(200),
+  });
+
+  const patchChannelMembersBodySchema = z.object({
+    memberIds: z.array(z.number().int().positive()),
+  });
+
+  app.patch("/api/channels/:channelId", requireAuth, async (req, res) => {
+    const currentUser = req.user as any;
+    const channelId = Number(req.params.channelId);
+    if (!Number.isInteger(channelId) || channelId <= 0) {
+      return res.status(400).json({ message: "Invalid channel" });
+    }
+    const channel = await storage.getChannel(channelId);
+    if (!channel) return res.status(404).json({ message: "Channel not found" });
+    if (channel.type === "direct") {
+      return res.status(400).json({ message: "Direct message channels cannot be edited" });
+    }
+    const canAccess = await userCanAccessChannel(currentUser.id, channelId);
+    if (!canAccess) return res.status(403).json({ message: "Access denied" });
+    if (!userCanManageChannels(req)) {
+      return res.status(403).json({ message: "Only admins and managers can edit channels" });
+    }
+
+    const parsed = patchChannelBodySchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: "Invalid body" });
+    let { name } = parsed.data;
+    name = name
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, "-")
+      .replace(/[^a-z0-9-]/g, "");
+    if (!name) return res.status(400).json({ message: "Invalid channel name" });
+
+    const updated = await storage.updateChannel(channelId, { name });
+    res.json(updated);
+  });
+
+  app.patch("/api/channels/:channelId/members", requireAuth, async (req, res) => {
+    const currentUser = req.user as any;
+    const channelId = Number(req.params.channelId);
+    if (!Number.isInteger(channelId) || channelId <= 0) {
+      return res.status(400).json({ message: "Invalid channel" });
+    }
+    const channel = await storage.getChannel(channelId);
+    if (!channel) return res.status(404).json({ message: "Channel not found" });
+    if (channel.type !== "private") {
+      return res.status(400).json({ message: "Only private channels have a member list to edit" });
+    }
+    if (channel.projectId == null) {
+      return res.status(400).json({ message: "Channel has no project" });
+    }
+    const canAccess = await userCanAccessChannel(currentUser.id, channelId);
+    if (!canAccess) return res.status(403).json({ message: "Access denied" });
+    if (!userCanManageChannels(req)) {
+      return res.status(403).json({ message: "Only admins and managers can edit channel members" });
+    }
+
+    const parsed = patchChannelMembersBodySchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: "Invalid body" });
+
+    const projectId = channel.projectId;
+    const withEditor = [...new Set([...parsed.data.memberIds, currentUser.id])];
+    for (const uid of withEditor) {
+      const m = await storage.getProjectMembership(projectId, uid);
+      if (!m) {
+        return res.status(400).json({ message: `User ${uid} is not a member of this project` });
+      }
+    }
+
+    await storage.replaceChannelMembers(channelId, withEditor);
+    res.json({ ok: true });
+  });
+
   // Messages
   app.get("/api/channels/:channelId/messages", requireAuth, async (req, res) => {
     const currentUser = req.user as any;

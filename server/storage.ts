@@ -62,6 +62,8 @@ export interface IStorage {
   createChannel(channel: InsertChannel): Promise<Channel>;
   getChannelMembers(channelId: number): Promise<User[]>;
   addChannelMember(channelId: number, userId: number): Promise<void>;
+  updateChannel(id: number, updates: Partial<{ name: string }>): Promise<Channel | undefined>;
+  replaceChannelMembers(channelId: number, userIds: number[]): Promise<void>;
   getOrCreateDirectChannel(projectId: number, userId1: number, userId2: number): Promise<Channel>;
 
   getMessages(channelId: number): Promise<Message[]>;
@@ -358,6 +360,22 @@ export class DatabaseStorage implements IStorage {
 
   async addChannelMember(channelId: number, userId: number): Promise<void> {
     await db.insert(channelMembers).values({ channelId, userId }).onConflictDoNothing();
+  }
+
+  async updateChannel(id: number, updates: Partial<{ name: string }>): Promise<Channel | undefined> {
+    if (Object.keys(updates).length === 0) return this.getChannel(id);
+    const [row] = await db.update(channels).set(updates).where(eq(channels.id, id)).returning();
+    return row;
+  }
+
+  async replaceChannelMembers(channelId: number, userIds: number[]): Promise<void> {
+    const unique = [...new Set(userIds)];
+    await db.transaction(async (tx) => {
+      await tx.delete(channelMembers).where(eq(channelMembers.channelId, channelId));
+      if (unique.length > 0) {
+        await tx.insert(channelMembers).values(unique.map((userId) => ({ channelId, userId })));
+      }
+    });
   }
 
   async getMessages(channelId: number): Promise<Message[]> {
