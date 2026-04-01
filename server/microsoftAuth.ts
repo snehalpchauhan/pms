@@ -17,9 +17,15 @@ export function getPublicAppUrl(req: Request): string {
   return `${proto}://${host}`;
 }
 
-function getMs365ClientSecret(): string | undefined {
-  const s = process.env.MS365_CLIENT_SECRET || process.env.AZURE_CLIENT_SECRET;
-  return s?.trim() || undefined;
+/** Environment variable wins over database when both are set. */
+export function resolveMs365ClientSecret(settings: CompanySettings): string | undefined {
+  const env = process.env.MS365_CLIENT_SECRET || process.env.AZURE_CLIENT_SECRET;
+  if (env?.trim()) return env.trim();
+  return settings.ms365ClientSecret?.trim() || undefined;
+}
+
+export function ms365ClientSecretFromEnv(): boolean {
+  return Boolean((process.env.MS365_CLIENT_SECRET || process.env.AZURE_CLIENT_SECRET)?.trim());
 }
 
 export function ms365FullyConfigured(settings: CompanySettings): boolean {
@@ -27,7 +33,7 @@ export function ms365FullyConfigured(settings: CompanySettings): boolean {
     settings.ms365Enabled &&
       settings.ms365TenantId?.trim() &&
       settings.ms365ClientId?.trim() &&
-      getMs365ClientSecret(),
+      resolveMs365ClientSecret(settings),
   );
 }
 
@@ -101,7 +107,7 @@ export function registerMicrosoftAuth(app: Express) {
       }
       const tenantId = settings.ms365TenantId?.trim();
       const clientId = settings.ms365ClientId?.trim();
-      const clientSecret = getMs365ClientSecret();
+      const clientSecret = resolveMs365ClientSecret(settings);
       const domains = parseAllowedDomains(settings.ms365AllowedDomains);
       if (!tenantId || !clientId || !clientSecret) {
         return res.redirect(302, loginErrorRedirect(req, "not_configured"));
@@ -145,7 +151,7 @@ export function registerMicrosoftAuth(app: Express) {
       }
       const tenantId = settings.ms365TenantId?.trim();
       const clientId = settings.ms365ClientId?.trim();
-      const clientSecret = getMs365ClientSecret();
+      const clientSecret = resolveMs365ClientSecret(settings);
       const domains = parseAllowedDomains(settings.ms365AllowedDomains);
       if (!tenantId || !clientId || !clientSecret || domains.length === 0) {
         return res.redirect(302, loginErrorRedirect(req, "not_configured"));

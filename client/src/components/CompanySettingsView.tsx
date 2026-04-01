@@ -17,6 +17,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Building2, Upload, Plus, MoreHorizontal, Search, Trash2, UserCog, LogIn } from "lucide-react";
 
 type UserRole = "admin" | "manager" | "employee" | "client";
@@ -49,6 +50,8 @@ type CompanySettingsDto = {
     ms365TenantId: string;
     ms365ClientId: string;
     ms365AllowedDomains: string;
+    ms365ClientSecretConfigured: boolean;
+    ms365ClientSecretFromEnv: boolean;
 };
 
 export default function CompanySettingsView() {
@@ -89,6 +92,8 @@ export default function CompanySettingsView() {
     const [ms365TenantId, setMs365TenantId] = useState("");
     const [ms365ClientId, setMs365ClientId] = useState("");
     const [ms365AllowedDomains, setMs365AllowedDomains] = useState("");
+    const [ms365ClientSecretDraft, setMs365ClientSecretDraft] = useState("");
+    const [removeStoredMs365Secret, setRemoveStoredMs365Secret] = useState(false);
 
     const [activeSettingsTab, setActiveSettingsTab] = useState<SettingsTab>(settingsTabFromHash);
 
@@ -146,6 +151,11 @@ export default function CompanySettingsView() {
                 ms365ClientId: ms365ClientId.trim(),
                 ms365AllowedDomains: ms365AllowedDomains.trim(),
             };
+            if (removeStoredMs365Secret) {
+                body.ms365ClientSecret = null;
+            } else if (ms365ClientSecretDraft.trim()) {
+                body.ms365ClientSecret = ms365ClientSecretDraft.trim();
+            }
             if (pendingLogoDataUrl) body.logoDataUrl = pendingLogoDataUrl;
             else if (logoRemoved) body.logoDataUrl = null;
             await apiRequest("PATCH", "/api/company-settings", body);
@@ -154,6 +164,8 @@ export default function CompanySettingsView() {
             await queryClient.invalidateQueries({ queryKey: ["/api/company-settings"] });
             setPendingLogoDataUrl(null);
             setLogoRemoved(false);
+            setMs365ClientSecretDraft("");
+            setRemoveStoredMs365Secret(false);
             toast({ title: "Company settings saved" });
         },
         onError: (err: unknown) => {
@@ -417,15 +429,29 @@ export default function CompanySettingsView() {
                                     <CardTitle>Microsoft 365 sign-in</CardTitle>
                                     <CardDescription>
                                         Require employees and managers to sign in with Microsoft when enabled. Clients and
-                                        admins always use username and password. Set the client secret on the server in{" "}
-                                        <code className="text-xs bg-muted px-1 rounded">MS365_CLIENT_SECRET</code> (or{" "}
-                                        <code className="text-xs bg-muted px-1 rounded">AZURE_CLIENT_SECRET</code>).
+                                        admins always use username and password. You can store the client secret below, or
+                                        set <code className="text-xs bg-muted px-1 rounded">MS365_CLIENT_SECRET</code> on the
+                                        server (environment overrides the database).
                                     </CardDescription>
                                 </CardHeader>
                                 <CardContent className="space-y-6">
                                     {!isAdmin && (
                                         <p className="text-sm text-muted-foreground border border-border/60 bg-muted/30 rounded-md px-3 py-2">
                                             Only administrators can change Microsoft 365 settings.
+                                        </p>
+                                    )}
+                                    {companyData?.ms365ClientSecretFromEnv && (
+                                        <p className="text-sm rounded-md border border-amber-500/30 bg-amber-500/10 text-amber-900 dark:text-amber-100 px-3 py-2">
+                                            <strong>Environment secret active:</strong>{" "}
+                                            <code className="text-xs">MS365_CLIENT_SECRET</code> or{" "}
+                                            <code className="text-xs">AZURE_CLIENT_SECRET</code> is set on the server and takes
+                                            precedence over any secret saved here.
+                                        </p>
+                                    )}
+                                    {companyData?.ms365ClientSecretConfigured && !companyData?.ms365ClientSecretFromEnv && (
+                                        <p className="text-sm text-muted-foreground border border-border/60 bg-muted/30 rounded-md px-3 py-2">
+                                            A client secret is saved in the database. Enter a new value below to replace it, or
+                                            check &quot;Remove stored secret&quot; and save.
                                         </p>
                                     )}
                                     <div className="flex items-center justify-between gap-4 rounded-lg border border-border/60 px-4 py-3">
@@ -464,6 +490,47 @@ export default function CompanySettingsView() {
                                             disabled={!isAdmin || companyLoading}
                                             className="font-mono text-sm"
                                         />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label>Client secret</Label>
+                                        <Input
+                                            type="password"
+                                            autoComplete="new-password"
+                                            value={ms365ClientSecretDraft}
+                                            onChange={(e) => {
+                                                setMs365ClientSecretDraft(e.target.value);
+                                                if (e.target.value) setRemoveStoredMs365Secret(false);
+                                            }}
+                                            placeholder={
+                                                companyData?.ms365ClientSecretConfigured
+                                                    ? "Enter new secret to replace stored value"
+                                                    : "Paste client secret from Entra (Certificates & secrets)"
+                                            }
+                                            disabled={!isAdmin || companyLoading || removeStoredMs365Secret}
+                                            className="font-mono text-sm"
+                                        />
+                                        <div className="flex items-center gap-2 pt-1">
+                                            <Checkbox
+                                                id="remove-ms365-secret"
+                                                checked={removeStoredMs365Secret}
+                                                onCheckedChange={(c) => {
+                                                    const on = c === true;
+                                                    setRemoveStoredMs365Secret(on);
+                                                    if (on) setMs365ClientSecretDraft("");
+                                                }}
+                                                disabled={!isAdmin || companyLoading || !companyData?.ms365ClientSecretConfigured}
+                                            />
+                                            <label
+                                                htmlFor="remove-ms365-secret"
+                                                className="text-sm text-muted-foreground cursor-pointer leading-none peer-disabled:cursor-not-allowed"
+                                            >
+                                                Remove stored secret from database
+                                            </label>
+                                        </div>
+                                        <p className="text-xs text-muted-foreground">
+                                            Stored in the database like other settings—restrict admin access and backups. Leave
+                                            blank when saving to keep the current stored secret unchanged.
+                                        </p>
                                     </div>
                                     <div className="space-y-2">
                                         <Label>Allowed email domains</Label>

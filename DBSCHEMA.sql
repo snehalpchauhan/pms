@@ -25,6 +25,7 @@ CREATE TABLE "company_settings" (
 	"ms365_enabled" boolean DEFAULT false NOT NULL,
 	"ms365_tenant_id" text,
 	"ms365_client_id" text,
+	"ms365_client_secret" text,
 	"ms365_allowed_domains" text
 );
 CREATE TABLE "channels" (

@@ -12,6 +12,8 @@ export const companySettings = pgTable("company_settings", {
   ms365Enabled: boolean("ms365_enabled").notNull().default(false),
   ms365TenantId: text("ms365_tenant_id"),
   ms365ClientId: text("ms365_client_id"),
+  /** Optional; env MS365_CLIENT_SECRET overrides when set. */
+  ms365ClientSecret: text("ms365_client_secret"),
   ms365AllowedDomains: text("ms365_allowed_domains"),
 });
 

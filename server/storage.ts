@@ -77,6 +77,7 @@ export interface IStorage {
       ms365Enabled: boolean;
       ms365TenantId: string | null;
       ms365ClientId: string | null;
+      ms365ClientSecret: string | null;
       ms365AllowedDomains: string | null;
     }>,
   ): Promise<CompanySettings>;
@@ -415,6 +416,7 @@ export class DatabaseStorage implements IStorage {
       ms365Enabled: boolean;
       ms365TenantId: string | null;
       ms365ClientId: string | null;
+      ms365ClientSecret: string | null;
       ms365AllowedDomains: string | null;
     }>,
   ): Promise<CompanySettings> {

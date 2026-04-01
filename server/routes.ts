@@ -5,7 +5,7 @@ import path from "path";
 import { z } from "zod";
 import { storage } from "./storage";
 import { setupAuth, requireAuth } from "./auth";
-import { registerMicrosoftAuth, clearMicrosoftOidcCache } from "./microsoftAuth";
+import { registerMicrosoftAuth, clearMicrosoftOidcCache, ms365ClientSecretFromEnv } from "./microsoftAuth";
 import { seedDatabase } from "./seed";
 
 const MAX_COMPANY_LOGO_BYTES = 2 * 1024 * 1024;
@@ -67,6 +67,8 @@ export async function registerRoutes(
         "Allowed domains: comma-separated hostnames (e.g. vnnovate.com)",
       )
       .optional(),
+    /** Omit to leave unchanged; empty string ignored; null clears stored secret */
+    ms365ClientSecret: z.union([z.string().max(4096), z.null()]).optional(),
   });
 
   app.get("/api/company-settings", requireAuth, async (_req, res) => {
@@ -79,6 +81,8 @@ export async function registerRoutes(
       ms365TenantId: row.ms365TenantId ?? "",
       ms365ClientId: row.ms365ClientId ?? "",
       ms365AllowedDomains: row.ms365AllowedDomains ?? "",
+      ms365ClientSecretConfigured: Boolean(row.ms365ClientSecret?.trim()),
+      ms365ClientSecretFromEnv: ms365ClientSecretFromEnv(),
     });
   });
 
@@ -99,7 +103,8 @@ export async function registerRoutes(
       body.ms365Enabled === undefined &&
       body.ms365TenantId === undefined &&
       body.ms365ClientId === undefined &&
-      body.ms365AllowedDomains === undefined
+      body.ms365AllowedDomains === undefined &&
+      body.ms365ClientSecret === undefined
     ) {
       return res.status(400).json({ message: "No changes provided" });
     }
@@ -112,6 +117,7 @@ export async function registerRoutes(
       ms365Enabled?: boolean;
       ms365TenantId?: string | null;
       ms365ClientId?: string | null;
+      ms365ClientSecret?: string | null;
       ms365AllowedDomains?: string | null;
     } = {};
 
@@ -129,6 +135,13 @@ export async function registerRoutes(
     if (body.ms365AllowedDomains !== undefined) {
       updates.ms365AllowedDomains =
         body.ms365AllowedDomains.trim() === "" ? null : body.ms365AllowedDomains.trim();
+    }
+    if (body.ms365ClientSecret !== undefined) {
+      if (body.ms365ClientSecret === null) {
+        updates.ms365ClientSecret = null;
+      } else if (body.ms365ClientSecret.trim() !== "") {
+        updates.ms365ClientSecret = body.ms365ClientSecret.trim();
+      }
     }
     if (body.logoDataUrl !== undefined) {
       if (body.logoDataUrl === null) {
@@ -150,7 +163,8 @@ export async function registerRoutes(
     if (
       body.ms365TenantId !== undefined ||
       body.ms365ClientId !== undefined ||
-      body.ms365Enabled !== undefined
+      body.ms365Enabled !== undefined ||
+      body.ms365ClientSecret !== undefined
     ) {
       clearMicrosoftOidcCache();
     }
@@ -162,6 +176,8 @@ export async function registerRoutes(
       ms365TenantId: updated.ms365TenantId ?? "",
       ms365ClientId: updated.ms365ClientId ?? "",
       ms365AllowedDomains: updated.ms365AllowedDomains ?? "",
+      ms365ClientSecretConfigured: Boolean(updated.ms365ClientSecret?.trim()),
+      ms365ClientSecretFromEnv: ms365ClientSecretFromEnv(),
     });
   });
 
