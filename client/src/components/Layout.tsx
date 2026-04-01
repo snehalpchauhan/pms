@@ -20,7 +20,8 @@ interface SidebarProps {
     currentView: "tasks" | "messages" | "team" | "settings" | "profile" | "timecards";
     currentChannelId?: string; 
     onViewChange: (view: "tasks" | "messages" | "team" | "settings" | "profile" | "timecards", channelId?: string) => void;
-    currentProject: Project;
+    /** null when there are no projects or none selected yet */
+    currentProject: Project | null;
     onProjectChange: (projectId: string) => void;
     onAddProject: () => void;
     onAddChannel: () => void;
@@ -32,7 +33,9 @@ export function Sidebar({ currentView, currentChannelId, onViewChange, currentPr
   const { users, projects, channels } = useAppData();
   const { logout } = useAuth();
   const [projectSearchOpen, setProjectSearchOpen] = useState(false);
-  const projectChannels = channels.filter(c => c.projectId === currentProject.id);
+  const projectChannels = currentProject
+    ? channels.filter((c) => c.projectId === currentProject.id)
+    : [];
   const projectMembers = Object.values(users);
 
   const isClient = currentUserRole === "client";
@@ -81,13 +84,13 @@ export function Sidebar({ currentView, currentChannelId, onViewChange, currentPr
                                     }}
                                     className={cn(
                                         "w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-200 relative group",
-                                        !isGlobalView && currentProject.id === project.id 
+                                        !isGlobalView && currentProject?.id === project.id
                                             ? "bg-primary text-primary-foreground shadow-md ring-2 ring-primary ring-offset-2 ring-offset-background" 
                                             : "bg-muted hover:bg-muted-foreground/20 text-muted-foreground hover:text-foreground"
                                     )}
                                 >
                                     <span className="font-bold text-sm">{project.name.substring(0, 2).toUpperCase()}</span>
-                                    {!isGlobalView && currentProject.id === project.id && (
+                                    {!isGlobalView && currentProject?.id === project.id && (
                                         <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-[18px] w-1 h-8 bg-primary rounded-r-full" />
                                     )}
                                 </button>
@@ -237,6 +240,23 @@ export function Sidebar({ currentView, currentChannelId, onViewChange, currentPr
                                 Notifications
                             </Button>
                         </div>
+                    </ScrollArea>
+                </div>
+             ) : !currentProject ? (
+                <div className="flex-1 flex flex-col min-h-0">
+                    <div className="h-16 flex items-center px-5 border-b border-border/40 shrink-0">
+                        <h2 className="font-display font-bold text-lg">Workspace</h2>
+                    </div>
+                    <ScrollArea className="flex-1 px-4 py-4">
+                        <p className="text-sm text-muted-foreground mb-4">
+                            Set up company settings and users first, or create a project when you are ready to track work.
+                        </p>
+                        {showNewProject && (
+                            <Button className="w-full justify-start gap-2" variant="secondary" onClick={onAddProject}>
+                                <Plus className="w-4 h-4" />
+                                New project
+                            </Button>
+                        )}
                     </ScrollArea>
                 </div>
              ) : (

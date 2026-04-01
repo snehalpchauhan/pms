@@ -12,14 +12,14 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { useState, useEffect, createContext, useContext } from "react";
+import { useState, useEffect, useRef, createContext, useContext } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { AppDataProvider, useAppData, convertTask } from "@/hooks/useAppData";
 import { getQueryFn } from "@/lib/queryClient";
 import LoginPage from "@/pages/LoginPage";
 import type { Task } from "@/lib/mockData";
-import { Loader2 } from "lucide-react";
+import { FolderKanban, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export interface ClientPermissions {
@@ -53,8 +53,35 @@ function LoadingScreen() {
   );
 }
 
+function NoProjectWorkspaceMain({
+  canCreateProject,
+  onCreateProject,
+}: {
+  canCreateProject: boolean;
+  onCreateProject: () => void;
+}) {
+  return (
+    <div className="flex flex-1 flex-col items-center justify-center p-8 text-center gap-4">
+      <FolderKanban className="h-14 w-14 text-muted-foreground/80" />
+      <div className="space-y-2 max-w-md">
+        <h2 className="text-xl font-semibold tracking-tight">No project yet</h2>
+        <p className="text-sm text-muted-foreground">
+          {canCreateProject
+            ? "Use Company Settings to manage users, or create a project when you are ready."
+            : "You are not assigned to a project yet. Ask an administrator to add you."}
+        </p>
+      </div>
+      {canCreateProject && (
+        <Button type="button" onClick={onCreateProject}>
+          Create project
+        </Button>
+      )}
+    </div>
+  );
+}
+
 function AuthenticatedApp() {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const { projects, channels, isLoading: appDataLoading } = useAppData();
 
   const [currentView, setCurrentView] = useState<"tasks" | "messages" | "team" | "settings" | "profile" | "timecards">("tasks");
@@ -66,13 +93,24 @@ function AuthenticatedApp() {
   const [isNewProjectOpen, setIsNewProjectOpen] = useState(false);
   const [isNewChannelOpen, setIsNewChannelOpen] = useState(false);
 
+  const workspaceBootstrappedRef = useRef(false);
+
   useEffect(() => {
     if (projects.length > 0 && !currentProjectId) {
       setCurrentProjectId(projects[0].id);
     }
   }, [projects, currentProjectId]);
 
-  const currentProject = projects.find(p => p.id === currentProjectId) || projects[0];
+  useEffect(() => {
+    if (appDataLoading || workspaceBootstrappedRef.current) return;
+    workspaceBootstrappedRef.current = true;
+    if (projects.length === 0 && user?.role === "admin") {
+      setCurrentView("settings");
+    }
+  }, [appDataLoading, projects.length, user?.role]);
+
+  const currentProject =
+    projects.find((p) => p.id === currentProjectId) ?? (projects.length > 0 ? projects[0] : null);
   const numericProjectId = currentProject ? Number(currentProject.id) : null;
 
   // Fetch client permissions for the current project
@@ -162,6 +200,7 @@ function AuthenticatedApp() {
   };
 
   const handleChannelCreate = async (newChannel: any) => {
+    if (!currentProjectId) return;
     try {
       await apiRequest("POST", "/api/channels", {
         name: newChannel.name,
@@ -185,47 +224,8 @@ function AuthenticatedApp() {
     return <LoadingScreen />;
   }
 
-  if (projects.length === 0) {
-    const canCreateProject = user?.role === "admin" || user?.role === "manager";
-    return (
-      <>
-        <div className="flex h-screen items-center justify-center bg-background p-6">
-          <div className="max-w-md text-center space-y-6">
-            <div className="space-y-2">
-              <h1 className="text-2xl font-semibold tracking-tight">No projects yet</h1>
-              <p className="text-muted-foreground text-sm">
-                {canCreateProject
-                  ? "Create a project to start using the workspace."
-                  : "You are not a member of any project yet. Ask an administrator to invite you."}
-              </p>
-            </div>
-            <div className="flex flex-col sm:flex-row gap-3 justify-center">
-              {canCreateProject && (
-                <Button type="button" onClick={() => setIsNewProjectOpen(true)}>
-                  Create your first project
-                </Button>
-              )}
-              <Button type="button" variant="outline" onClick={() => logout()}>
-                Sign out
-              </Button>
-            </div>
-          </div>
-        </div>
-        <NewProjectModal
-          open={isNewProjectOpen}
-          onOpenChange={setIsNewProjectOpen}
-          onSave={handleProjectCreate}
-        />
-        <Toaster />
-      </>
-    );
-  }
-
-  if (!currentProject) {
-    return <LoadingScreen />;
-  }
-
   const currentUserRole = user?.role || "employee";
+  const canCreateProject = currentUserRole === "admin" || currentUserRole === "manager";
 
   return (
     <ClientPermissionsContext.Provider value={{ permissions: effectivePermissions, isLoadingPermissions }}>
@@ -251,7 +251,7 @@ function AuthenticatedApp() {
 
             {currentView !== "settings" && currentView !== "profile" && currentView !== "timecards" && (
               <Header
-                title={currentProject.name}
+                title={currentProject?.name ?? "Workspace"}
                 view={currentView}
                 currentUserRole={currentUserRole}
                 onRoleChange={() => {}}
@@ -261,19 +261,41 @@ function AuthenticatedApp() {
             <main className="flex-1 overflow-hidden relative z-[2]">
               {currentView === "settings" && <CompanySettingsView />}
               {currentView === "profile" && <UserProfileView currentUserRole={currentUserRole} />}
-              {currentView === "messages" && <MessagesView project={currentProject} channelId={currentChannelId} />}
-              {currentView === "team" && <TeamView project={currentProject} currentUserRole={currentUserRole} />}
-              {currentView === "tasks" && (
-                <ProjectTasksView
-                  project={currentProject}
-                  tasks={tasks}
-                  clientPermissions={effectivePermissions}
-                />
-              )}
+              {currentView === "messages" &&
+                (currentProject ? (
+                  <MessagesView project={currentProject} channelId={currentChannelId} />
+                ) : (
+                  <NoProjectWorkspaceMain
+                    canCreateProject={canCreateProject}
+                    onCreateProject={() => setIsNewProjectOpen(true)}
+                  />
+                ))}
+              {currentView === "team" &&
+                (currentProject ? (
+                  <TeamView project={currentProject} currentUserRole={currentUserRole} />
+                ) : (
+                  <NoProjectWorkspaceMain
+                    canCreateProject={canCreateProject}
+                    onCreateProject={() => setIsNewProjectOpen(true)}
+                  />
+                ))}
+              {currentView === "tasks" &&
+                (currentProject ? (
+                  <ProjectTasksView
+                    project={currentProject}
+                    tasks={tasks}
+                    clientPermissions={effectivePermissions}
+                  />
+                ) : (
+                  <NoProjectWorkspaceMain
+                    canCreateProject={canCreateProject}
+                    onCreateProject={() => setIsNewProjectOpen(true)}
+                  />
+                ))}
               {currentView === "timecards" && (
                 <TimecardsView
                   currentUserRole={currentUserRole}
-                  currentProject={currentProject}
+                  currentProject={currentProject ?? undefined}
                   clientPermissions={effectivePermissions}
                 />
               )}
@@ -281,16 +303,18 @@ function AuthenticatedApp() {
           </div>
         </div>
 
-        <NewTaskModal
-          open={isNewTaskOpen}
-          onOpenChange={(open) => {
-            setIsNewTaskOpen(open);
-            if (!open) setNewTaskDefaultStatus("");
-          }}
-          project={currentProject}
-          onSave={handleTaskCreate}
-          defaultStatus={newTaskDefaultStatus}
-        />
+        {currentProject && (
+          <NewTaskModal
+            open={isNewTaskOpen}
+            onOpenChange={(open) => {
+              setIsNewTaskOpen(open);
+              if (!open) setNewTaskDefaultStatus("");
+            }}
+            project={currentProject}
+            onSave={handleTaskCreate}
+            defaultStatus={newTaskDefaultStatus}
+          />
+        )}
 
         <NewProjectModal
           open={isNewProjectOpen}
@@ -298,12 +322,14 @@ function AuthenticatedApp() {
           onSave={handleProjectCreate}
         />
 
-        <NewChannelModal
-          open={isNewChannelOpen}
-          onOpenChange={setIsNewChannelOpen}
-          projectId={currentProjectId}
-          onSave={handleChannelCreate}
-        />
+        {currentProjectId ? (
+          <NewChannelModal
+            open={isNewChannelOpen}
+            onOpenChange={setIsNewChannelOpen}
+            projectId={currentProjectId}
+            onSave={handleChannelCreate}
+          />
+        ) : null}
 
         <Toaster />
       </>
