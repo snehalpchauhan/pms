@@ -846,6 +846,7 @@ export async function registerRoutes(
   const taskAttachmentUploadSchema = z.object({
     fileDataUrl: z.string().min(1),
     fileName: z.string().max(260).optional(),
+    commentId: z.coerce.number().int().positive().optional(),
   });
 
   // Attachments
@@ -866,13 +867,21 @@ export async function registerRoutes(
     if (req.body?.fileDataUrl != null) {
       const parsed = taskAttachmentUploadSchema.safeParse(req.body);
       if (!parsed.success) return res.status(400).json({ message: "Invalid upload" });
+      let resolvedCommentId: number | null = null;
+      if (parsed.data.commentId != null) {
+        const c = await storage.getComment(parsed.data.commentId);
+        if (!c || c.taskId !== taskId) {
+          return res.status(400).json({ message: "Invalid comment for this task" });
+        }
+        resolvedCommentId = c.id;
+      }
       try {
         const { url, sizeLabel, isImage } = persistTaskAttachmentFromDataUrl(taskId, parsed.data.fileDataUrl, uploadsDir);
         const rawName = parsed.data.fileName?.trim() || path.basename(url);
         const safeName = rawName.replace(/[/\\?%*:|"<>]/g, "").slice(0, 240) || "attachment";
         const attachment = await storage.createAttachment({
           taskId,
-          commentId: null,
+          commentId: resolvedCommentId,
           name: safeName,
           type: isImage ? "image" : "file",
           url,

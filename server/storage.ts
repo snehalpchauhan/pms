@@ -55,6 +55,7 @@ export interface IStorage {
   deleteAttachment(id: number): Promise<void>;
 
   getComments(taskId: number): Promise<Comment[]>;
+  getComment(id: number): Promise<Comment | undefined>;
   createComment(comment: InsertComment): Promise<Comment>;
 
   getChannels(projectId?: number): Promise<Channel[]>;
@@ -309,6 +310,11 @@ export class DatabaseStorage implements IStorage {
       .from(comments)
       .where(eq(comments.taskId, taskId))
       .orderBy(desc(comments.createdAt));
+  }
+
+  async getComment(id: number): Promise<Comment | undefined> {
+    const [row] = await db.select().from(comments).where(eq(comments.id, id));
+    return row;
   }
 
   async createComment(comment: InsertComment): Promise<Comment> {

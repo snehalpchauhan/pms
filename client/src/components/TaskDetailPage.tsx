@@ -20,7 +20,7 @@ import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { Calendar, Paperclip, Tag, User as UserIcon, CheckCircle2, MoreHorizontal, MessageSquare, Plus, X, Reply, Clock, History, AlertCircle, FileText, Activity, Repeat, CalendarCheck, ArrowRight, CheckSquare, Trash2, Download, Lock, RotateCcw } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format } from "date-fns";
@@ -32,55 +32,231 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import type { ClientPermissions } from "@/App";
 
-function CommentItem({ comment, users, currentUserId }: { comment: any; users: any; currentUserId: string }) {
+const TASK_ATTACHMENT_MIMES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/jpg",
+  "image/webp",
+  "application/pdf",
+]);
+const TASK_ATTACHMENT_EXTS = new Set(["png", "jpg", "jpeg", "webp", "pdf"]);
+
+function isAllowedTaskAttachmentFile(file: File): boolean {
+  if (file.type && TASK_ATTACHMENT_MIMES.has(file.type)) return true;
+  const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+  return TASK_ATTACHMENT_EXTS.has(ext);
+}
+
+async function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") resolve(reader.result);
+      else reject(new Error("read"));
+    };
+    reader.onerror = () => reject(new Error("read"));
+    reader.readAsDataURL(file);
+  });
+}
+
+type CommentPayload = { fileName: string; dataUrl: string };
+
+function CommentItem({
+  comment,
+  allComments,
+  users,
+  currentUserId,
+  onPostReply,
+  depth = 0,
+}: {
+  comment: any;
+  allComments: any[];
+  users: any;
+  currentUserId: string;
+  onPostReply: (parentId: string, text: string, files: CommentPayload[]) => Promise<void>;
+  depth?: number;
+}) {
   const author = users[comment.authorId];
   const [isReplying, setIsReplying] = useState(false);
   const [replyInput, setReplyInput] = useState("");
-  
-  const formattedDate = comment.createdAt ? (() => {
+  const [replyFiles, setReplyFiles] = useState<File[]>([]);
+  const [replySending, setReplySending] = useState(false);
+  const replyFileInputRef = useRef<HTMLInputElement>(null);
+  const { toast: replyToast } = useToast();
+
+  const replies = useMemo(
+    () => allComments.filter((r) => String(r.parentId) === String(comment.id)),
+    [allComments, comment.id],
+  );
+
+  const formattedDate = comment.createdAt
+    ? (() => {
+        try {
+          const d = new Date(comment.createdAt);
+          if (!isNaN(d.getTime())) return format(d, "MMM d, h:mm a");
+          return comment.createdAt;
+        } catch {
+          return comment.createdAt;
+        }
+      })()
+    : "Just now";
+
+  const submitReply = async () => {
+    const text = replyInput.trim();
+    if (!text && replyFiles.length === 0) return;
+    setReplySending(true);
     try {
-      const d = new Date(comment.createdAt);
-      if (!isNaN(d.getTime())) return format(d, "MMM d, h:mm a");
-      return comment.createdAt;
-    } catch { return comment.createdAt; }
-  })() : "Just now";
+      const payloads: CommentPayload[] = [];
+      for (const f of replyFiles) {
+        if (f.size > 8 * 1024 * 1024) {
+          replyToast({ title: "File too large", description: `${f.name} must be 8MB or less.`, variant: "destructive" });
+          continue;
+        }
+        if (!isAllowedTaskAttachmentFile(f)) {
+          replyToast({ title: "Unsupported file", description: f.name, variant: "destructive" });
+          continue;
+        }
+        payloads.push({ fileName: f.name, dataUrl: await readFileAsDataUrl(f) });
+      }
+      if (!text && payloads.length === 0) {
+        if (replyFiles.length > 0) {
+          replyToast({ title: "No valid attachments", variant: "destructive" });
+        }
+        return;
+      }
+      await onPostReply(String(comment.id), text, payloads);
+      setReplyInput("");
+      setReplyFiles([]);
+      setIsReplying(false);
+    } catch {
+      replyToast({ title: "Could not send reply", variant: "destructive" });
+    } finally {
+      setReplySending(false);
+    }
+  };
 
   return (
-    <div className="flex gap-3 group">
-      <Avatar className="h-8 w-8 mt-0.5">
+    <div className={cn("flex gap-3 group", depth > 0 && "mt-3")}>
+      <Avatar className={cn("mt-0.5 shrink-0", depth > 0 ? "h-6 w-6" : "h-8 w-8")}>
         <AvatarImage src={author?.avatar} />
         <AvatarFallback className="text-[10px]">{author?.name?.[0] || "U"}</AvatarFallback>
       </Avatar>
-      <div className="flex-1 space-y-1">
+      <div className="flex-1 min-w-0 space-y-1">
         <div className="bg-muted/30 px-3 py-2 rounded-2xl rounded-tl-sm inline-block max-w-[90%] border border-border/30">
           <div className="font-semibold text-xs text-foreground mb-0.5">{author?.name || "Unknown"}</div>
-          <div className="text-sm text-foreground/90 leading-snug">{comment.content}</div>
+          <div className="text-sm text-foreground/90 leading-snug whitespace-pre-wrap">{comment.content}</div>
         </div>
-        <div className="flex items-center gap-3 pl-1">
+        <div className="flex items-center gap-3 pl-1 flex-wrap">
           <span className="text-[10px] text-muted-foreground font-medium hover:underline cursor-pointer">Like</span>
-          <span className="text-[10px] text-muted-foreground font-medium hover:underline cursor-pointer" onClick={() => setIsReplying(!isReplying)}>Reply</span>
+          <span
+            className="text-[10px] text-muted-foreground font-medium hover:underline cursor-pointer"
+            onClick={() => setIsReplying(!isReplying)}
+          >
+            Reply
+          </span>
           <span className="text-[10px] text-muted-foreground">{formattedDate}</span>
         </div>
         {comment.attachments && comment.attachments.length > 0 && (
           <div className="flex gap-2 mt-1 flex-wrap pl-1">
             {comment.attachments.map((att: any) => (
-              <div key={att.id} className="flex items-center gap-2 bg-background border border-border rounded-md px-2 py-1 text-xs text-foreground shadow-sm cursor-pointer hover:bg-muted/50">
-                <Paperclip className="w-3 h-3 text-muted-foreground" />
+              <a
+                key={att.id}
+                href={att.url || "#"}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 bg-background border border-border rounded-md px-2 py-1 text-xs text-foreground shadow-sm hover:bg-muted/50"
+              >
+                <Paperclip className="w-3 h-3 text-muted-foreground shrink-0" />
                 <span className="font-medium truncate max-w-[150px]">{att.name}</span>
-              </div>
+              </a>
             ))}
           </div>
         )}
         {isReplying && (
           <div className="flex gap-2 mt-2 pl-1 animate-in fade-in slide-in-from-top-1 duration-200">
-            <Avatar className="h-6 w-6">
+            <Avatar className="h-6 w-6 shrink-0">
               <AvatarImage src={users[currentUserId]?.avatar} />
               <AvatarFallback>ME</AvatarFallback>
             </Avatar>
-            <div className="flex-1 flex gap-2">
-              <Input value={replyInput} onChange={(e) => setReplyInput(e.target.value)} placeholder="Write a reply..." className="h-8 text-xs bg-muted/20" autoFocus />
-              <Button size="sm" className="h-8 px-3 text-xs">Reply</Button>
+            <div className="flex-1 space-y-2 min-w-0">
+              <input
+                ref={replyFileInputRef}
+                type="file"
+                multiple
+                accept="image/png,image/jpeg,image/jpg,image/webp,application/pdf,.png,.jpg,.jpeg,.webp,.pdf"
+                className="sr-only"
+                onChange={(e) => {
+                  const list = e.target.files;
+                  e.target.value = "";
+                  if (list?.length) setReplyFiles((prev) => [...prev, ...Array.from(list)]);
+                }}
+              />
+              <div className="relative">
+                <Input
+                  value={replyInput}
+                  onChange={(e) => setReplyInput(e.target.value)}
+                  placeholder="Write a reply..."
+                  className="h-9 text-xs bg-muted/20 pr-10"
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                      e.preventDefault();
+                      void submitReply();
+                    }
+                  }}
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="absolute right-0.5 top-1/2 -translate-y-1/2 h-7 w-7 text-muted-foreground"
+                  onClick={() => replyFileInputRef.current?.click()}
+                >
+                  <Paperclip className="w-3.5 h-3.5" />
+                </Button>
+              </div>
+              {replyFiles.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {replyFiles.map((f, i) => (
+                    <Badge key={`${f.name}-${i}`} variant="secondary" className="text-[10px] font-normal gap-1 pr-1">
+                      <span className="truncate max-w-[120px]">{f.name}</span>
+                      <button
+                        type="button"
+                        className="rounded-full p-0.5 hover:bg-muted-foreground/20"
+                        onClick={() => setReplyFiles((prev) => prev.filter((_, j) => j !== i))}
+                        aria-label="Remove file"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </Badge>
+                  ))}
+                </div>
+              )}
+              <Button
+                type="button"
+                size="sm"
+                className="h-8 px-3 text-xs"
+                disabled={replySending}
+                onClick={() => void submitReply()}
+              >
+                {replySending ? "Sending…" : "Reply"}
+              </Button>
             </div>
+          </div>
+        )}
+        {replies.length > 0 && (
+          <div className={cn("mt-2 space-y-1 border-l border-border/40 pl-3 ml-1")}>
+            {replies.map((r) => (
+              <CommentItem
+                key={r.id}
+                comment={r}
+                allComments={allComments}
+                users={users}
+                currentUserId={currentUserId}
+                onPostReply={onPostReply}
+                depth={depth + 1}
+              />
+            ))}
           </div>
         )}
       </div>
@@ -100,6 +276,8 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [commentInput, setCommentInput] = useState("");
+  const [composerFiles, setComposerFiles] = useState<File[]>([]);
+  const composerFileInputRef = useRef<HTMLInputElement>(null);
   const [comments, setComments] = useState(task.comments || []);
   const [status, setStatus] = useState(task.status);
   const [checklist, setChecklist] = useState<ChecklistItem[]>(task.checklist || []);
@@ -192,6 +370,49 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
     }
   };
 
+  const postCommentWithFiles = async (text: string, parentId: string | null, files: CommentPayload[]) => {
+    if (!Number.isInteger(numericTaskId) || numericTaskId <= 0) {
+      toast({ title: "Cannot comment", description: "Invalid task.", variant: "destructive" });
+      throw new Error("invalid task");
+    }
+    const trimmed = text.trim();
+    const content = trimmed || (files.length ? "📎 Attachment" : "");
+    if (!content) return;
+    const body: Record<string, unknown> = { content, type: "comment" };
+    if (parentId) body.parentId = Number(parentId);
+    const res = await apiRequest("POST", `/api/tasks/${numericTaskId}/comments`, body);
+    const created = await res.json();
+    const extraAttachments: Attachment[] = [];
+    for (const f of files) {
+      const ar = await apiRequest("POST", `/api/tasks/${numericTaskId}/attachments`, {
+        fileDataUrl: f.dataUrl,
+        fileName: f.fileName,
+        commentId: created.id,
+      });
+      const att = await ar.json();
+      extraAttachments.push({
+        id: String(att.id),
+        name: att.name,
+        type: att.type === "image" ? "image" : "file",
+        url: att.url,
+        size: att.size,
+      });
+    }
+    setComments((prev) => [
+      {
+        id: String(created.id),
+        authorId: String(created.authorId),
+        content: created.content,
+        createdAt: created.createdAt || new Date().toISOString(),
+        type: created.type || "comment",
+        parentId: parentId ? String(parentId) : undefined,
+        attachments: extraAttachments,
+      },
+      ...prev,
+    ]);
+    invalidateTasks();
+  };
+
   const handleApprove = async () => {
     setClientActionLoading(true);
     try {
@@ -255,6 +476,11 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
   const isTodoLikeBadge = statusColIdx === 0;
   const isInProgressStatusBadge = !isDoneStatusBadge && !isReviewStatusBadge && !isTodoLikeBadge;
   const isReviewStatus = reviewColumnId ? task.status === reviewColumnId : task.status === "review";
+
+  const handleMarkComplete = () => {
+    const last = boardColumnsForStatus[boardColumnsForStatus.length - 1];
+    if (last) void handleStatusChange(String(last.id));
+  };
 
   // "full" clients are treated as employees, so only feedback/contribute get approve/revision
   const canDoClientActions = isClient && !isFullAccess && (
@@ -362,28 +588,34 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
   };
 
   const handlePostComment = async () => {
-      if (!commentInput.trim()) return;
-      try {
-        const res = await apiRequest("POST", `/api/tasks/${numericTaskId}/comments`, {
-          content: commentInput.trim(),
-          type: "comment",
-        });
-        const created = await res.json();
-        setComments((prev) => [
-          {
-            id: String(created.id),
-            authorId: String(created.authorId),
-            content: created.content,
-            createdAt: created.createdAt || new Date().toISOString(),
-            type: created.type || "comment",
-          },
-          ...prev,
-        ]);
-        setCommentInput("");
-        invalidateTasks();
-      } catch (e) {
-        console.error("Failed to post comment:", e);
+    if (!commentInput.trim() && composerFiles.length === 0) return;
+    const payloads: CommentPayload[] = [];
+    for (const f of composerFiles) {
+      if (f.size > 8 * 1024 * 1024) {
+        toast({ title: "File too large", description: `${f.name} must be 8MB or less.`, variant: "destructive" });
+        continue;
       }
+      if (!isAllowedTaskAttachmentFile(f)) {
+        toast({ title: "Unsupported file", description: `${f.name}: use PNG, JPEG, WebP, or PDF.`, variant: "destructive" });
+        continue;
+      }
+      try {
+        payloads.push({ fileName: f.name, dataUrl: await readFileAsDataUrl(f) });
+      } catch {
+        toast({ title: "Could not read file", description: f.name, variant: "destructive" });
+      }
+    }
+    if (!commentInput.trim() && payloads.length === 0 && composerFiles.length > 0) {
+      toast({ title: "No valid attachments", variant: "destructive" });
+      return;
+    }
+    try {
+      await postCommentWithFiles(commentInput, null, payloads);
+      setCommentInput("");
+      setComposerFiles([]);
+    } catch {
+      toast({ title: "Failed to post comment", variant: "destructive" });
+    }
   };
 
   const currentUserId = currentUser ? String(currentUser.id) : "";
@@ -412,6 +644,10 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
     const files = e.target.files;
     e.target.value = "";
     if (!files?.length || !canEditTaskFields) return;
+    if (!Number.isInteger(numericTaskId) || numericTaskId <= 0) {
+      toast({ title: "Cannot upload", description: "This task is not available to upload to.", variant: "destructive" });
+      return;
+    }
     setUploadingAttachment(true);
     let uploaded = 0;
     try {
@@ -420,20 +656,11 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
           toast({ title: "File too large", description: `${file.name} must be 8MB or less.`, variant: "destructive" });
           continue;
         }
-        const allowed = ["image/png", "image/jpeg", "image/jpg", "image/webp", "application/pdf"];
-        if (!allowed.includes(file.type)) {
+        if (!isAllowedTaskAttachmentFile(file)) {
           toast({ title: "Unsupported file", description: `${file.name}: use PNG, JPEG, WebP, or PDF.`, variant: "destructive" });
           continue;
         }
-        const dataUrl = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => {
-            if (typeof reader.result === "string") resolve(reader.result);
-            else reject(new Error("read"));
-          };
-          reader.onerror = () => reject(new Error("read"));
-          reader.readAsDataURL(file);
-        });
+        const dataUrl = await readFileAsDataUrl(file);
         const res = await apiRequest("POST", `/api/tasks/${numericTaskId}/attachments`, {
           fileDataUrl: dataUrl,
           fileName: file.name,
@@ -516,7 +743,13 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                         <Button variant="ghost" size="icon">
                             <MoreHorizontal className="w-5 h-5" />
                         </Button>
-                        <Button size="sm" className="bg-primary text-primary-foreground">
+                        <Button
+                            type="button"
+                            size="sm"
+                            className="bg-primary text-primary-foreground"
+                            onClick={handleMarkComplete}
+                            disabled={statusSaving}
+                        >
                             Mark Complete
                         </Button>
                     </>
@@ -1123,7 +1356,19 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                                     <AvatarImage src={users[currentUserId]?.avatar} />
                                     <AvatarFallback>{currentUser?.name?.[0] || "ME"}</AvatarFallback>
                                 </Avatar>
-                                <div className="flex-1 space-y-2">
+                                <div className="flex-1 space-y-2 min-w-0">
+                                    <input
+                                        ref={composerFileInputRef}
+                                        type="file"
+                                        multiple
+                                        accept="image/png,image/jpeg,image/jpg,image/webp,application/pdf,.png,.jpg,.jpeg,.webp,.pdf"
+                                        className="sr-only"
+                                        onChange={(e) => {
+                                            const list = e.target.files;
+                                            e.target.value = "";
+                                            if (list?.length) setComposerFiles((prev) => [...prev, ...Array.from(list)]);
+                                        }}
+                                    />
                                     <div className="relative group">
                                         <Textarea 
                                             value={commentInput}
@@ -1133,28 +1378,58 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                                             onKeyDown={(e) => {
                                                 if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
                                                     e.preventDefault();
-                                                    handlePostComment();
+                                                    void handlePostComment();
                                                 }
                                             }}
                                         />
                                         <div className="absolute bottom-2 right-2 flex gap-1 opacity-50 group-hover:opacity-100 transition-opacity">
-                                            <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-foreground rounded-full">
+                                            <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-6 w-6 text-muted-foreground hover:text-foreground rounded-full"
+                                                onClick={() => composerFileInputRef.current?.click()}
+                                            >
                                                 <Paperclip className="w-3.5 h-3.5" />
                                             </Button>
                                         </div>
                                     </div>
+                                    {composerFiles.length > 0 && (
+                                        <div className="flex flex-wrap gap-1.5">
+                                            {composerFiles.map((f, i) => (
+                                                <Badge key={`${f.name}-${i}`} variant="secondary" className="text-[10px] font-normal gap-1 pr-1">
+                                                    <span className="truncate max-w-[140px]">{f.name}</span>
+                                                    <button
+                                                        type="button"
+                                                        className="rounded-full p-0.5 hover:bg-muted-foreground/20"
+                                                        onClick={() => setComposerFiles((prev) => prev.filter((_, j) => j !== i))}
+                                                        aria-label="Remove file"
+                                                    >
+                                                        <X className="w-3 h-3" />
+                                                    </button>
+                                                </Badge>
+                                            ))}
+                                        </div>
+                                    )}
                                     <div className="flex justify-end">
-                                        <Button size="sm" className="h-8 px-4 text-xs font-medium" onClick={handlePostComment} data-testid="button-post-comment">Comment</Button>
+                                        <Button size="sm" className="h-8 px-4 text-xs font-medium" onClick={() => void handlePostComment()} data-testid="button-post-comment">Comment</Button>
                                     </div>
                                 </div>
                             </div>
 
-                            {/* Comment Stream - Compact FB Style */}
+                            {/* Comment Stream — roots only; nested replies render inside CommentItem */}
                             <div className="space-y-4">
-                                {sortedUserComments.map((comment) => (
-                                    <CommentItem key={comment.id} comment={comment} users={users} currentUserId={currentUserId} />
+                                {sortedUserComments.filter((c) => !c.parentId).map((comment) => (
+                                    <CommentItem
+                                        key={comment.id}
+                                        comment={comment}
+                                        allComments={sortedUserComments}
+                                        users={users}
+                                        currentUserId={currentUserId}
+                                        onPostReply={(parentId, text, files) => postCommentWithFiles(text, parentId, files)}
+                                    />
                                 ))}
-                                {sortedUserComments.length === 0 && (
+                                {sortedUserComments.filter((c) => !c.parentId).length === 0 && (
                                     <div className="text-center text-sm text-muted-foreground py-6">
                                         No comments yet. Be the first to comment.
                                     </div>

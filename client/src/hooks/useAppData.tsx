@@ -95,6 +95,29 @@ export function useAppData() {
 }
 
 export function convertTask(t: any): Task {
+  type AttRow = { id: string; name: string; type: "image" | "file"; url?: string; size?: string; commentId: number | null };
+  const rawAttachments: AttRow[] = (t.attachments || []).map((a: any) => ({
+    id: String(a.id),
+    name: a.name,
+    type: a.type === "image" ? "image" : "file",
+    url: a.url,
+    size: a.size,
+    commentId: a.commentId != null ? Number(a.commentId) : null,
+  }));
+
+  const taskLevelAttachments = rawAttachments
+    .filter((a) => a.commentId == null)
+    .map(({ commentId: _c, ...rest }) => rest);
+
+  const attachmentsByCommentId = new Map<number, { id: string; name: string; type: "image" | "file"; url?: string; size?: string }[]>();
+  for (const a of rawAttachments) {
+    if (a.commentId == null) continue;
+    const { commentId, ...row } = a;
+    const list = attachmentsByCommentId.get(commentId) || [];
+    list.push(row);
+    attachmentsByCommentId.set(commentId, list);
+  }
+
   return {
     id: String(t.id),
     projectId: String(t.projectId),
@@ -115,19 +138,14 @@ export function convertTask(t: any): Task {
       createdAt: c.createdAt || "Just now",
       parentId: c.parentId ? String(c.parentId) : undefined,
       type: c.type || "comment",
+      attachments: attachmentsByCommentId.get(Number(c.id)) || [],
     })),
     checklist: (t.checklist || []).map((ci: any) => ({
       id: String(ci.id),
       text: ci.text,
       completed: ci.completed,
     })),
-    attachments: (t.attachments || []).map((a: any) => ({
-      id: String(a.id),
-      name: a.name,
-      type: a.type,
-      url: a.url,
-      size: a.size,
-    })),
+    attachments: taskLevelAttachments,
     totalHours: typeof t.totalHours === "number" ? t.totalHours : 0,
   };
 }
