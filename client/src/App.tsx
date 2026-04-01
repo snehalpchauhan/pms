@@ -260,7 +260,7 @@ function AuthenticatedApp() {
 
             <main className="flex-1 overflow-hidden relative z-[2]">
               {currentView === "settings" && <CompanySettingsView />}
-              {currentView === "profile" && <UserProfileView currentUserRole={currentUserRole} />}
+              {currentView === "profile" && <UserProfileView />}
               {currentView === "messages" &&
                 (currentProject ? (
                   <MessagesView project={currentProject} channelId={currentChannelId} />

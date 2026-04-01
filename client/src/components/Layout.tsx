@@ -5,11 +5,10 @@ import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import avatar1 from "@/assets/avatar-1.png";
 import { Project } from "@/lib/mockData";
 import { useAppData } from "@/hooks/useAppData";
 import { useAuth } from "@/hooks/useAuth";
-import { cn } from "@/lib/utils";
+import { cn, getUserInitials } from "@/lib/utils";
 import { useState, useEffect } from "react";
 import { COMPANY_SETTINGS_TAB_EVENT } from "@/lib/companySettingsNav";
 import { Badge } from "@/components/ui/badge";
@@ -42,7 +41,9 @@ function settingsSidebarTabFromHash(): (typeof SETTINGS_SIDEBAR_TABS)[number] {
 
 export function Sidebar({ currentView, currentChannelId, onViewChange, currentProject, onProjectChange, onAddProject, onAddChannel, currentUserRole, clientPermissions }: SidebarProps) {
   const { users, projects, channels } = useAppData();
-  const { logout } = useAuth();
+  const { user: authUser, logout } = useAuth();
+  const sidebarInitials = getUserInitials(authUser?.name, authUser?.username);
+  const sidebarAvatar = authUser?.avatar?.trim() || undefined;
   const [projectSearchOpen, setProjectSearchOpen] = useState(false);
   const [settingsSidebarTab, setSettingsSidebarTab] = useState(settingsSidebarTabFromHash);
 
@@ -196,8 +197,8 @@ export function Sidebar({ currentView, currentChannelId, onViewChange, currentPr
                             onClick={() => onViewChange("profile")}
                         >
                             <Avatar className={cn("h-10 w-10 border-2 transition-all", isProfileView ? "ring-2 ring-primary border-background" : "border-background ring-1 ring-border/20 group-hover:ring-primary/50")}>
-                                <AvatarImage src={avatar1} />
-                                <AvatarFallback>JD</AvatarFallback>
+                                <AvatarImage src={sidebarAvatar} />
+                                <AvatarFallback>{sidebarInitials}</AvatarFallback>
                             </Avatar>
                             <div className="absolute -bottom-1 -right-1 bg-background rounded-full px-1.5 py-0.5 border border-border shadow-sm">
                                 <span className="text-[8px] font-bold uppercase text-foreground">{currentUserRole[0]}</span>
