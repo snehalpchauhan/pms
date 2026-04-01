@@ -35,6 +35,15 @@ export async function seedDatabase() {
     email: "john@example.com",
   }).returning();
 
+  const [clientUser] = await db.insert(users).values({
+    username: "client",
+    password: "client123",
+    name: "Alice (Client)",
+    role: "client",
+    status: "online",
+    email: "alice@client.com",
+  }).returning();
+
   const today = new Date();
   const tomorrow = addDays(today, 1);
   const yesterday = subDays(today, 1);
@@ -69,6 +78,7 @@ export async function seedDatabase() {
     { projectId: project1.id, userId: admin.id },
     { projectId: project1.id, userId: manager.id },
     { projectId: project1.id, userId: employee.id },
+    { projectId: project1.id, userId: clientUser.id, clientShowTimecards: true, clientTaskAccess: "feedback" },
     { projectId: project2.id, userId: admin.id },
     { projectId: project2.id, userId: manager.id },
   ]);

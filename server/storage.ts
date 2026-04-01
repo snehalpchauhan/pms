@@ -7,20 +7,28 @@ import {
   type Task, type InsertTask, type ChecklistItem, type Attachment,
   type Comment, type InsertComment, type Channel, type InsertChannel,
   type Message, type InsertMessage, type TimeEntry, type InsertTimeEntry,
+  type ProjectMember,
 } from "@shared/schema";
 
 export interface IStorage {
   getUser(id: number): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
+  updateUser(id: number, updates: Partial<InsertUser>): Promise<User | undefined>;
+  deleteUser(id: number): Promise<void>;
   getAllUsers(): Promise<User[]>;
 
   getProjects(): Promise<Project[]>;
   getProject(id: number): Promise<Project | undefined>;
   createProject(project: InsertProject): Promise<Project>;
   getProjectMembers(projectId: number): Promise<User[]>;
+  getProjectMembersWithSettings(projectId: number): Promise<(User & { clientShowTimecards: boolean; clientTaskAccess: string })[]>;
   addProjectMember(projectId: number, userId: number): Promise<void>;
   getUserProjects(userId: number): Promise<Project[]>;
+  getProjectMembership(projectId: number, userId: number): Promise<ProjectMember | undefined>;
+  getUserMemberships(userId: number): Promise<ProjectMember[]>;
+  updateProjectMemberClientSettings(projectId: number, userId: number, settings: { clientShowTimecards?: boolean; clientTaskAccess?: string }): Promise<void>;
+  projectHasClientWithTimecards(projectId: number): Promise<boolean>;
 
   getTasksByProject(projectId: number): Promise<Task[]>;
   getTask(id: number): Promise<Task | undefined>;
@@ -30,11 +38,13 @@ export interface IStorage {
   setTaskAssignees(taskId: number, userIds: number[]): Promise<void>;
 
   getChecklistItems(taskId: number): Promise<ChecklistItem[]>;
+  getChecklistItem(id: number): Promise<ChecklistItem | undefined>;
   createChecklistItem(taskId: number, text: string): Promise<ChecklistItem>;
   updateChecklistItem(id: number, completed: boolean): Promise<void>;
   deleteChecklistItem(id: number): Promise<void>;
 
   getAttachments(taskId: number): Promise<Attachment[]>;
+  getAttachment(id: number): Promise<Attachment | undefined>;
   createAttachment(attachment: { taskId: number | null; commentId: number | null; name: string; type: string; url?: string; size?: string }): Promise<Attachment>;
   deleteAttachment(id: number): Promise<void>;
 
@@ -52,7 +62,7 @@ export interface IStorage {
   createTimeEntry(entry: InsertTimeEntry): Promise<TimeEntry>;
   getTimeEntriesByTask(taskId: number): Promise<(TimeEntry & { userName: string })[]>;
   getTimeEntriesByUser(userId: number): Promise<TimeEntry[]>;
-  getAllTimeEntries(filters?: { userId?: number; projectId?: number; startDate?: string; endDate?: string }): Promise<(TimeEntry & { taskTitle: string; projectId: number; userName: string })[]>;
+  getAllTimeEntries(filters?: { userId?: number; projectId?: number; startDate?: string; endDate?: string; clientVisibleOnly?: boolean; clientProjectIds?: number[] }): Promise<(TimeEntry & { taskTitle: string; projectId: number; userName: string })[]>;
   deleteTimeEntry(id: number): Promise<void>;
   getTimeEntry(id: number): Promise<TimeEntry | undefined>;
 }
@@ -71,6 +81,17 @@ export class DatabaseStorage implements IStorage {
   async createUser(user: InsertUser): Promise<User> {
     const [created] = await db.insert(users).values(user).returning();
     return created;
+  }
+
+  async updateUser(id: number, updates: Partial<InsertUser>): Promise<User | undefined> {
+    const [updated] = await db.update(users).set(updates).where(eq(users.id, id)).returning();
+    return updated;
+  }
+
+  async deleteUser(id: number): Promise<void> {
+    await db.delete(comments).where(eq(comments.authorId, id));
+    await db.delete(messages).where(eq(messages.authorId, id));
+    await db.delete(users).where(eq(users.id, id));
   }
 
   async getAllUsers(): Promise<User[]> {
@@ -100,6 +121,23 @@ export class DatabaseStorage implements IStorage {
     return rows.map(r => r.user);
   }
 
+  async getProjectMembersWithSettings(projectId: number): Promise<(User & { clientShowTimecards: boolean; clientTaskAccess: string })[]> {
+    const rows = await db
+      .select({
+        user: users,
+        clientShowTimecards: projectMembers.clientShowTimecards,
+        clientTaskAccess: projectMembers.clientTaskAccess,
+      })
+      .from(projectMembers)
+      .innerJoin(users, eq(projectMembers.userId, users.id))
+      .where(eq(projectMembers.projectId, projectId));
+    return rows.map(r => ({
+      ...r.user,
+      clientShowTimecards: r.clientShowTimecards ?? false,
+      clientTaskAccess: r.clientTaskAccess ?? "feedback",
+    }));
+  }
+
   async addProjectMember(projectId: number, userId: number): Promise<void> {
     await db.insert(projectMembers).values({ projectId, userId }).onConflictDoNothing();
   }
@@ -111,6 +149,38 @@ export class DatabaseStorage implements IStorage {
       .innerJoin(projects, eq(projectMembers.projectId, projects.id))
       .where(eq(projectMembers.userId, userId));
     return rows.map(r => r.project);
+  }
+
+  async getProjectMembership(projectId: number, userId: number): Promise<ProjectMember | undefined> {
+    const [membership] = await db
+      .select()
+      .from(projectMembers)
+      .where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.userId, userId)));
+    return membership;
+  }
+
+  async getUserMemberships(userId: number): Promise<ProjectMember[]> {
+    return db.select().from(projectMembers).where(eq(projectMembers.userId, userId));
+  }
+
+  async updateProjectMemberClientSettings(projectId: number, userId: number, settings: { clientShowTimecards?: boolean; clientTaskAccess?: string }): Promise<void> {
+    await db
+      .update(projectMembers)
+      .set(settings)
+      .where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.userId, userId)));
+  }
+
+  async projectHasClientWithTimecards(projectId: number): Promise<boolean> {
+    const rows = await db
+      .select({ pm: projectMembers, u: users })
+      .from(projectMembers)
+      .innerJoin(users, eq(projectMembers.userId, users.id))
+      .where(and(
+        eq(projectMembers.projectId, projectId),
+        eq(users.role, "client"),
+        eq(projectMembers.clientShowTimecards, true)
+      ));
+    return rows.length > 0;
   }
 
   async getTasksByProject(projectId: number): Promise<Task[]> {
@@ -152,6 +222,11 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(checklistItems).where(eq(checklistItems.taskId, taskId));
   }
 
+  async getChecklistItem(id: number): Promise<ChecklistItem | undefined> {
+    const [item] = await db.select().from(checklistItems).where(eq(checklistItems.id, id));
+    return item;
+  }
+
   async createChecklistItem(taskId: number, text: string): Promise<ChecklistItem> {
     const [created] = await db.insert(checklistItems).values({ taskId, text }).returning();
     return created;
@@ -167,6 +242,11 @@ export class DatabaseStorage implements IStorage {
 
   async getAttachments(taskId: number): Promise<Attachment[]> {
     return db.select().from(attachments).where(eq(attachments.taskId, taskId));
+  }
+
+  async getAttachment(id: number): Promise<Attachment | undefined> {
+    const [attachment] = await db.select().from(attachments).where(eq(attachments.id, id));
+    return attachment;
   }
 
   async createAttachment(attachment: { taskId: number | null; commentId: number | null; name: string; type: string; url?: string; size?: string }): Promise<Attachment> {
@@ -235,6 +315,7 @@ export class DatabaseStorage implements IStorage {
         hours: timeEntries.hours,
         description: timeEntries.description,
         logDate: timeEntries.logDate,
+        clientVisible: timeEntries.clientVisible,
         userName: users.name,
       })
       .from(timeEntries)
@@ -248,7 +329,7 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(timeEntries).where(eq(timeEntries.userId, userId)).orderBy(desc(timeEntries.id));
   }
 
-  async getAllTimeEntries(filters?: { userId?: number; projectId?: number; startDate?: string; endDate?: string }): Promise<(TimeEntry & { taskTitle: string; projectId: number; userName: string })[]> {
+  async getAllTimeEntries(filters?: { userId?: number; projectId?: number; startDate?: string; endDate?: string; clientVisibleOnly?: boolean; clientProjectIds?: number[] }): Promise<(TimeEntry & { taskTitle: string; projectId: number; userName: string })[]> {
     const rows = await db
       .select({
         id: timeEntries.id,
@@ -257,6 +338,7 @@ export class DatabaseStorage implements IStorage {
         hours: timeEntries.hours,
         description: timeEntries.description,
         logDate: timeEntries.logDate,
+        clientVisible: timeEntries.clientVisible,
         taskTitle: tasks.title,
         projectId: tasks.projectId,
         userName: users.name,
@@ -270,6 +352,8 @@ export class DatabaseStorage implements IStorage {
       if (filters?.projectId && row.projectId !== filters.projectId) return false;
       if (filters?.startDate && row.logDate < filters.startDate) return false;
       if (filters?.endDate && row.logDate > filters.endDate) return false;
+      if (filters?.clientVisibleOnly && !row.clientVisible) return false;
+      if (filters?.clientProjectIds && !filters.clientProjectIds.includes(row.projectId)) return false;
       return true;
     });
   }

@@ -14,6 +14,7 @@ import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { NotificationsPopover } from "@/components/NotificationsPopover";
+import type { ClientPermissions } from "@/App";
 
 interface SidebarProps {
     currentView: "tasks" | "messages" | "team" | "settings" | "profile" | "timecards";
@@ -24,14 +25,23 @@ interface SidebarProps {
     onAddProject: () => void;
     onAddChannel: () => void;
     currentUserRole: string;
+    clientPermissions?: ClientPermissions;
 }
 
-export function Sidebar({ currentView, currentChannelId, onViewChange, currentProject, onProjectChange, onAddProject, onAddChannel, currentUserRole }: SidebarProps) {
+export function Sidebar({ currentView, currentChannelId, onViewChange, currentProject, onProjectChange, onAddProject, onAddChannel, currentUserRole, clientPermissions }: SidebarProps) {
   const { users, projects, channels } = useAppData();
   const { logout } = useAuth();
   const [projectSearchOpen, setProjectSearchOpen] = useState(false);
   const projectChannels = channels.filter(c => c.projectId === currentProject.id);
   const projectMembers = Object.values(users);
+
+  const isClient = currentUserRole === "client";
+  const showTimecards = !isClient || (clientPermissions?.clientShowTimecards === true);
+  const showTeam = !isClient;
+  const showSettings = !isClient && currentUserRole === "admin";
+  const showNewProject = !isClient && (currentUserRole === "manager" || currentUserRole === "admin");
+  const showNewChannel = !isClient;
+  const showNewTask = !isClient || (clientPermissions?.clientTaskAccess === "contribute" || clientPermissions?.clientTaskAccess === "full");
 
   // Determine if we're in a "Global" context (outside a project)
   const isGlobalView = currentView === "settings" || currentView === "profile" || currentView === "timecards";
@@ -88,7 +98,7 @@ export function Sidebar({ currentView, currentChannelId, onViewChange, currentPr
                         </Tooltip>
                     ))}
                     
-                    {(currentUserRole === 'manager' || currentUserRole === 'admin') && (
+                    {showNewProject && (
                         <Tooltip>
                             <TooltipTrigger asChild>
                                 <button 
@@ -108,25 +118,27 @@ export function Sidebar({ currentView, currentChannelId, onViewChange, currentPr
 
              {/* Bottom Actions: Admin/Settings & User */}
              <div className="mt-auto pb-4 flex flex-col gap-3 items-center">
-                 <Tooltip>
-                    <TooltipTrigger asChild>
-                        <button
-                            onClick={() => onViewChange("timecards")}
-                            className={cn(
-                                "w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-200",
-                                isTimecardsView 
-                                    ? "bg-blue-600 text-white shadow-md ring-2 ring-blue-600 ring-offset-2 ring-offset-background" 
-                                    : "hover:bg-muted text-muted-foreground hover:text-foreground"
-                            )}
-                            data-testid="button-nav-timecards"
-                        >
-                            <Clock className="w-5 h-5" />
-                        </button>
-                    </TooltipTrigger>
-                    <TooltipContent side="right">Timecards</TooltipContent>
-                 </Tooltip>
+                 {showTimecards && (
+                     <Tooltip>
+                        <TooltipTrigger asChild>
+                            <button
+                                onClick={() => onViewChange("timecards")}
+                                className={cn(
+                                    "w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-200",
+                                    isTimecardsView 
+                                        ? "bg-blue-600 text-white shadow-md ring-2 ring-blue-600 ring-offset-2 ring-offset-background" 
+                                        : "hover:bg-muted text-muted-foreground hover:text-foreground"
+                                )}
+                                data-testid="button-nav-timecards"
+                            >
+                                <Clock className="w-5 h-5" />
+                            </button>
+                        </TooltipTrigger>
+                        <TooltipContent side="right">Timecards</TooltipContent>
+                     </Tooltip>
+                 )}
 
-                 {currentUserRole === 'admin' && (
+                 {showSettings && (
                      <Tooltip>
                         <TooltipTrigger asChild>
                             <button
@@ -178,7 +190,7 @@ export function Sidebar({ currentView, currentChannelId, onViewChange, currentPr
                         <div className="space-y-1">
                             <Button variant="ghost" className="w-full justify-start font-medium bg-background shadow-sm text-primary">
                                 <Clock className="w-4 h-4 mr-2" />
-                                Time Log
+                                {isClient ? "Shared Hours" : "Time Log"}
                             </Button>
                         </div>
                     </ScrollArea>
@@ -238,14 +250,16 @@ export function Sidebar({ currentView, currentChannelId, onViewChange, currentPr
                         </div>
                     </div>
 
-                    <div className="p-3">
-                        <Button className="w-full justify-start gap-2 shadow-sm" onClick={() => {
-                            const event = new CustomEvent('openNewTaskModal');
-                            window.dispatchEvent(event);
-                        }}>
-                            <Plus className="w-4 h-4" /> New Task
-                        </Button>
-                    </div>
+                    {showNewTask && (
+                        <div className="p-3">
+                            <Button className="w-full justify-start gap-2 shadow-sm" onClick={() => {
+                                const event = new CustomEvent('openNewTaskModal');
+                                window.dispatchEvent(event);
+                            }}>
+                                <Plus className="w-4 h-4" /> New Task
+                            </Button>
+                        </div>
+                    )}
 
                     <ScrollArea className="flex-1 px-3">
                         <div className="space-y-6 py-2">
@@ -258,75 +272,90 @@ export function Sidebar({ currentView, currentChannelId, onViewChange, currentPr
                                     <Briefcase className="w-4 h-4 mr-2 opacity-70" />
                                     Tasks & Board
                                 </Button>
-                                <Button 
-                                    variant={currentView === "team" ? "secondary" : "ghost"} 
-                                    className={cn("w-full justify-start font-medium h-9", currentView === "team" && "bg-background shadow-sm text-primary")}
-                                    onClick={() => onViewChange("team")}
-                                >
-                                    <Users className="w-4 h-4 mr-2 opacity-70" />
-                                    Members & Access
-                                </Button>
+                                {showTeam && (
+                                    <Button 
+                                        variant={currentView === "team" ? "secondary" : "ghost"} 
+                                        className={cn("w-full justify-start font-medium h-9", currentView === "team" && "bg-background shadow-sm text-primary")}
+                                        onClick={() => onViewChange("team")}
+                                    >
+                                        <Users className="w-4 h-4 mr-2 opacity-70" />
+                                        Members & Access
+                                    </Button>
+                                )}
                             </div>
 
-                            <div>
-                                <div className="flex items-center justify-between px-2 mb-2 group">
-                                    <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Channels</h3>
-                                    <Plus 
-                                        className="w-3.5 h-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 cursor-pointer hover:text-primary transition-opacity" 
-                                        onClick={onAddChannel}
-                                    />
-                                </div>
-                                <div className="space-y-0.5">
-                                    {projectChannels.length > 0 ? projectChannels.map(channel => (
-                                        <Button 
-                                            key={channel.id}
-                                            variant={currentView === "messages" && currentChannelId === channel.id ? "secondary" : "ghost"} 
-                                            className={cn(
-                                                "w-full justify-start h-8 font-normal text-muted-foreground hover:text-foreground px-2", 
-                                                currentView === "messages" && currentChannelId === channel.id && "bg-background shadow-sm text-primary font-medium"
+                            {!isClient && (
+                                <>
+                                    <div>
+                                        <div className="flex items-center justify-between px-2 mb-2 group">
+                                            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Channels</h3>
+                                            {showNewChannel && (
+                                                <Plus 
+                                                    className="w-3.5 h-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 cursor-pointer hover:text-primary transition-opacity" 
+                                                    onClick={onAddChannel}
+                                                />
                                             )}
-                                            onClick={() => onViewChange("messages", channel.id)}
-                                        >
-                                            {channel.type === 'private' ? <Lock className="w-3.5 h-3.5 mr-2 opacity-70" /> : <Hash className="w-3.5 h-3.5 mr-2 opacity-70" />}
-                                            <span className="truncate">{channel.name}</span>
-                                        </Button>
-                                    )) : (
-                                        <p className="text-[10px] text-muted-foreground px-2 italic">No channels yet</p>
-                                    )}
-                                </div>
-                            </div>
+                                        </div>
+                                        <div className="space-y-0.5">
+                                            {projectChannels.length > 0 ? projectChannels.map(channel => (
+                                                <Button 
+                                                    key={channel.id}
+                                                    variant={currentView === "messages" && currentChannelId === channel.id ? "secondary" : "ghost"} 
+                                                    className={cn(
+                                                        "w-full justify-start h-8 font-normal text-muted-foreground hover:text-foreground px-2", 
+                                                        currentView === "messages" && currentChannelId === channel.id && "bg-background shadow-sm text-primary font-medium"
+                                                    )}
+                                                    onClick={() => onViewChange("messages", channel.id)}
+                                                >
+                                                    {channel.type === 'private' ? <Lock className="w-3.5 h-3.5 mr-2 opacity-70" /> : <Hash className="w-3.5 h-3.5 mr-2 opacity-70" />}
+                                                    <span className="truncate">{channel.name}</span>
+                                                </Button>
+                                            )) : (
+                                                <p className="text-[10px] text-muted-foreground px-2 italic">No channels yet</p>
+                                            )}
+                                        </div>
+                                    </div>
 
-                            <div>
-                                <div className="flex items-center justify-between px-2 mb-2 group">
-                                    <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Direct Messages</h3>
+                                    <div>
+                                        <div className="flex items-center justify-between px-2 mb-2 group">
+                                            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Direct Messages</h3>
+                                        </div>
+                                        <div className="space-y-0.5">
+                                            {projectMembers.map(user => (
+                                                <Button
+                                                    key={user.id}
+                                                    variant={currentView === "messages" && currentChannelId === `dm-${user.id}` ? "secondary" : "ghost"} 
+                                                    className={cn(
+                                                        "w-full justify-start h-8 font-normal text-muted-foreground hover:text-foreground px-2", 
+                                                        currentView === "messages" && currentChannelId === `dm-${user.id}` && "bg-background shadow-sm text-primary font-medium"
+                                                    )}
+                                                    onClick={() => onViewChange("messages", `dm-${user.id}`)}
+                                                >
+                                                    <div className="relative mr-2">
+                                                        <Avatar className="h-4 w-4">
+                                                            <AvatarImage src={user.avatar} />
+                                                            <AvatarFallback>{user.name[0]}</AvatarFallback>
+                                                        </Avatar>
+                                                        <span className={cn(
+                                                            "absolute -bottom-0.5 -right-0.5 w-1.5 h-1.5 rounded-full border border-background",
+                                                            user.status === 'online' ? "bg-green-500" : 
+                                                            user.status === 'busy' ? "bg-red-500" : "bg-slate-400"
+                                                        )} />
+                                                    </div>
+                                                    <span className="truncate">{user.name}</span>
+                                                </Button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </>
+                            )}
+
+                            {isClient && (
+                                <div className="px-2 py-3 bg-muted/30 rounded-lg border border-border/40">
+                                    <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider mb-1">Client Portal</p>
+                                    <p className="text-xs text-muted-foreground">{currentProject.name}</p>
                                 </div>
-                                <div className="space-y-0.5">
-                                    {projectMembers.map(user => (
-                                        <Button
-                                            key={user.id}
-                                            variant={currentView === "messages" && currentChannelId === `dm-${user.id}` ? "secondary" : "ghost"} 
-                                            className={cn(
-                                                "w-full justify-start h-8 font-normal text-muted-foreground hover:text-foreground px-2", 
-                                                currentView === "messages" && currentChannelId === `dm-${user.id}` && "bg-background shadow-sm text-primary font-medium"
-                                            )}
-                                            onClick={() => onViewChange("messages", `dm-${user.id}`)}
-                                        >
-                                            <div className="relative mr-2">
-                                                <Avatar className="h-4 w-4">
-                                                    <AvatarImage src={user.avatar} />
-                                                    <AvatarFallback>{user.name[0]}</AvatarFallback>
-                                                </Avatar>
-                                                <span className={cn(
-                                                    "absolute -bottom-0.5 -right-0.5 w-1.5 h-1.5 rounded-full border border-background",
-                                                    user.status === 'online' ? "bg-green-500" : 
-                                                    user.status === 'busy' ? "bg-red-500" : "bg-slate-400"
-                                                )} />
-                                            </div>
-                                            <span className="truncate">{user.name}</span>
-                                        </Button>
-                                    ))}
-                                </div>
-                            </div>
+                            )}
                         </div>
                     </ScrollArea>
                  </>

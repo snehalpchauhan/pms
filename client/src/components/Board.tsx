@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { 
   DndContext, 
   DragOverlay, 
@@ -17,9 +17,16 @@ import { Task, Status, Project } from "@/lib/mockData";
 import { TaskCard } from "./TaskCard";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
-import { Plus } from "lucide-react";
+import { Plus, CheckCircle2, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { isPast, isToday, isTomorrow, isThisWeek } from "date-fns";
+import type { ClientPermissions } from "@/App";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { apiRequest } from "@/lib/queryClient";
+import { useQueryClient } from "@tanstack/react-query";
+import { useToast } from "@/hooks/use-toast";
 
 const dropAnimation: DropAnimation = {
   sideEffects: defaultDropAnimationSideEffects({
@@ -31,6 +38,123 @@ const dropAnimation: DropAnimation = {
   }),
 };
 
+interface ClientTaskActionsProps {
+  task: Task;
+  isReviewColumn: boolean;
+  clientTaskAccess: string;
+  onActionDone: () => void;
+}
+
+function ClientTaskActions({ task, isReviewColumn, clientTaskAccess, onActionDone }: ClientTaskActionsProps) {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const [revisionOpen, setRevisionOpen] = useState(false);
+  const [revisionReason, setRevisionReason] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  if (!isReviewColumn) return null;
+  // "full" clients behave as employees; only feedback/contribute get the approval workflow
+  if (clientTaskAccess !== "feedback" && clientTaskAccess !== "contribute") return null;
+
+  const handleApprove = async () => {
+    setLoading(true);
+    try {
+      await apiRequest("POST", `/api/tasks/${task.id}/approve`, {});
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      toast({ title: `Task approved: "${task.title}"` });
+      onActionDone();
+    } catch {
+      toast({ title: "Failed to approve task", variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRequestRevision = async () => {
+    if (!revisionReason.trim()) {
+      toast({ title: "Please provide a reason for the revision request", variant: "destructive" });
+      return;
+    }
+    setLoading(true);
+    try {
+      await apiRequest("POST", `/api/tasks/${task.id}/request-revision`, { reason: revisionReason.trim() });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      toast({ title: `Revision requested for: "${task.title}"` });
+      setRevisionOpen(false);
+      setRevisionReason("");
+      onActionDone();
+    } catch {
+      toast({ title: "Failed to request revision", variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <>
+      <div className="flex gap-1 mt-2">
+        <Button
+          size="sm"
+          className="flex-1 h-7 text-[11px] bg-emerald-600 hover:bg-emerald-700 text-white gap-1"
+          onClick={handleApprove}
+          disabled={loading}
+          data-testid={`button-approve-task-${task.id}`}
+        >
+          <CheckCircle2 className="w-3 h-3" />
+          Approve
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          className="flex-1 h-7 text-[11px] border-orange-300 text-orange-700 hover:bg-orange-50 gap-1"
+          onClick={() => setRevisionOpen(true)}
+          disabled={loading}
+          data-testid={`button-request-revision-task-${task.id}`}
+        >
+          <RotateCcw className="w-3 h-3" />
+          Revision
+        </Button>
+      </div>
+
+      <Dialog open={revisionOpen} onOpenChange={setRevisionOpen}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>Request Revision</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <p className="text-sm text-muted-foreground">
+              Please describe what changes are needed for <span className="font-medium text-foreground">"{task.title}"</span>.
+            </p>
+            <div className="space-y-1.5">
+              <Label htmlFor="revision-reason">Reason <span className="text-destructive">*</span></Label>
+              <Textarea
+                id="revision-reason"
+                value={revisionReason}
+                onChange={e => setRevisionReason(e.target.value)}
+                placeholder="Describe the changes needed…"
+                rows={3}
+                className="resize-none"
+                data-testid="textarea-revision-reason"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRevisionOpen(false)} disabled={loading}>Cancel</Button>
+            <Button
+              onClick={handleRequestRevision}
+              disabled={loading || !revisionReason.trim()}
+              className="bg-orange-600 hover:bg-orange-700 text-white"
+              data-testid="button-submit-revision"
+            >
+              {loading ? "Sending…" : "Request Revision"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
 interface ColumnProps {
   id: Status;
   title: string;
@@ -38,24 +162,29 @@ interface ColumnProps {
   color: string;
   onTaskClick: (t: Task) => void;
   onAddTask: (status: string) => void;
+  isReviewColumn: boolean;
+  clientPermissions?: ClientPermissions;
 }
 
-function Column({ id, title, tasks, color, onTaskClick, onAddTask }: ColumnProps) {
+function Column({ id, title, tasks, color, onTaskClick, onAddTask, isReviewColumn, clientPermissions }: ColumnProps) {
   const { setNodeRef } = useDroppable({
     id: id,
   });
+  const queryClient = useQueryClient();
+
+  const isClient = clientPermissions?.role === "client";
+  const showAddTask = !isClient || (clientPermissions?.clientTaskAccess === "contribute" || clientPermissions?.clientTaskAccess === "full");
 
   const getGroup = (task: Task) => {
     if (!task.dueDate) return 'Later';
     const date = new Date(task.dueDate);
     if (isPast(date) && !isToday(date)) return 'Overdue';
     if (isToday(date)) return 'Today';
-    if (isTomorrow(date)) return 'This Week'; // Tomorrow is part of this week usually
+    if (isTomorrow(date)) return 'This Week';
     if (isThisWeek(date, { weekStartsOn: 1 })) return 'This Week';
     return 'Later';
   };
 
-  // Group tasks
   const groupedTasks: Record<string, Task[]> = {
     'Overdue': [],
     'Today': [],
@@ -81,9 +210,11 @@ function Column({ id, title, tasks, color, onTaskClick, onAddTask }: ColumnProps
                 {tasks.length}
             </span>
          </div>
-         <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-foreground -mr-1" onClick={() => onAddTask(id)}>
-             <Plus className="w-4 h-4" />
-         </Button>
+         {showAddTask && (
+             <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-foreground -mr-1" onClick={() => onAddTask(id)}>
+                 <Plus className="w-4 h-4" />
+             </Button>
+         )}
       </div>
       
       <div className="flex-1 p-3 overflow-hidden">
@@ -106,7 +237,17 @@ function Column({ id, title, tasks, color, onTaskClick, onAddTask }: ColumnProps
                             </div>
                             <div className="space-y-3">
                                 {groupTasks.map((task) => (
-                                    <TaskCard key={task.id} task={task} onClick={onTaskClick} />
+                                    <div key={task.id}>
+                                        <TaskCard task={task} onClick={onTaskClick} />
+                                        {isClient && (
+                                            <ClientTaskActions
+                                                task={task}
+                                                isReviewColumn={isReviewColumn}
+                                                clientTaskAccess={clientPermissions?.clientTaskAccess || "feedback"}
+                                                onActionDone={() => queryClient.invalidateQueries({ queryKey: ["/api/projects"] })}
+                                            />
+                                        )}
+                                    </div>
                                 ))}
                             </div>
                         </div>
@@ -129,30 +270,36 @@ interface BoardProps {
     tasks: Task[];
     onTaskClick?: (t: Task) => void;
     onAddTask?: (status: string) => void;
+    clientPermissions?: ClientPermissions;
 }
 
-export default function Board({ project, tasks, onTaskClick, onAddTask }: BoardProps) {
+export default function Board({ project, tasks, onTaskClick, onAddTask, clientPermissions }: BoardProps) {
   const [localTasks, setLocalTasks] = useState<Task[]>(tasks);
   const [activeTask, setActiveTask] = useState<Task | null>(null);
 
-  if (JSON.stringify(localTasks) !== JSON.stringify(tasks)) {
-       setLocalTasks(tasks);
-  }
+  const isClient = clientPermissions?.role === "client";
+  const isFullAccess = isClient && clientPermissions?.clientTaskAccess === "full";
+
+  useEffect(() => {
+    setLocalTasks(tasks);
+  }, [tasks]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
-        distance: 8,
+        distance: (isClient && !isFullAccess) ? 999999 : 8, // Disable for non-full clients
       },
     }),
     useSensor(KeyboardSensor)
   );
 
   const handleDragStart = (event: DragStartEvent) => {
+    if (isClient && !isFullAccess) return;
     setActiveTask(event.active.data.current?.task);
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
+    if (isClient && !isFullAccess) return;
     const { active, over } = event;
     
     if (!over) {
@@ -192,6 +339,10 @@ export default function Board({ project, tasks, onTaskClick, onAddTask }: BoardP
     setActiveTask(null);
   };
 
+  // Determine the review column (second to last active column)
+  const columns = project.columns;
+  const reviewColumnId = columns.length >= 2 ? columns[columns.length - 2].id : null;
+
   return (
     <div className="flex-1 h-full overflow-hidden flex flex-col bg-background/50">
        <div className="flex-1 overflow-x-auto overflow-y-hidden">
@@ -211,15 +362,19 @@ export default function Board({ project, tasks, onTaskClick, onAddTask }: BoardP
                         tasks={localTasks.filter(t => t.status === col.id)}
                         onTaskClick={onTaskClick || (() => {})}
                         onAddTask={onAddTask || (() => {})}
+                        isReviewColumn={col.id === reviewColumnId}
+                        clientPermissions={clientPermissions}
                     />
                 ))}
                 
-                <div className="min-w-[320px] max-w-[320px] h-[100px] border-2 border-dashed border-border/50 rounded-xl flex items-center justify-center hover:bg-muted/10 transition-colors cursor-pointer group">
-                    <div className="flex items-center gap-2 text-muted-foreground group-hover:text-primary transition-colors">
-                        <Plus className="w-5 h-5" />
-                        <span className="font-medium">Add Section</span>
+                {(!isClient || isFullAccess) && (
+                    <div className="min-w-[320px] max-w-[320px] h-[100px] border-2 border-dashed border-border/50 rounded-xl flex items-center justify-center hover:bg-muted/10 transition-colors cursor-pointer group">
+                        <div className="flex items-center gap-2 text-muted-foreground group-hover:text-primary transition-colors">
+                            <Plus className="w-5 h-5" />
+                            <span className="font-medium">Add Section</span>
+                        </div>
                     </div>
-                </div>
+                )}
             </div>
 
             <DragOverlay dropAnimation={dropAnimation}>

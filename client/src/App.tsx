@@ -12,7 +12,7 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { useState, useEffect } from "react";
+import { useState, useEffect, createContext, useContext } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { AppDataProvider, useAppData, convertTask } from "@/hooks/useAppData";
@@ -20,6 +20,26 @@ import { getQueryFn } from "@/lib/queryClient";
 import LoginPage from "@/pages/LoginPage";
 import type { Task } from "@/lib/mockData";
 import { Loader2 } from "lucide-react";
+
+export interface ClientPermissions {
+  role: string;
+  clientShowTimecards: boolean;
+  clientTaskAccess: string;
+}
+
+interface ClientPermissionsContextType {
+  permissions: ClientPermissions | null;
+  isLoadingPermissions: boolean;
+}
+
+export const ClientPermissionsContext = createContext<ClientPermissionsContextType>({
+  permissions: null,
+  isLoadingPermissions: false,
+});
+
+export function useClientPermissions() {
+  return useContext(ClientPermissionsContext);
+}
 
 function LoadingScreen() {
   return (
@@ -52,8 +72,20 @@ function AuthenticatedApp() {
   }, [projects, currentProjectId]);
 
   const currentProject = projects.find(p => p.id === currentProjectId) || projects[0];
-
   const numericProjectId = currentProject ? Number(currentProject.id) : null;
+
+  // Fetch client permissions for the current project
+  const { data: permissionsData, isLoading: isLoadingPermissions } = useQuery<ClientPermissions>({
+    queryKey: ["/api/projects", numericProjectId, "my-permissions"],
+    queryFn: async () => {
+      if (!numericProjectId) return null;
+      const res = await fetch(`/api/projects/${numericProjectId}/my-permissions`, { credentials: "include" });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: !!numericProjectId,
+  });
+
   const { data: rawTasks } = useQuery<any[]>({
     queryKey: ["/api/projects", numericProjectId, "tasks"],
     queryFn: async () => {
@@ -66,6 +98,14 @@ function AuthenticatedApp() {
   });
 
   const tasks: Task[] = (rawTasks || []).map(convertTask);
+
+  const isClient = user?.role === "client";
+  const clientPermissions: ClientPermissions | null = permissionsData || null;
+
+  // For non-clients, always allow all access
+  const effectivePermissions: ClientPermissions = isClient
+    ? (clientPermissions || { role: "client", clientShowTimecards: false, clientTaskAccess: "feedback" })
+    : { role: user?.role || "employee", clientShowTimecards: true, clientTaskAccess: "full" };
 
   useEffect(() => {
     const handleOpenNewTask = (e: Event) => {
@@ -147,71 +187,86 @@ function AuthenticatedApp() {
   const currentUserRole = user?.role || "employee";
 
   return (
-    <>
-      <div className="flex h-screen bg-background overflow-hidden font-sans text-foreground selection:bg-primary/20">
-        <Sidebar
-          currentView={currentView}
-          currentChannelId={currentChannelId}
-          onViewChange={handleViewChange}
-          currentProject={currentProject}
-          onProjectChange={(id) => {
-            setCurrentProjectId(id);
-            setCurrentView("tasks");
+    <ClientPermissionsContext.Provider value={{ permissions: effectivePermissions, isLoadingPermissions }}>
+      <>
+        <div className="flex h-screen bg-background overflow-hidden font-sans text-foreground selection:bg-primary/20">
+          <Sidebar
+            currentView={currentView}
+            currentChannelId={currentChannelId}
+            onViewChange={handleViewChange}
+            currentProject={currentProject}
+            onProjectChange={(id) => {
+              setCurrentProjectId(id);
+              setCurrentView("tasks");
+            }}
+            onAddProject={() => setIsNewProjectOpen(true)}
+            onAddChannel={() => setIsNewChannelOpen(true)}
+            currentUserRole={currentUserRole}
+            clientPermissions={effectivePermissions}
+          />
+
+          <div className="flex-1 flex flex-col h-full overflow-hidden relative z-0">
+            <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 pointer-events-none mix-blend-overlay z-[1]" />
+
+            {currentView !== "settings" && currentView !== "profile" && currentView !== "timecards" && (
+              <Header
+                title={currentProject.name}
+                view={currentView}
+                currentUserRole={currentUserRole}
+                onRoleChange={() => {}}
+              />
+            )}
+
+            <main className="flex-1 overflow-hidden relative z-[2]">
+              {currentView === "settings" && <CompanySettingsView />}
+              {currentView === "profile" && <UserProfileView currentUserRole={currentUserRole} />}
+              {currentView === "messages" && <MessagesView project={currentProject} channelId={currentChannelId} />}
+              {currentView === "team" && <TeamView project={currentProject} currentUserRole={currentUserRole} />}
+              {currentView === "tasks" && (
+                <ProjectTasksView
+                  project={currentProject}
+                  tasks={tasks}
+                  clientPermissions={effectivePermissions}
+                />
+              )}
+              {currentView === "timecards" && (
+                <TimecardsView
+                  currentUserRole={currentUserRole}
+                  currentProject={currentProject}
+                  clientPermissions={effectivePermissions}
+                />
+              )}
+            </main>
+          </div>
+        </div>
+
+        <NewTaskModal
+          open={isNewTaskOpen}
+          onOpenChange={(open) => {
+            setIsNewTaskOpen(open);
+            if (!open) setNewTaskDefaultStatus("");
           }}
-          onAddProject={() => setIsNewProjectOpen(true)}
-          onAddChannel={() => setIsNewChannelOpen(true)}
-          currentUserRole={currentUserRole}
+          project={currentProject}
+          onSave={handleTaskCreate}
+          defaultStatus={newTaskDefaultStatus}
         />
 
-        <div className="flex-1 flex flex-col h-full overflow-hidden relative z-0">
-          <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 pointer-events-none mix-blend-overlay z-[1]" />
+        <NewProjectModal
+          open={isNewProjectOpen}
+          onOpenChange={setIsNewProjectOpen}
+          onSave={handleProjectCreate}
+        />
 
-          {currentView !== "settings" && currentView !== "profile" && currentView !== "timecards" && (
-            <Header
-              title={currentProject.name}
-              view={currentView}
-              currentUserRole={currentUserRole}
-              onRoleChange={() => {}}
-            />
-          )}
+        <NewChannelModal
+          open={isNewChannelOpen}
+          onOpenChange={setIsNewChannelOpen}
+          projectId={currentProjectId}
+          onSave={handleChannelCreate}
+        />
 
-          <main className="flex-1 overflow-hidden relative z-[2]">
-            {currentView === "settings" && <CompanySettingsView />}
-            {currentView === "profile" && <UserProfileView currentUserRole={currentUserRole} />}
-            {currentView === "messages" && <MessagesView project={currentProject} channelId={currentChannelId} />}
-            {currentView === "team" && <TeamView project={currentProject} currentUserRole={currentUserRole} />}
-            {currentView === "tasks" && <ProjectTasksView project={currentProject} tasks={tasks} />}
-            {currentView === "timecards" && <TimecardsView currentUserRole={currentUserRole} />}
-          </main>
-        </div>
-      </div>
-
-      <NewTaskModal
-        open={isNewTaskOpen}
-        onOpenChange={(open) => {
-          setIsNewTaskOpen(open);
-          if (!open) setNewTaskDefaultStatus("");
-        }}
-        project={currentProject}
-        onSave={handleTaskCreate}
-        defaultStatus={newTaskDefaultStatus}
-      />
-
-      <NewProjectModal
-        open={isNewProjectOpen}
-        onOpenChange={setIsNewProjectOpen}
-        onSave={handleProjectCreate}
-      />
-
-      <NewChannelModal
-        open={isNewChannelOpen}
-        onOpenChange={setIsNewChannelOpen}
-        projectId={currentProjectId}
-        onSave={handleChannelCreate}
-      />
-
-      <Toaster />
-    </>
+        <Toaster />
+      </>
+    </ClientPermissionsContext.Provider>
   );
 }
 

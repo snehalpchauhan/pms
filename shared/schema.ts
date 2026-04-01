@@ -25,6 +25,8 @@ export const projects = pgTable("projects", {
 export const projectMembers = pgTable("project_members", {
   projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
   userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  clientShowTimecards: boolean("client_show_timecards").default(false),
+  clientTaskAccess: text("client_task_access").default("feedback"),
 }, (t) => [primaryKey({ columns: [t.projectId, t.userId] })]);
 
 export const tasks = pgTable("tasks", {
@@ -101,6 +103,7 @@ export const timeEntries = pgTable("time_entries", {
   hours: numeric("hours", { precision: 6, scale: 2 }).notNull(),
   description: text("description"),
   logDate: text("log_date").notNull(),
+  clientVisible: boolean("client_visible").default(true),
 });
 
 // Insert schemas
@@ -131,6 +134,7 @@ export type InsertMessage = z.infer<typeof insertMessageSchema>;
 export type InsertComment = z.infer<typeof insertCommentSchema>;
 export type TimeEntry = typeof timeEntries.$inferSelect;
 export type InsertTimeEntry = z.infer<typeof insertTimeEntrySchema>;
+export type ProjectMember = typeof projectMembers.$inferSelect;
 
 // Login schema
 export const loginSchema = z.object({

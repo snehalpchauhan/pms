@@ -9,6 +9,7 @@ interface AppDataContextType {
   projects: Project[];
   channels: Channel[];
   isLoading: boolean;
+  refetchUsers: () => void;
   refetchProjects: () => void;
   refetchChannels: () => void;
 }
@@ -48,7 +49,7 @@ function convertChannel(c: any): Channel {
 }
 
 export function AppDataProvider({ children }: { children: ReactNode }) {
-  const { data: rawUsers, isLoading: usersLoading } = useQuery<any[]>({
+  const { data: rawUsers, isLoading: usersLoading, refetch: refetchUsers } = useQuery<any[]>({
     queryKey: ["/api/users"],
     queryFn: getQueryFn({ on401: "throw" }),
   });
@@ -77,6 +78,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       projects: projectsList,
       channels: channelsList,
       isLoading: usersLoading || projectsLoading || channelsLoading,
+      refetchUsers,
       refetchProjects,
       refetchChannels,
     }}>

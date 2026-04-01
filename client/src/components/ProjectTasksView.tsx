@@ -10,23 +10,26 @@ import { useState } from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { TaskDetailPage } from "./TaskDetailPage";
 import { isPast, isToday } from "date-fns";
+import type { ClientPermissions } from "@/App";
 
 interface ProjectTasksViewProps {
     project: Project;
     tasks: Task[];
+    clientPermissions?: ClientPermissions;
 }
 
-export default function ProjectTasksView({ project, tasks }: ProjectTasksViewProps) {
+export default function ProjectTasksView({ project, tasks, clientPermissions }: ProjectTasksViewProps) {
     const { user } = useAuth();
     const currentUserId = user ? String(user.id) : "";
     const [filter, setFilter] = useState("all");
     const [selectedTask, setSelectedTask] = useState<Task | null>(null);
 
+    const isClient = user?.role === "client";
+
     const filteredTasks = tasks.filter(t => {
         if (filter === "mine") return t.assignees.includes(currentUserId);
         if (filter === "overdue") {
             if (!t.dueDate) return false;
-            // Overdue if due date is in the past and status is not "done" (assuming last column is done)
             const isDone = t.status === project.columns[project.columns.length - 1].id;
             return isPast(new Date(t.dueDate)) && !isToday(new Date(t.dueDate)) && !isDone;
         }
@@ -60,7 +63,7 @@ export default function ProjectTasksView({ project, tasks }: ProjectTasksViewPro
                             </SelectTrigger>
                             <SelectContent>
                                 <SelectItem value="all">All Tasks</SelectItem>
-                                <SelectItem value="mine">My Tasks</SelectItem>
+                                {!isClient && <SelectItem value="mine">My Tasks</SelectItem>}
                                 <SelectItem value="overdue">Overdue</SelectItem>
                             </SelectContent>
                         </Select>
@@ -75,9 +78,11 @@ export default function ProjectTasksView({ project, tasks }: ProjectTasksViewPro
                                 tasks={filteredTasks} 
                                 onTaskClick={setSelectedTask}
                                 onAddTask={(status) => {
+                                    if (isClient && clientPermissions?.clientTaskAccess !== "contribute" && clientPermissions?.clientTaskAccess !== "full") return;
                                     const event = new CustomEvent('openNewTaskModal', { detail: { status } });
                                     window.dispatchEvent(event);
                                 }}
+                                clientPermissions={clientPermissions}
                             />
                         </div>
                     </TabsContent>
@@ -101,7 +106,8 @@ export default function ProjectTasksView({ project, tasks }: ProjectTasksViewPro
             {selectedTask && (
                 <TaskDetailPage 
                     task={selectedTask} 
-                    onClose={() => setSelectedTask(null)} 
+                    onClose={() => setSelectedTask(null)}
+                    clientPermissions={clientPermissions}
                 />
             )}
         </div>

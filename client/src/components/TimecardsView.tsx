@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -19,13 +20,17 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { Clock, Trash2, Filter, Plus, ChevronDown, ChevronUp, Timer, Users, User, Folder, Tag } from "lucide-react";
+import { Clock, Trash2, Filter, Plus, ChevronDown, ChevronUp, Timer, Users, User, Folder, Tag, Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
+import type { ClientPermissions } from "@/App";
+import type { Project } from "@/lib/mockData";
 
 interface TimecardsViewProps {
   currentUserRole: string;
+  currentProject?: Project;
+  clientPermissions?: ClientPermissions;
 }
 
 interface AllTask {
@@ -51,14 +56,17 @@ const WORK_CATEGORIES = [
   { value: "other", label: "Other" },
 ] as const;
 
-export default function TimecardsView({ currentUserRole }: TimecardsViewProps) {
+export default function TimecardsView({ currentUserRole, currentProject, clientPermissions }: TimecardsViewProps) {
   const { user: currentUser } = useAuth();
   const { usersArray, projects } = useAppData();
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
+  const isClient = currentUserRole === "client";
   const isAdmin = currentUserRole === "admin";
   const isManagerOrAdmin = isAdmin || currentUserRole === "manager";
+
+  const numericProjectId = currentProject ? Number(currentProject.id) : null;
 
   const [filterUserId, setFilterUserId] = useState<string>("all");
   const [filterProjectId, setFilterProjectId] = useState<string>("all");
@@ -67,22 +75,41 @@ export default function TimecardsView({ currentUserRole }: TimecardsViewProps) {
   const [summaryExpanded, setSummaryExpanded] = useState(true);
 
   const [logOpen, setLogOpen] = useState(false);
-  const [logProjectId, setLogProjectId] = useState<string>("");
+  const [logProjectId, setLogProjectId] = useState<string>(numericProjectId ? String(numericProjectId) : "");
   const [logTaskId, setLogTaskId] = useState<string>("");
   const [logCategory, setLogCategory] = useState<string>("");
   const [logHours, setLogHours] = useState<string>("");
   const [logDate, setLogDate] = useState<string>(format(new Date(), "yyyy-MM-dd"));
   const [logNote, setLogNote] = useState<string>("");
+  const [logClientVisible, setLogClientVisible] = useState<boolean>(true);
   const [logSaving, setLogSaving] = useState(false);
+
+  // Fetch client-timecards status for the currently selected log project
+  const numericLogProjectId = logProjectId ? Number(logProjectId) : null;
+  const { data: logProjectClientTimecardsData } = useQuery<{ hasClientTimecards: boolean }>({
+    queryKey: ["/api/projects", numericLogProjectId, "has-client-timecards"],
+    queryFn: async () => {
+      if (!numericLogProjectId) return { hasClientTimecards: false };
+      const res = await fetch(`/api/projects/${numericLogProjectId}/has-client-timecards`, { credentials: "include" });
+      if (!res.ok) return { hasClientTimecards: false };
+      return res.json();
+    },
+    enabled: !!numericLogProjectId && !isClient,
+  });
+  const clientTimecardsEnabled = !isClient && (logProjectClientTimecardsData?.hasClientTimecards === true);
 
   const queryParams = new URLSearchParams();
   if (isManagerOrAdmin && filterUserId !== "all") queryParams.set("userId", filterUserId);
   if (filterProjectId !== "all") queryParams.set("projectId", filterProjectId);
   if (filterStartDate) queryParams.set("startDate", filterStartDate);
   if (filterEndDate) queryParams.set("endDate", filterEndDate);
+  // For clients, also pass their current project
+  if (isClient && numericProjectId && filterProjectId === "all") {
+    queryParams.set("projectId", String(numericProjectId));
+  }
 
   const { data: entries = [], isLoading } = useQuery<any[]>({
-    queryKey: ["/api/time-entries", filterUserId, filterProjectId, filterStartDate, filterEndDate],
+    queryKey: ["/api/time-entries", filterUserId, filterProjectId, filterStartDate, filterEndDate, currentUserRole, numericProjectId],
     queryFn: async () => {
       const res = await fetch(`/api/time-entries?${queryParams.toString()}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch time entries");
@@ -97,6 +124,7 @@ export default function TimecardsView({ currentUserRole }: TimecardsViewProps) {
       if (!res.ok) throw new Error("Failed to fetch tasks");
       return res.json();
     },
+    enabled: !isClient,
   });
 
   const handleDelete = async (id: number) => {
@@ -132,17 +160,19 @@ export default function TimecardsView({ currentUserRole }: TimecardsViewProps) {
         hours: h,
         description,
         logDate,
+        clientVisible: clientTimecardsEnabled ? logClientVisible : false,
       });
       queryClient.invalidateQueries({ queryKey: ["/api/time-entries"] });
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
       toast({ title: "Time logged successfully" });
       setLogOpen(false);
-      setLogProjectId("");
+      setLogProjectId(numericProjectId ? String(numericProjectId) : "");
       setLogTaskId("");
       setLogCategory("");
       setLogHours("");
       setLogNote("");
       setLogDate(format(new Date(), "yyyy-MM-dd"));
+      setLogClientVisible(true);
     } catch {
       toast({ title: "Failed to log time", variant: "destructive" });
     } finally {
@@ -173,21 +203,103 @@ export default function TimecardsView({ currentUserRole }: TimecardsViewProps) {
     return m;
   }, [projects]);
 
-  const tasksByProject = useMemo(() => {
-    const grouped: Record<string, AllTask[]> = {};
-    allTasks.forEach(t => {
-      if (!grouped[t.projectName]) grouped[t.projectName] = [];
-      grouped[t.projectName].push(t);
-    });
-    return grouped;
-  }, [allTasks]);
-
   const filteredTasksForLog = useMemo(() => {
     if (!logProjectId) return allTasks.filter(t => t.title.trim());
     return allTasks.filter(t => String(t.projectId) === logProjectId && t.title.trim());
   }, [allTasks, logProjectId]);
 
   const hasActiveFilters = filterUserId !== "all" || filterProjectId !== "all" || filterStartDate || filterEndDate;
+
+  // Client view: read-only table
+  if (isClient) {
+    const projectName = currentProject?.name || "this project";
+    return (
+      <div className="flex-1 h-full overflow-hidden flex flex-col">
+        <div className="p-6 border-b border-border/50 shrink-0">
+          <div className="flex items-center gap-3">
+            <Clock className="w-6 h-6 text-primary" />
+            <div>
+              <h2 className="text-xl font-display font-bold text-foreground">Hours Shared With You</h2>
+              <p className="text-sm text-muted-foreground">
+                Time entries shared by the team for <span className="font-medium text-foreground">{projectName}</span>
+              </p>
+            </div>
+            {totalHours > 0 && (
+              <div className="ml-auto flex items-center gap-2 bg-primary/5 border border-primary/20 rounded-lg px-4 py-2">
+                <Timer className="w-4 h-4 text-primary" />
+                <span className="text-sm font-semibold text-primary" data-testid="text-total-hours">
+                  {totalHours.toFixed(1)}h total
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <ScrollArea className="flex-1">
+          <div className="p-6">
+            {isLoading ? (
+              <div className="text-center text-sm text-muted-foreground py-16">Loading...</div>
+            ) : entries.length === 0 ? (
+              <div className="text-center py-16 border-2 border-dashed border-border/50 rounded-xl space-y-3">
+                <Clock className="w-10 h-10 text-muted-foreground/40 mx-auto" />
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">No shared time entries yet</p>
+                  <p className="text-xs text-muted-foreground/70 mt-1">
+                    The team hasn't shared any time entries for this project yet.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="bg-background border border-border/50 rounded-xl overflow-hidden shadow-sm">
+                <table className="w-full text-sm" data-testid="table-client-time-log">
+                  <thead>
+                    <tr className="border-b border-border/50 bg-muted/30">
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Date</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Member</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Task</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Work Type</th>
+                      <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Hours</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {entries.map((entry: any) => (
+                      <tr key={entry.id} className="border-b border-border/30 last:border-0 hover:bg-muted/20 transition-colors" data-testid={`row-client-time-entry-${entry.id}`}>
+                        <td className="px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">{entry.logDate}</td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            <Avatar className="h-5 w-5 shrink-0">
+                              <AvatarFallback className="text-[9px]">{(entry.userName || "?")[0]}</AvatarFallback>
+                            </Avatar>
+                            <span className="text-xs whitespace-nowrap">{entry.userName}</span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 font-medium max-w-[200px] truncate" title={entry.taskTitle}>{entry.taskTitle}</td>
+                        <td className="px-4 py-3 max-w-[220px]">
+                          {entry.description ? (() => {
+                            const match = entry.description.match(/^\[([^\]]+)\](.*)/);
+                            if (match) {
+                              return (
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <Badge variant="outline" className="text-[10px] font-medium shrink-0 border-primary/30 text-primary bg-primary/5">{match[1]}</Badge>
+                                  {match[2].trim() && <span className="text-xs text-muted-foreground truncate">{match[2].trim()}</span>}
+                                </div>
+                              );
+                            }
+                            return <span className="text-xs text-muted-foreground italic truncate">{entry.description}</span>;
+                          })() : <span className="text-xs text-muted-foreground">—</span>}
+                        </td>
+                        <td className="px-4 py-3 text-right font-semibold text-primary whitespace-nowrap">{parseFloat(entry.hours).toFixed(1)}h</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </ScrollArea>
+      </div>
+    );
+  }
 
   return (
     <div className="flex-1 h-full overflow-hidden flex flex-col">
@@ -391,9 +503,20 @@ export default function TimecardsView({ currentUserRole }: TimecardsViewProps) {
                   <tbody>
                     {entries.map((entry: any) => {
                       const canDelete = isManagerOrAdmin || String(entry.userId) === String(currentUser?.id);
+                      const isPrivate = entry.clientVisible === false;
                       return (
-                        <tr key={entry.id} className="border-b border-border/30 last:border-0 hover:bg-muted/20 transition-colors group" data-testid={`row-time-entry-${entry.id}`}>
-                          <td className="px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">{entry.logDate}</td>
+                        <tr key={entry.id} className={cn("border-b border-border/30 last:border-0 hover:bg-muted/20 transition-colors group", isPrivate && "bg-muted/10")} data-testid={`row-time-entry-${entry.id}`}>
+                          <td className="px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">
+                            <div className="flex items-center gap-1.5">
+                              {entry.logDate}
+                              {isPrivate && (
+                                <span className="inline-flex items-center gap-0.5 text-[10px] font-medium text-muted-foreground bg-muted border border-border/50 px-1.5 py-0.5 rounded" data-testid={`badge-private-${entry.id}`}>
+                                  <Lock className="w-2.5 h-2.5" />
+                                  private
+                                </span>
+                              )}
+                            </div>
+                          </td>
                           {isManagerOrAdmin && (
                             <td className="px-4 py-3">
                               <div className="flex items-center gap-2">
@@ -449,12 +572,13 @@ export default function TimecardsView({ currentUserRole }: TimecardsViewProps) {
       <Dialog open={logOpen} onOpenChange={(open) => {
         setLogOpen(open);
         if (!open) {
-          setLogProjectId("");
+          setLogProjectId(numericProjectId ? String(numericProjectId) : "");
           setLogTaskId("");
           setLogCategory("");
           setLogHours("");
           setLogNote("");
           setLogDate(format(new Date(), "yyyy-MM-dd"));
+          setLogClientVisible(true);
         }
       }}>
         <DialogContent className="sm:max-w-[500px]">
@@ -520,7 +644,7 @@ export default function TimecardsView({ currentUserRole }: TimecardsViewProps) {
               </Select>
             </div>
 
-            {/* Step 3: Work Type (required — enforces good descriptions) */}
+            {/* Step 3: Work Type (required) */}
             <div className="space-y-1.5">
               <Label htmlFor="log-category" className="flex items-center gap-1.5">
                 <Tag className="w-3.5 h-3.5 text-muted-foreground" />
@@ -566,7 +690,7 @@ export default function TimecardsView({ currentUserRole }: TimecardsViewProps) {
               </div>
             </div>
 
-            {/* Step 5: Additional note (optional but shown after category is chosen) */}
+            {/* Step 5: Additional note (optional) */}
             <div className="space-y-1.5">
               <Label htmlFor="log-note">
                 Additional Details
@@ -592,6 +716,25 @@ export default function TimecardsView({ currentUserRole }: TimecardsViewProps) {
                 </p>
               )}
             </div>
+
+            {/* Share with client checkbox — always shown for non-clients, disabled if no client timecards */}
+            {!isClient && (
+              <div className={cn("flex items-center gap-2 p-3 bg-muted/30 rounded-lg border border-border/40", !clientTimecardsEnabled && "opacity-50")}>
+                <Checkbox
+                  id="log-client-visible"
+                  checked={clientTimecardsEnabled ? logClientVisible : false}
+                  onCheckedChange={clientTimecardsEnabled ? (v) => setLogClientVisible(v === true) : undefined}
+                  disabled={!clientTimecardsEnabled}
+                  data-testid="checkbox-client-visible"
+                />
+                <label htmlFor="log-client-visible" className={cn("text-sm font-medium flex-1", clientTimecardsEnabled ? "cursor-pointer" : "cursor-not-allowed")}>
+                  Share with client
+                </label>
+                <span className="text-xs text-muted-foreground">
+                  {clientTimecardsEnabled ? "Visible to the project client" : "No client with timecards on this project"}
+                </span>
+              </div>
+            )}
 
             <div className="flex justify-end gap-2 pt-1">
               <Button variant="outline" onClick={() => setLogOpen(false)} disabled={logSaving}>

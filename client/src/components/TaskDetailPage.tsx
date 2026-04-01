@@ -17,7 +17,7 @@ import { useAppData } from "@/hooks/useAppData";
 import { useAuth } from "@/hooks/useAuth";
 import { apiRequest } from "@/lib/queryClient";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
-import { Calendar, Paperclip, Tag, User as UserIcon, CheckCircle2, MoreHorizontal, MessageSquare, Plus, X, Reply, Clock, History, AlertCircle, FileText, Activity, Repeat, CalendarCheck, ArrowRight, CheckSquare, Trash2, Download } from "lucide-react";
+import { Calendar, Paperclip, Tag, User as UserIcon, CheckCircle2, MoreHorizontal, MessageSquare, Plus, X, Reply, Clock, History, AlertCircle, FileText, Activity, Repeat, CalendarCheck, ArrowRight, CheckSquare, Trash2, Download, Lock, RotateCcw } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
@@ -28,6 +28,9 @@ import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useToast } from "@/hooks/use-toast";
+import type { ClientPermissions } from "@/App";
 
 function CommentItem({ comment, users, currentUserId }: { comment: any; users: any; currentUserId: string }) {
   const author = users[comment.authorId];
@@ -88,12 +91,14 @@ function CommentItem({ comment, users, currentUserId }: { comment: any; users: a
 interface TaskDetailPageProps {
   task: Task;
   onClose: () => void;
+  clientPermissions?: ClientPermissions;
 }
 
-export function TaskDetailPage({ task, onClose }: TaskDetailPageProps) {
-  const { users } = useAppData();
+export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailPageProps) {
+  const { users, projects } = useAppData();
   const { user: currentUser } = useAuth();
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const [commentInput, setCommentInput] = useState("");
   const [comments, setComments] = useState(task.comments || []);
   const [status, setStatus] = useState(task.status);
@@ -101,6 +106,9 @@ export function TaskDetailPage({ task, onClose }: TaskDetailPageProps) {
   const [newChecklistInput, setNewChecklistInput] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>(task.attachments || []);
   const [assignees, setAssignees] = useState<string[]>(task.assignees || []);
+
+  const isClient = currentUser?.role === "client";
+  const isFullAccess = isClient && clientPermissions?.clientTaskAccess === "full";
 
   const numericTaskId = Number(task.id);
   const numericProjectId = Number(task.projectId);
@@ -113,6 +121,73 @@ export function TaskDetailPage({ task, onClose }: TaskDetailPageProps) {
   const [timeDate, setTimeDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [timeDescription, setTimeDescription] = useState("");
   const [timeLogging, setTimeLogging] = useState(false);
+  const [timeClientVisible, setTimeClientVisible] = useState(true);
+
+  // Client Approve / Request Revision state
+  const [clientActionLoading, setClientActionLoading] = useState(false);
+  const [revisionOpen, setRevisionOpen] = useState(false);
+  const [revisionReason, setRevisionReason] = useState("");
+
+  const handleApprove = async () => {
+    setClientActionLoading(true);
+    try {
+      await apiRequest("POST", `/api/tasks/${numericTaskId}/approve`, {});
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", numericProjectId, "tasks"] });
+      toast({ title: `Task approved: "${task.title}"` });
+      onClose();
+    } catch {
+      toast({ title: "Failed to approve task", variant: "destructive" });
+    } finally {
+      setClientActionLoading(false);
+    }
+  };
+
+  const handleRequestRevision = async () => {
+    if (!revisionReason.trim()) {
+      toast({ title: "Please provide a reason for the revision request", variant: "destructive" });
+      return;
+    }
+    setClientActionLoading(true);
+    try {
+      await apiRequest("POST", `/api/tasks/${numericTaskId}/request-revision`, { reason: revisionReason.trim() });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", numericProjectId, "tasks"] });
+      toast({ title: `Revision requested for: "${task.title}"` });
+      setRevisionOpen(false);
+      setRevisionReason("");
+      onClose();
+    } catch {
+      toast({ title: "Failed to request revision", variant: "destructive" });
+    } finally {
+      setClientActionLoading(false);
+    }
+  };
+
+  // Dynamically detect review column (second-to-last) for client actions
+  const currentProject = projects.find(p => String(p.id) === String(numericProjectId));
+  const projectColumns = (currentProject as any)?.columns || [];
+  const reviewColumnId = projectColumns.length >= 2
+    ? projectColumns[projectColumns.length - 2]?.id
+    : projectColumns[projectColumns.length - 1]?.id;
+  const isReviewStatus = reviewColumnId ? task.status === reviewColumnId : task.status === "review";
+
+  // "full" clients are treated as employees, so only feedback/contribute get approve/revision
+  const canDoClientActions = isClient && !isFullAccess && (
+    clientPermissions?.clientTaskAccess === "feedback" ||
+    clientPermissions?.clientTaskAccess === "contribute"
+  );
+
+  // Check if this project has a client with timecards enabled
+  const { data: hasClientTimecardsData } = useQuery<{ hasClientTimecards: boolean }>({
+    queryKey: ["/api/projects", numericProjectId, "has-client-timecards"],
+    queryFn: async () => {
+      const res = await fetch(`/api/projects/${numericProjectId}/has-client-timecards`, { credentials: "include" });
+      if (!res.ok) return { hasClientTimecards: false };
+      return res.json();
+    },
+    enabled: !isClient || isFullAccess,
+  });
+  const showClientShareOption = !isClient || isFullAccess;
+  const clientTimecardsEnabled = showClientShareOption && (hasClientTimecardsData?.hasClientTimecards === true);
 
   const { data: timeEntries = [], refetch: refetchTimeEntries } = useQuery<any[]>({
     queryKey: ["/api/tasks", numericTaskId, "time-entries"],
@@ -133,9 +208,11 @@ export function TaskDetailPage({ task, onClose }: TaskDetailPageProps) {
         hours: Number(timeHours),
         description: timeDescription || null,
         logDate: timeDate,
+        clientVisible: clientTimecardsEnabled ? timeClientVisible : false,
       });
       setTimeHours("");
       setTimeDescription("");
+      setTimeClientVisible(true);
       refetchTimeEntries();
       invalidateTasks();
     } catch (e) {
@@ -260,15 +337,19 @@ export function TaskDetailPage({ task, onClose }: TaskDetailPageProps) {
              </div>
              
              <div className="flex items-center gap-2">
-                 <Button variant="outline" size="sm" className="hidden sm:flex">
-                     <AlertCircle className="w-4 h-4 mr-2" /> Report Issue
-                 </Button>
-                 <Button variant="ghost" size="icon">
-                     <MoreHorizontal className="w-5 h-5" />
-                 </Button>
-                 <Button size="sm" className="bg-primary text-primary-foreground">
-                    Mark Complete
-                 </Button>
+                 {(!isClient || isFullAccess) && (
+                    <>
+                        <Button variant="outline" size="sm" className="hidden sm:flex">
+                            <AlertCircle className="w-4 h-4 mr-2" /> Report Issue
+                        </Button>
+                        <Button variant="ghost" size="icon">
+                            <MoreHorizontal className="w-5 h-5" />
+                        </Button>
+                        <Button size="sm" className="bg-primary text-primary-foreground">
+                            Mark Complete
+                        </Button>
+                    </>
+                 )}
              </div>
          </div>
 
@@ -282,21 +363,32 @@ export function TaskDetailPage({ task, onClose }: TaskDetailPageProps) {
                             {task.title}
                         </h1>
                         <div className="flex flex-wrap items-center gap-3">
-                            <Select value={status} onValueChange={setStatus}>
-                                <SelectTrigger className={cn("w-[140px] h-8 border-none font-medium transition-colors", 
+                            {isClient && !isFullAccess ? (
+                                <Badge className={cn("h-8 px-3 border-none font-medium",
                                     status === 'done' ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" :
                                     status === 'in-progress' ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400" :
+                                    status === 'review' ? "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400" :
                                     "bg-slate-100 text-slate-700 dark:bg-slate-800/50 dark:text-slate-400"
                                 )}>
-                                    <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="todo">To Do</SelectItem>
-                                    <SelectItem value="in-progress">In Progress</SelectItem>
-                                    <SelectItem value="review">Review</SelectItem>
-                                    <SelectItem value="done">Done</SelectItem>
-                                </SelectContent>
-                            </Select>
+                                    {status === 'in-progress' ? 'In Progress' : status === 'todo' ? 'To Do' : status.charAt(0).toUpperCase() + status.slice(1)}
+                                </Badge>
+                            ) : (
+                                <Select value={status} onValueChange={setStatus}>
+                                    <SelectTrigger className={cn("w-[140px] h-8 border-none font-medium transition-colors", 
+                                        status === 'done' ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" :
+                                        status === 'in-progress' ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400" :
+                                        "bg-slate-100 text-slate-700 dark:bg-slate-800/50 dark:text-slate-400"
+                                    )}>
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="todo">To Do</SelectItem>
+                                        <SelectItem value="in-progress">In Progress</SelectItem>
+                                        <SelectItem value="review">Review</SelectItem>
+                                        <SelectItem value="done">Done</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            )}
 
                             <Badge 
                                 className={cn(
@@ -322,6 +414,76 @@ export function TaskDetailPage({ task, onClose }: TaskDetailPageProps) {
                         </div>
                      </div>
 
+                     {/* Client Action Banner: Approve / Request Revision */}
+                     {canDoClientActions && isReviewStatus && (
+                         <div className="flex items-center gap-3 p-4 bg-violet-50 dark:bg-violet-950/20 border border-violet-200 dark:border-violet-800 rounded-xl">
+                             <div className="flex-1">
+                                 <div className="text-sm font-semibold text-violet-900 dark:text-violet-200">This task is ready for your review</div>
+                                 <div className="text-xs text-violet-700 dark:text-violet-400 mt-0.5">Please approve or request changes.</div>
+                             </div>
+                             <div className="flex gap-2">
+                                 <Button
+                                     size="sm"
+                                     className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5"
+                                     onClick={handleApprove}
+                                     disabled={clientActionLoading}
+                                     data-testid={`button-approve-task-${task.id}`}
+                                 >
+                                     <CheckCircle2 className="w-4 h-4" />
+                                     Approve
+                                 </Button>
+                                 <Button
+                                     size="sm"
+                                     variant="outline"
+                                     className="border-orange-300 text-orange-700 hover:bg-orange-50 gap-1.5"
+                                     onClick={() => setRevisionOpen(true)}
+                                     disabled={clientActionLoading}
+                                     data-testid={`button-request-revision-task-${task.id}`}
+                                 >
+                                     <RotateCcw className="w-4 h-4" />
+                                     Request Revision
+                                 </Button>
+                             </div>
+                         </div>
+                     )}
+
+                     {/* Revision Dialog */}
+                     <Dialog open={revisionOpen} onOpenChange={setRevisionOpen}>
+                         <DialogContent className="sm:max-w-[400px]">
+                             <DialogHeader>
+                                 <DialogTitle>Request Revision</DialogTitle>
+                             </DialogHeader>
+                             <div className="space-y-3 py-2">
+                                 <p className="text-sm text-muted-foreground">
+                                     Please describe what changes are needed for <span className="font-medium text-foreground">"{task.title}"</span>.
+                                 </p>
+                                 <div className="space-y-1.5">
+                                     <Label htmlFor="task-revision-reason">Reason <span className="text-destructive">*</span></Label>
+                                     <Textarea
+                                         id="task-revision-reason"
+                                         value={revisionReason}
+                                         onChange={e => setRevisionReason(e.target.value)}
+                                         placeholder="Describe the changes needed…"
+                                         rows={3}
+                                         className="resize-none"
+                                         data-testid="textarea-task-revision-reason"
+                                     />
+                                 </div>
+                             </div>
+                             <DialogFooter>
+                                 <Button variant="outline" onClick={() => setRevisionOpen(false)} disabled={clientActionLoading}>Cancel</Button>
+                                 <Button
+                                     onClick={handleRequestRevision}
+                                     disabled={clientActionLoading || !revisionReason.trim()}
+                                     className="bg-orange-600 hover:bg-orange-700 text-white"
+                                     data-testid="button-submit-task-revision"
+                                 >
+                                     {clientActionLoading ? "Sending…" : "Request Revision"}
+                                 </Button>
+                             </DialogFooter>
+                         </DialogContent>
+                     </Dialog>
+
                      {/* Metadata Bar - Updated with Start/End Dates */}
                      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 p-5 bg-muted/20 border border-border/50 rounded-xl">
                         {/* Assignees */}
@@ -337,40 +499,44 @@ export function TaskDetailPage({ task, onClose }: TaskDetailPageProps) {
                                                 <AvatarFallback>{user.name[0]}</AvatarFallback>
                                             </Avatar>
                                             <span className="text-xs font-medium truncate max-w-[80px]">{user.name}</span>
-                                            <button onClick={() => toggleAssignee(id)} className="ml-1 text-muted-foreground hover:text-destructive">
-                                                <X className="w-3 h-3" />
-                                            </button>
+                                            {(!isClient || isFullAccess) && (
+                                                <button onClick={() => toggleAssignee(id)} className="ml-1 text-muted-foreground hover:text-destructive">
+                                                    <X className="w-3 h-3" />
+                                                </button>
+                                            )}
                                         </div>
                                     ) : null;
                                 })}
-                                <Popover>
-                                    <PopoverTrigger asChild>
-                                        <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full border border-dashed border-border/50">
-                                            <Plus className="w-3 h-3" />
-                                        </Button>
-                                    </PopoverTrigger>
-                                    <PopoverContent className="w-60 p-2" align="start">
-                                        <div className="space-y-1">
-                                            <div className="text-xs font-semibold text-muted-foreground px-2 py-1.5">Add Assignee</div>
-                                            {Object.values(users).filter(u => !assignees.includes(u.id)).map(user => (
-                                                <button 
-                                                    key={user.id}
-                                                    onClick={() => toggleAssignee(user.id)}
-                                                    className="flex items-center gap-2 w-full px-2 py-1.5 hover:bg-muted rounded-md text-sm transition-colors"
-                                                >
-                                                    <Avatar className="h-6 w-6">
-                                                        <AvatarImage src={user.avatar} />
-                                                        <AvatarFallback>{user.name[0]}</AvatarFallback>
-                                                    </Avatar>
-                                                    <span>{user.name}</span>
-                                                </button>
-                                            ))}
-                                            {Object.values(users).filter(u => !assignees.includes(u.id)).length === 0 && (
-                                                <div className="text-xs text-muted-foreground px-2 py-2 italic">All users assigned</div>
-                                            )}
-                                        </div>
-                                    </PopoverContent>
-                                </Popover>
+                                {(!isClient || isFullAccess) && (
+                                    <Popover>
+                                        <PopoverTrigger asChild>
+                                            <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full border border-dashed border-border/50">
+                                                <Plus className="w-3 h-3" />
+                                            </Button>
+                                        </PopoverTrigger>
+                                        <PopoverContent className="w-60 p-2" align="start">
+                                            <div className="space-y-1">
+                                                <div className="text-xs font-semibold text-muted-foreground px-2 py-1.5">Add Assignee</div>
+                                                {Object.values(users).filter(u => !assignees.includes(u.id)).map(user => (
+                                                    <button 
+                                                        key={user.id}
+                                                        onClick={() => toggleAssignee(user.id)}
+                                                        className="flex items-center gap-2 w-full px-2 py-1.5 hover:bg-muted rounded-md text-sm transition-colors"
+                                                    >
+                                                        <Avatar className="h-6 w-6">
+                                                            <AvatarImage src={user.avatar} />
+                                                            <AvatarFallback>{user.name[0]}</AvatarFallback>
+                                                        </Avatar>
+                                                        <span>{user.name}</span>
+                                                    </button>
+                                                ))}
+                                                {Object.values(users).filter(u => !assignees.includes(u.id)).length === 0 && (
+                                                    <div className="text-xs text-muted-foreground px-2 py-2 italic">All users assigned</div>
+                                                )}
+                                            </div>
+                                        </PopoverContent>
+                                    </Popover>
+                                )}
                              </div>
                         </div>
 
@@ -392,17 +558,24 @@ export function TaskDetailPage({ task, onClose }: TaskDetailPageProps) {
                                  
                                  <ArrowRight className="w-3 h-3 text-muted-foreground/50" />
 
-                                 <Popover>
-                                    <PopoverTrigger asChild>
-                                        <Button variant="outline" className={cn("h-[30px] px-3 bg-background border-border/50 shadow-sm text-xs font-medium", !task.dueDate && "text-muted-foreground border-dashed")}>
-                                            <Calendar className="mr-2 h-3.5 w-3.5 text-muted-foreground" />
-                                            {task.dueDate ? format(new Date(task.dueDate), "MMM d") : <span>Due Date</span>}
-                                        </Button>
-                                    </PopoverTrigger>
-                                    <PopoverContent className="w-auto p-0">
-                                        <CalendarComponent mode="single" initialFocus />
-                                    </PopoverContent>
-                                </Popover>
+                                 {(!isClient || isFullAccess) ? (
+                                     <Popover>
+                                        <PopoverTrigger asChild>
+                                            <Button variant="outline" className={cn("h-[30px] px-3 bg-background border-border/50 shadow-sm text-xs font-medium", !task.dueDate && "text-muted-foreground border-dashed")}>
+                                                <Calendar className="mr-2 h-3.5 w-3.5 text-muted-foreground" />
+                                                {task.dueDate ? format(new Date(task.dueDate), "MMM d") : <span>Due Date</span>}
+                                            </Button>
+                                        </PopoverTrigger>
+                                        <PopoverContent className="w-auto p-0">
+                                            <CalendarComponent mode="single" initialFocus />
+                                        </PopoverContent>
+                                    </Popover>
+                                 ) : (
+                                     <div className="flex items-center gap-2 bg-background border border-border/50 px-3 py-1.5 rounded-md shadow-sm text-xs font-medium">
+                                         <Calendar className="w-3.5 h-3.5 text-muted-foreground" />
+                                         <span>{task.dueDate ? format(new Date(task.dueDate), "MMM d") : "No due date"}</span>
+                                     </div>
+                                 )}
                              </div>
                         </div>
 
@@ -415,9 +588,11 @@ export function TaskDetailPage({ task, onClose }: TaskDetailPageProps) {
                                         {tag}
                                     </Badge>
                                 ))}
-                                <Button variant="ghost" size="icon" className="h-6 w-6 rounded-full border border-dashed border-border/50">
-                                    <Plus className="w-3 h-3" />
-                                </Button>
+                                {(!isClient || isFullAccess) && (
+                                    <Button variant="ghost" size="icon" className="h-6 w-6 rounded-full border border-dashed border-border/50">
+                                        <Plus className="w-3 h-3" />
+                                    </Button>
+                                )}
                             </div>
                         </div>
                      </div>
@@ -428,17 +603,19 @@ export function TaskDetailPage({ task, onClose }: TaskDetailPageProps) {
                             <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
                                 <Paperclip className="w-4 h-4 text-primary" /> Attachments
                             </h3>
-                            <div className="relative">
-                                <input 
-                                    type="file" 
-                                    multiple 
-                                    className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10"
-                                    onChange={handleAttachmentUpload}
-                                />
-                                <Button variant="ghost" size="sm" className="h-7 text-xs">
-                                    <Plus className="w-3 h-3 mr-1" /> Add File
-                                </Button>
-                            </div>
+                            {(!isClient || isFullAccess) && (
+                                <div className="relative">
+                                    <input 
+                                        type="file" 
+                                        multiple 
+                                        className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10"
+                                        onChange={handleAttachmentUpload}
+                                    />
+                                    <Button variant="ghost" size="sm" className="h-7 text-xs">
+                                        <Plus className="w-3 h-3 mr-1" /> Add File
+                                    </Button>
+                                </div>
+                            )}
                         </div>
                         
                         {attachments.length > 0 ? (
@@ -460,9 +637,11 @@ export function TaskDetailPage({ task, onClose }: TaskDetailPageProps) {
                                             <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground">
                                                 <Download className="w-3.5 h-3.5" />
                                             </Button>
-                                            <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => setAttachments(attachments.filter(a => a.id !== att.id))}>
-                                                <X className="w-3.5 h-3.5" />
-                                            </Button>
+                                            {(!isClient || isFullAccess) && (
+                                                <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => setAttachments(attachments.filter(a => a.id !== att.id))}>
+                                                    <X className="w-3.5 h-3.5" />
+                                                </Button>
+                                            )}
                                         </div>
                                     </div>
                                 ))}
@@ -495,7 +674,8 @@ export function TaskDetailPage({ task, onClose }: TaskDetailPageProps) {
                                     <Checkbox 
                                         id={item.id} 
                                         checked={item.completed} 
-                                        onCheckedChange={() => toggleChecklistItem(item.id)}
+                                        onCheckedChange={(!isClient || isFullAccess) ? () => toggleChecklistItem(item.id) : undefined}
+                                        disabled={isClient && !isFullAccess}
                                     />
                                     <label 
                                         htmlFor={item.id}
@@ -503,32 +683,36 @@ export function TaskDetailPage({ task, onClose }: TaskDetailPageProps) {
                                     >
                                         {item.text}
                                     </label>
-                                    <Button 
-                                        variant="ghost" 
-                                        size="icon" 
-                                        className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
-                                        onClick={() => removeChecklistItem(item.id)}
-                                    >
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                    </Button>
+                                    {(!isClient || isFullAccess) && (
+                                        <Button 
+                                            variant="ghost" 
+                                            size="icon" 
+                                            className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
+                                            onClick={() => removeChecklistItem(item.id)}
+                                        >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                        </Button>
+                                    )}
                                 </div>
                             ))}
                             
-                            <div className="flex gap-2 pt-2">
-                                <Input 
-                                    placeholder="Add an item..." 
-                                    className="h-9 text-sm bg-muted/20"
-                                    value={newChecklistInput}
-                                    onChange={(e) => setNewChecklistInput(e.target.value)}
-                                    onKeyDown={(e) => {
-                                        if (e.key === 'Enter') {
-                                            e.preventDefault();
-                                            addChecklistItem();
-                                        }
-                                    }}
-                                />
-                                <Button size="sm" variant="secondary" className="h-9" onClick={addChecklistItem}>Add</Button>
-                            </div>
+                            {(!isClient || isFullAccess) && (
+                                <div className="flex gap-2 pt-2">
+                                    <Input 
+                                        placeholder="Add an item..." 
+                                        className="h-9 text-sm bg-muted/20"
+                                        value={newChecklistInput}
+                                        onChange={(e) => setNewChecklistInput(e.target.value)}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                e.preventDefault();
+                                                addChecklistItem();
+                                            }
+                                        }}
+                                    />
+                                    <Button size="sm" variant="secondary" className="h-9" onClick={addChecklistItem}>Add</Button>
+                                </div>
+                            )}
                         </div>
                     </div>
 
@@ -543,24 +727,28 @@ export function TaskDetailPage({ task, onClose }: TaskDetailPageProps) {
                                     <MessageSquare className="w-4 h-4 mr-2" />
                                     Comments
                                 </TabsTrigger>
-                                <TabsTrigger 
-                                    value="time" 
-                                    className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-0 pb-2 font-medium text-muted-foreground data-[state=active]:text-foreground transition-all"
-                                    data-testid="tab-time"
-                                >
-                                    <Clock className="w-4 h-4 mr-2" />
-                                    Time {totalHours > 0 && <span className="ml-1 text-xs font-normal text-muted-foreground">({totalHours.toFixed(1)}h)</span>}
-                                </TabsTrigger>
-                                <TabsTrigger 
-                                    value="logs" 
-                                    className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-0 pb-2 font-medium text-muted-foreground data-[state=active]:text-foreground transition-all"
-                                >
-                                    <Activity className="w-4 h-4 mr-2" />
-                                    System Logs
-                                </TabsTrigger>
+                                {(!isClient || clientPermissions?.clientShowTimecards) && (
+                                    <TabsTrigger 
+                                        value="time" 
+                                        className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-0 pb-2 font-medium text-muted-foreground data-[state=active]:text-foreground transition-all"
+                                        data-testid="tab-time"
+                                    >
+                                        <Clock className="w-4 h-4 mr-2" />
+                                        Time {totalHours > 0 && <span className="ml-1 text-xs font-normal text-muted-foreground">({totalHours.toFixed(1)}h)</span>}
+                                    </TabsTrigger>
+                                )}
+                                {(!isClient || isFullAccess) && (
+                                    <TabsTrigger 
+                                        value="logs" 
+                                        className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-0 pb-2 font-medium text-muted-foreground data-[state=active]:text-foreground transition-all"
+                                    >
+                                        <Activity className="w-4 h-4 mr-2" />
+                                        System Logs
+                                    </TabsTrigger>
+                                )}
                             </TabsList>
                             <div className="text-xs text-muted-foreground hidden sm:block">
-                                Visible to team only
+                                {(isClient && !isFullAccess) ? "Client view" : "Visible to team only"}
                             </div>
                         </div>
 
@@ -574,74 +762,98 @@ export function TaskDetailPage({ task, onClose }: TaskDetailPageProps) {
                                 </div>
                             </div>
 
-                            {/* Log time form */}
-                            <div className="bg-background border border-border/50 rounded-xl p-4 space-y-3 shadow-sm">
-                                <h4 className="text-sm font-semibold text-foreground">Log Time</h4>
-                                <div className="flex gap-3 flex-wrap">
-                                    <div className="flex-1 min-w-[100px]">
-                                        <label className="text-xs text-muted-foreground mb-1 block">Hours</label>
-                                        <Input
-                                            type="number"
-                                            min="0.25"
-                                            step="0.25"
-                                            placeholder="e.g. 1.5"
-                                            value={timeHours}
-                                            onChange={e => setTimeHours(e.target.value)}
-                                            className="h-9 text-sm"
-                                            data-testid="input-time-hours"
-                                        />
+                            {/* Log time form — hidden for non-full clients */}
+                            {(!isClient || isFullAccess) && (
+                                <div className="bg-background border border-border/50 rounded-xl p-4 space-y-3 shadow-sm">
+                                    <h4 className="text-sm font-semibold text-foreground">Log Time</h4>
+                                    <div className="flex gap-3 flex-wrap">
+                                        <div className="flex-1 min-w-[100px]">
+                                            <label className="text-xs text-muted-foreground mb-1 block">Hours</label>
+                                            <Input
+                                                type="number"
+                                                min="0.25"
+                                                step="0.25"
+                                                placeholder="e.g. 1.5"
+                                                value={timeHours}
+                                                onChange={e => setTimeHours(e.target.value)}
+                                                className="h-9 text-sm"
+                                                data-testid="input-time-hours"
+                                            />
+                                        </div>
+                                        <div className="flex-1 min-w-[130px]">
+                                            <label className="text-xs text-muted-foreground mb-1 block">Date</label>
+                                            <Input
+                                                type="date"
+                                                value={timeDate}
+                                                onChange={e => setTimeDate(e.target.value)}
+                                                className="h-9 text-sm"
+                                                data-testid="input-time-date"
+                                            />
+                                        </div>
+                                        <div className="flex-[2] min-w-[150px]">
+                                            <label className="text-xs text-muted-foreground mb-1 block">Note (optional)</label>
+                                            <Input
+                                                placeholder="What did you work on?"
+                                                value={timeDescription}
+                                                onChange={e => setTimeDescription(e.target.value)}
+                                                className="h-9 text-sm"
+                                                data-testid="input-time-description"
+                                            />
+                                        </div>
+                                        <div className="flex items-end">
+                                            <Button
+                                                size="sm"
+                                                className="h-9 px-4"
+                                                onClick={handleLogTime}
+                                                disabled={timeLogging || !timeHours}
+                                                data-testid="button-log-time"
+                                            >
+                                                Log Time
+                                            </Button>
+                                        </div>
                                     </div>
-                                    <div className="flex-1 min-w-[130px]">
-                                        <label className="text-xs text-muted-foreground mb-1 block">Date</label>
-                                        <Input
-                                            type="date"
-                                            value={timeDate}
-                                            onChange={e => setTimeDate(e.target.value)}
-                                            className="h-9 text-sm"
-                                            data-testid="input-time-date"
-                                        />
-                                    </div>
-                                    <div className="flex-[2] min-w-[150px]">
-                                        <label className="text-xs text-muted-foreground mb-1 block">Note (optional)</label>
-                                        <Input
-                                            placeholder="What did you work on?"
-                                            value={timeDescription}
-                                            onChange={e => setTimeDescription(e.target.value)}
-                                            className="h-9 text-sm"
-                                            data-testid="input-time-description"
-                                        />
-                                    </div>
-                                    <div className="flex items-end">
-                                        <Button
-                                            size="sm"
-                                            className="h-9 px-4"
-                                            onClick={handleLogTime}
-                                            disabled={timeLogging || !timeHours}
-                                            data-testid="button-log-time"
-                                        >
-                                            Log Time
-                                        </Button>
-                                    </div>
+                                    {showClientShareOption && (
+                                        <div className={cn("flex items-center gap-2 pt-1", !clientTimecardsEnabled && "opacity-50")}>
+                                            <Checkbox
+                                                id="time-client-visible"
+                                                checked={clientTimecardsEnabled ? timeClientVisible : false}
+                                                onCheckedChange={clientTimecardsEnabled ? (v) => setTimeClientVisible(v === true) : undefined}
+                                                disabled={!clientTimecardsEnabled}
+                                                data-testid="checkbox-time-client-visible"
+                                            />
+                                            <label htmlFor="time-client-visible" className={cn("text-xs cursor-pointer", clientTimecardsEnabled ? "text-muted-foreground" : "text-muted-foreground/60 cursor-not-allowed")}>
+                                                Share with client
+                                                {!clientTimecardsEnabled && <span className="ml-1 italic">(no client with timecards)</span>}
+                                            </label>
+                                        </div>
+                                    )}
                                 </div>
-                            </div>
+                            )}
 
                             {/* Time entries list */}
                             <div className="space-y-2">
                                 {timeEntries.length === 0 ? (
                                     <div className="text-center text-sm text-muted-foreground py-6 border-2 border-dashed border-border/50 rounded-xl">
-                                        No time logged yet. Use the form above to track your work.
+                                        No time logged yet.{(!isClient || isFullAccess) && " Use the form above to track your work."}
                                     </div>
                                 ) : timeEntries.map((entry: any) => {
-                                    const canDelete = (currentUser?.role === "admin" || currentUser?.role === "manager") || String(entry.userId) === currentUserId;
+                                    const canDelete = (!isClient || isFullAccess) && ((currentUser?.role === "admin" || currentUser?.role === "manager" || isFullAccess) || String(entry.userId) === currentUserId);
+                                    const isPrivate = entry.clientVisible === false;
                                     return (
-                                        <div key={entry.id} className="flex items-center gap-3 bg-background border border-border/50 rounded-lg p-3 shadow-sm group" data-testid={`time-entry-${entry.id}`}>
+                                        <div key={entry.id} className={cn("flex items-center gap-3 bg-background border border-border/50 rounded-lg p-3 shadow-sm group", isPrivate && "bg-muted/20")} data-testid={`time-entry-${entry.id}`}>
                                             <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
                                                 <span className="text-xs font-bold text-primary">{parseFloat(entry.hours).toFixed(1)}h</span>
                                             </div>
                                             <div className="flex-1 min-w-0">
-                                                <div className="flex items-center gap-2">
+                                                <div className="flex items-center gap-2 flex-wrap">
                                                     <span className="text-xs font-semibold text-foreground">{entry.userName || "Unknown"}</span>
                                                     <span className="text-xs text-muted-foreground">· {entry.logDate}</span>
+                                                    {isPrivate && (
+                                                        <span className="inline-flex items-center gap-0.5 text-[10px] font-medium text-muted-foreground bg-muted border border-border/50 px-1.5 py-0.5 rounded" data-testid={`badge-private-entry-${entry.id}`}>
+                                                            <Lock className="w-2.5 h-2.5" />
+                                                            private
+                                                        </span>
+                                                    )}
                                                 </div>
                                                 <div className="text-sm text-foreground/80 mt-0.5">{entry.description || <span className="text-muted-foreground italic text-xs">No note</span>}</div>
                                             </div>
