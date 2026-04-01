@@ -19,7 +19,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { Clock, Trash2, Filter, Plus, ChevronDown, ChevronUp, Timer, Users, User } from "lucide-react";
+import { Clock, Trash2, Filter, Plus, ChevronDown, ChevronUp, Timer, Users, User, Folder, Tag } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
@@ -35,6 +35,21 @@ interface AllTask {
   projectName: string;
   status: string;
 }
+
+const WORK_CATEGORIES = [
+  { value: "feature", label: "Feature Development" },
+  { value: "bug", label: "Bug Fix" },
+  { value: "review", label: "Code Review" },
+  { value: "rnd", label: "Research & Development" },
+  { value: "docs", label: "Documentation" },
+  { value: "testing", label: "Testing & QA" },
+  { value: "meeting", label: "Meeting / Planning" },
+  { value: "design", label: "Design" },
+  { value: "devops", label: "DevOps / Deployment" },
+  { value: "support", label: "Support" },
+  { value: "refactor", label: "Refactoring" },
+  { value: "other", label: "Other" },
+] as const;
 
 export default function TimecardsView({ currentUserRole }: TimecardsViewProps) {
   const { user: currentUser } = useAuth();
@@ -52,7 +67,9 @@ export default function TimecardsView({ currentUserRole }: TimecardsViewProps) {
   const [summaryExpanded, setSummaryExpanded] = useState(true);
 
   const [logOpen, setLogOpen] = useState(false);
+  const [logProjectId, setLogProjectId] = useState<string>("");
   const [logTaskId, setLogTaskId] = useState<string>("");
+  const [logCategory, setLogCategory] = useState<string>("");
   const [logHours, setLogHours] = useState<string>("");
   const [logDate, setLogDate] = useState<string>(format(new Date(), "yyyy-MM-dd"));
   const [logNote, setLogNote] = useState<string>("");
@@ -94,8 +111,8 @@ export default function TimecardsView({ currentUserRole }: TimecardsViewProps) {
   };
 
   const handleLogSubmit = async () => {
-    if (!logTaskId || !logHours || !logDate) {
-      toast({ title: "Please fill in task, hours, and date", variant: "destructive" });
+    if (!logTaskId || !logCategory || !logHours || !logDate) {
+      toast({ title: "Please fill in project, task, work type, hours and date", variant: "destructive" });
       return;
     }
     const h = parseFloat(logHours);
@@ -103,19 +120,26 @@ export default function TimecardsView({ currentUserRole }: TimecardsViewProps) {
       toast({ title: "Hours must be between 0.1 and 24", variant: "destructive" });
       return;
     }
+    const categoryLabel = WORK_CATEGORIES.find(c => c.value === logCategory)?.label || logCategory;
+    const description = logNote.trim()
+      ? `[${categoryLabel}] ${logNote.trim()}`
+      : `[${categoryLabel}]`;
+
     setLogSaving(true);
     try {
       await apiRequest("POST", "/api/time-entries", {
         taskId: Number(logTaskId),
         hours: h,
-        description: logNote.trim() || null,
+        description,
         logDate,
       });
       queryClient.invalidateQueries({ queryKey: ["/api/time-entries"] });
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
       toast({ title: "Time logged successfully" });
       setLogOpen(false);
+      setLogProjectId("");
       setLogTaskId("");
+      setLogCategory("");
       setLogHours("");
       setLogNote("");
       setLogDate(format(new Date(), "yyyy-MM-dd"));
@@ -157,6 +181,11 @@ export default function TimecardsView({ currentUserRole }: TimecardsViewProps) {
     });
     return grouped;
   }, [allTasks]);
+
+  const filteredTasksForLog = useMemo(() => {
+    if (!logProjectId) return allTasks.filter(t => t.title.trim());
+    return allTasks.filter(t => String(t.projectId) === logProjectId && t.title.trim());
+  }, [allTasks, logProjectId]);
 
   const hasActiveFilters = filterUserId !== "all" || filterProjectId !== "all" || filterStartDate || filterEndDate;
 
@@ -354,7 +383,7 @@ export default function TimecardsView({ currentUserRole }: TimecardsViewProps) {
                       {isManagerOrAdmin && <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Member</th>}
                       <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Task</th>
                       <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Project</th>
-                      <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Note</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Work Type</th>
                       <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Hours</th>
                       <th className="px-4 py-3 w-10" />
                     </tr>
@@ -377,7 +406,20 @@ export default function TimecardsView({ currentUserRole }: TimecardsViewProps) {
                           )}
                           <td className="px-4 py-3 font-medium max-w-[200px] truncate" title={entry.taskTitle}>{entry.taskTitle}</td>
                           <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">{projectMap[String(entry.projectId)] || `Project ${entry.projectId}`}</td>
-                          <td className="px-4 py-3 text-xs text-muted-foreground italic max-w-[180px] truncate">{entry.description || "—"}</td>
+                          <td className="px-4 py-3 max-w-[220px]">
+                            {entry.description ? (() => {
+                              const match = entry.description.match(/^\[([^\]]+)\](.*)/);
+                              if (match) {
+                                return (
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <Badge variant="outline" className="text-[10px] font-medium shrink-0 border-primary/30 text-primary bg-primary/5">{match[1]}</Badge>
+                                    {match[2].trim() && <span className="text-xs text-muted-foreground truncate">{match[2].trim()}</span>}
+                                  </div>
+                                );
+                              }
+                              return <span className="text-xs text-muted-foreground italic truncate">{entry.description}</span>;
+                            })() : <span className="text-xs text-muted-foreground">—</span>}
+                          </td>
                           <td className="px-4 py-3 text-right font-semibold text-primary whitespace-nowrap">{parseFloat(entry.hours).toFixed(1)}h</td>
                           <td className="px-4 py-3 text-right">
                             {canDelete && (
@@ -404,42 +446,99 @@ export default function TimecardsView({ currentUserRole }: TimecardsViewProps) {
       </ScrollArea>
 
       {/* Log Time Dialog */}
-      <Dialog open={logOpen} onOpenChange={setLogOpen}>
-        <DialogContent className="sm:max-w-[460px]">
+      <Dialog open={logOpen} onOpenChange={(open) => {
+        setLogOpen(open);
+        if (!open) {
+          setLogProjectId("");
+          setLogTaskId("");
+          setLogCategory("");
+          setLogHours("");
+          setLogNote("");
+          setLogDate(format(new Date(), "yyyy-MM-dd"));
+        }
+      }}>
+        <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Clock className="w-5 h-5 text-primary" />
               Log Time
             </DialogTitle>
             <DialogDescription>
-              Record hours spent on a task. This will appear in your timecard.
+              Record hours spent on a task. Select a project to filter tasks.
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 pt-2">
+            {/* Step 1: Project */}
             <div className="space-y-1.5">
-              <Label htmlFor="log-task">Task <span className="text-destructive">*</span></Label>
-              <Select value={logTaskId} onValueChange={setLogTaskId}>
-                <SelectTrigger id="log-task" className="w-full" data-testid="select-log-task">
-                  <SelectValue placeholder="Select a task…" />
+              <Label htmlFor="log-project" className="flex items-center gap-1.5">
+                <Folder className="w-3.5 h-3.5 text-muted-foreground" />
+                Project <span className="text-destructive">*</span>
+              </Label>
+              <Select
+                value={logProjectId}
+                onValueChange={(v) => {
+                  setLogProjectId(v);
+                  setLogTaskId("");
+                }}
+              >
+                <SelectTrigger id="log-project" className="w-full" data-testid="select-log-project">
+                  <SelectValue placeholder="Select a project…" />
                 </SelectTrigger>
-                <SelectContent className="max-h-[260px]">
-                  {Object.entries(tasksByProject).map(([projectName, tasks]) => (
-                    <div key={projectName}>
-                      <div className="px-2 py-1.5 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
-                        {projectName}
-                      </div>
-                      {tasks.filter(t => t.title.trim()).map(task => (
-                        <SelectItem key={task.id} value={String(task.id)}>
-                          <span className="truncate">{task.title}</span>
-                        </SelectItem>
-                      ))}
-                    </div>
+                <SelectContent>
+                  {projects.map(p => (
+                    <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
 
+            {/* Step 2: Task — filtered by project */}
+            <div className="space-y-1.5">
+              <Label htmlFor="log-task">
+                Task <span className="text-destructive">*</span>
+              </Label>
+              <Select
+                value={logTaskId}
+                onValueChange={setLogTaskId}
+                disabled={!logProjectId}
+              >
+                <SelectTrigger id="log-task" className="w-full" data-testid="select-log-task">
+                  <SelectValue placeholder={logProjectId ? "Select a task…" : "Select a project first"} />
+                </SelectTrigger>
+                <SelectContent className="max-h-[220px]">
+                  {filteredTasksForLog.length === 0 ? (
+                    <div className="px-3 py-4 text-sm text-muted-foreground text-center">No tasks in this project</div>
+                  ) : (
+                    filteredTasksForLog.map(task => (
+                      <SelectItem key={task.id} value={String(task.id)}>
+                        <span className="truncate">{task.title}</span>
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Step 3: Work Type (required — enforces good descriptions) */}
+            <div className="space-y-1.5">
+              <Label htmlFor="log-category" className="flex items-center gap-1.5">
+                <Tag className="w-3.5 h-3.5 text-muted-foreground" />
+                Work Type <span className="text-destructive">*</span>
+              </Label>
+              <Select value={logCategory} onValueChange={setLogCategory}>
+                <SelectTrigger id="log-category" className="w-full" data-testid="select-log-category">
+                  <SelectValue placeholder="What kind of work?" />
+                </SelectTrigger>
+                <SelectContent>
+                  {WORK_CATEGORIES.map(c => (
+                    <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Step 4: Hours + Date */}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label htmlFor="log-hours">Hours <span className="text-destructive">*</span></Label>
@@ -467,24 +566,38 @@ export default function TimecardsView({ currentUserRole }: TimecardsViewProps) {
               </div>
             </div>
 
+            {/* Step 5: Additional note (optional but shown after category is chosen) */}
             <div className="space-y-1.5">
-              <Label htmlFor="log-note">Note <span className="text-muted-foreground text-xs font-normal">(optional)</span></Label>
+              <Label htmlFor="log-note">
+                Additional Details
+                <span className="text-muted-foreground text-xs font-normal ml-1">(optional)</span>
+              </Label>
               <Textarea
                 id="log-note"
-                placeholder="What did you work on?"
+                placeholder={
+                  logCategory === "bug" ? "e.g. Fixed null pointer in checkout flow" :
+                  logCategory === "rnd" ? "e.g. Evaluated three caching libraries" :
+                  logCategory === "meeting" ? "e.g. Sprint planning with design team" :
+                  "Add specific details about what you worked on…"
+                }
                 value={logNote}
                 onChange={e => setLogNote(e.target.value)}
                 rows={2}
                 className="resize-none"
                 data-testid="textarea-log-note"
               />
+              {logCategory && (
+                <p className="text-[11px] text-muted-foreground">
+                  Will be saved as: <span className="font-mono text-foreground">[{WORK_CATEGORIES.find(c => c.value === logCategory)?.label}]{logNote.trim() ? ` ${logNote.trim()}` : ""}</span>
+                </p>
+              )}
             </div>
 
-            <div className="flex justify-end gap-2 pt-2">
+            <div className="flex justify-end gap-2 pt-1">
               <Button variant="outline" onClick={() => setLogOpen(false)} disabled={logSaving}>
                 Cancel
               </Button>
-              <Button onClick={handleLogSubmit} disabled={logSaving} data-testid="button-submit-log">
+              <Button onClick={handleLogSubmit} disabled={logSaving || !logTaskId || !logCategory || !logHours} data-testid="button-submit-log">
                 {logSaving ? "Saving…" : "Log Time"}
               </Button>
             </div>
