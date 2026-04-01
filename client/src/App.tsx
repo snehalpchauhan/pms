@@ -20,6 +20,7 @@ import { getQueryFn } from "@/lib/queryClient";
 import LoginPage from "@/pages/LoginPage";
 import type { Task } from "@/lib/mockData";
 import { Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 export interface ClientPermissions {
   role: string;
@@ -53,8 +54,8 @@ function LoadingScreen() {
 }
 
 function AuthenticatedApp() {
-  const { user } = useAuth();
-  const { projects, channels } = useAppData();
+  const { user, logout } = useAuth();
+  const { projects, channels, isLoading: appDataLoading } = useAppData();
 
   const [currentView, setCurrentView] = useState<"tasks" | "messages" | "team" | "settings" | "profile" | "timecards">("tasks");
   const [currentProjectId, setCurrentProjectId] = useState<string>("");
@@ -179,6 +180,46 @@ function AuthenticatedApp() {
       setCurrentChannelId(channelId);
     }
   };
+
+  if (appDataLoading) {
+    return <LoadingScreen />;
+  }
+
+  if (projects.length === 0) {
+    const canCreateProject = user?.role === "admin" || user?.role === "manager";
+    return (
+      <>
+        <div className="flex h-screen items-center justify-center bg-background p-6">
+          <div className="max-w-md text-center space-y-6">
+            <div className="space-y-2">
+              <h1 className="text-2xl font-semibold tracking-tight">No projects yet</h1>
+              <p className="text-muted-foreground text-sm">
+                {canCreateProject
+                  ? "Create a project to start using the workspace."
+                  : "You are not a member of any project yet. Ask an administrator to invite you."}
+              </p>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-3 justify-center">
+              {canCreateProject && (
+                <Button type="button" onClick={() => setIsNewProjectOpen(true)}>
+                  Create your first project
+                </Button>
+              )}
+              <Button type="button" variant="outline" onClick={() => logout()}>
+                Sign out
+              </Button>
+            </div>
+          </div>
+        </div>
+        <NewProjectModal
+          open={isNewProjectOpen}
+          onOpenChange={setIsNewProjectOpen}
+          onSave={handleProjectCreate}
+        />
+        <Toaster />
+      </>
+    );
+  }
 
   if (!currentProject) {
     return <LoadingScreen />;
