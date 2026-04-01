@@ -1,9 +1,8 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
-import { Hash, Phone, Video, Info, Plus, Smile, Paperclip, Lock, Loader2 } from "lucide-react";
+import { Hash, Phone, Video, Info, Lock } from "lucide-react";
 import { Message, Project } from "@/lib/mockData";
-import { useState, useRef, useEffect } from "react";
+import { useEffect, useCallback, useRef } from "react";
 import { cn } from "@/lib/utils";
 import { useAppData } from "@/hooks/useAppData";
 import { useAuth } from "@/hooks/useAuth";
@@ -11,16 +10,12 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { formatChatMarkdown } from "@/lib/chatMarkdown";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { ChatRichComposer } from "@/components/ChatRichComposer";
 
 interface MessagesViewProps {
   project: Project;
   channelId?: string;
 }
-
-const QUICK_EMOJIS = ["😀", "👍", "❤️", "🎉", "✅", "🔥", "👀", "🙏", "💬", "📎"];
-
-type ComposerUpdate = { next: string; selStart: number; selEnd: number };
 
 function formatMessageTime(iso: string | undefined): string {
   if (!iso) return "Just now";
@@ -30,13 +25,6 @@ function formatMessageTime(iso: string | undefined): string {
 }
 
 export default function MessagesView({ project, channelId }: MessagesViewProps) {
-  const [input, setInput] = useState("");
-  const [uploading, setUploading] = useState(false);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  /** Last known caret/selection in the composer (for emoji popover when textarea is not focused). */
-  const savedSelRef = useRef({ start: 0, end: 0 });
   const { users, channels } = useAppData();
   const { user } = useAuth();
   const queryClient = useQueryClient();
@@ -112,146 +100,52 @@ export default function MessagesView({ project, channelId }: MessagesViewProps) 
     createdAt: formatMessageTime(m.createdAt),
   }));
 
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
-    const el = scrollRef.current;
+    const el = scrollContainerRef.current;
     if (!el) return;
     el.scrollTo({ top: el.scrollHeight, behavior: "auto" });
   }, [channelMessages.length, numericChannelId]);
 
-  const canSend = Boolean(input.trim()) && numericChannelId != null && !Number.isNaN(numericChannelId);
-
-  const applyInputUpdate = (updater: (prev: string, el: HTMLTextAreaElement) => ComposerUpdate) => {
-    const el = textareaRef.current;
-    if (!el) return;
-    const { next, selStart, selEnd } = updater(input, el);
-    setInput(next);
-    savedSelRef.current = { start: selStart, end: selEnd };
-    requestAnimationFrame(() => {
-      el.focus();
-      el.setSelectionRange(selStart, selEnd);
-    });
-  };
-
-  const wrapSelection = (before: string, after: string, placeholder = "text") => {
-    applyInputUpdate((prev, el) => {
-      const start = el.selectionStart ?? 0;
-      const end = el.selectionEnd ?? 0;
-      const selected = prev.slice(start, end);
-      const inner = selected || placeholder;
-      const next = prev.slice(0, start) + before + inner + after + prev.slice(end);
-      const selA = start + before.length;
-      const selB = selA + inner.length;
-      return { next, selStart: selA, selEnd: selB };
-    });
-  };
-
-  const insertBullet = () => {
-    applyInputUpdate((prev, el) => {
-      const start = el.selectionStart ?? 0;
-      const lineStart = prev.lastIndexOf("\n", start - 1) + 1;
-      const next = prev.slice(0, lineStart) + "- " + prev.slice(lineStart);
-      const cursor = lineStart + 2;
-      return { next, selStart: cursor, selEnd: cursor };
-    });
-  };
-
-  const insertEmoji = (emoji: string) => {
-    const el = textareaRef.current;
-    if (!el) return;
-    const focused = document.activeElement === el;
-    const start = focused ? el.selectionStart ?? 0 : savedSelRef.current.start;
-    const end = focused ? el.selectionEnd ?? 0 : savedSelRef.current.end;
-    setInput((prev) => {
-      const next = prev.slice(0, start) + emoji + prev.slice(end);
-      const c = start + emoji.length;
-      savedSelRef.current = { start: c, end: c };
-      requestAnimationFrame(() => {
-        el.focus();
-        el.setSelectionRange(c, c);
-      });
-      return next;
-    });
-  };
-
-  const syncComposerSelection = () => {
-    const el = textareaRef.current;
-    if (!el) return;
-    savedSelRef.current = { start: el.selectionStart ?? 0, end: el.selectionEnd ?? 0 };
-  };
-
-  const handleAttachFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file || numericChannelId == null) return;
-    if (file.size > 3 * 1024 * 1024) {
-      toast({ title: "File too large", description: "Max 3MB.", variant: "destructive" });
-      return;
-    }
-    setUploading(true);
-    try {
-      const dataUrl = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-          if (typeof reader.result === "string") resolve(reader.result);
-          else reject(new Error("read"));
-        };
-        reader.onerror = () => reject(new Error("read"));
-        reader.readAsDataURL(file);
-      });
-      const res = await apiRequest("POST", `/api/channels/${numericChannelId}/chat-upload`, {
-        fileDataUrl: dataUrl,
-      });
-      const { url } = (await res.json()) as { url: string };
-      const isImg = file.type.startsWith("image/");
-      const insert = isImg ? `\n![${file.name}](${url})\n` : `\n[${file.name}](${url})\n`;
-      setInput((prev) => prev + insert);
-      toast({ title: "Attachment added" });
-    } catch (err) {
-      toast({
-        title: "Upload failed",
-        description: err instanceof Error ? err.message : "Try again.",
-        variant: "destructive",
-      });
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  const handleSend = async () => {
-    if (!canSend || numericChannelId == null || user == null) return;
-    const content = input.trim();
-    const optimisticId = -Date.now();
-    setInput("");
-    queryClient.setQueryData(
-      ["/api/channels", numericChannelId, "messages"],
-      (old: unknown) => {
-        const prev = Array.isArray(old) ? old : [];
-        return [
-          ...prev,
-          {
-            id: optimisticId,
-            channelId: numericChannelId,
-            authorId: user.id,
-            content,
-            createdAt: new Date().toISOString(),
-          },
-        ];
-      },
-    );
-    try {
-      await apiRequest("POST", `/api/channels/${numericChannelId}/messages`, { content });
-      await queryClient.refetchQueries({ queryKey: ["/api/channels", numericChannelId, "messages"] });
-      void queryClient.invalidateQueries({ queryKey: ["/api/channels"] });
-    } catch (e) {
-      console.error("Failed to send message:", e);
-      await queryClient.refetchQueries({ queryKey: ["/api/channels", numericChannelId, "messages"] });
-      toast({
-        title: "Message not sent",
-        description: e instanceof Error ? e.message : "Try again.",
-        variant: "destructive",
-      });
-    }
-  };
+  const handleComposerSend = useCallback(
+    async (content: string) => {
+      const trimmed = content.trim();
+      if (!trimmed || numericChannelId == null || user == null) return;
+      const optimisticId = -Date.now();
+      queryClient.setQueryData(
+        ["/api/channels", numericChannelId, "messages"],
+        (old: unknown) => {
+          const prev = Array.isArray(old) ? old : [];
+          return [
+            ...prev,
+            {
+              id: optimisticId,
+              channelId: numericChannelId,
+              authorId: user.id,
+              content: trimmed,
+              createdAt: new Date().toISOString(),
+            },
+          ];
+        },
+      );
+      try {
+        await apiRequest("POST", `/api/channels/${numericChannelId}/messages`, { content: trimmed });
+        await queryClient.refetchQueries({ queryKey: ["/api/channels", numericChannelId, "messages"] });
+        void queryClient.invalidateQueries({ queryKey: ["/api/channels"] });
+      } catch (e) {
+        console.error("Failed to send message:", e);
+        await queryClient.refetchQueries({ queryKey: ["/api/channels", numericChannelId, "messages"] });
+        toast({
+          title: "Message not sent",
+          description: e instanceof Error ? e.message : "Try again.",
+          variant: "destructive",
+        });
+        throw e;
+      }
+    },
+    [numericChannelId, queryClient, toast, user],
+  );
 
   if (!activeChannel && !isDM) {
     return (
@@ -266,16 +160,6 @@ export default function MessagesView({ project, channelId }: MessagesViewProps) 
 
   return (
     <div className="flex flex-col h-full bg-background">
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/png,image/jpeg,image/jpg,image/webp,application/pdf"
-        className="sr-only"
-        aria-hidden
-        tabIndex={-1}
-        onChange={handleAttachFile}
-      />
-
       <header className="h-14 border-b border-border/50 flex items-center justify-between px-6 bg-background/50 backdrop-blur-sm shrink-0">
         <div className="flex items-center gap-3">
           {isDM ? (
@@ -315,7 +199,7 @@ export default function MessagesView({ project, channelId }: MessagesViewProps) 
         </div>
       </header>
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto p-6">
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-6">
         <div className="space-y-4 max-w-4xl mx-auto pb-4">
           <div className="pb-6 text-center sm:text-left border-b border-border/30 mb-6">
             {isDM ? (
@@ -409,129 +293,12 @@ export default function MessagesView({ project, channelId }: MessagesViewProps) 
 
       <div className="p-4 pt-2 shrink-0 border-t border-border/40">
         <div className="max-w-4xl mx-auto bg-background rounded-xl border border-border shadow-sm p-4">
-          <Textarea
-            ref={textareaRef}
-            className="min-h-[80px] resize-none border-none focus-visible:ring-0 p-0 text-base shadow-none bg-transparent"
-            placeholder={`Message ${isDM ? dmUser?.name : `#${activeChannel?.name}`}`}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onSelect={syncComposerSelection}
-            onClick={syncComposerSelection}
-            onKeyUp={syncComposerSelection}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                void handleSend();
-              }
-            }}
+          <ChatRichComposer
+            key={numericChannelId != null ? `ch-${numericChannelId}` : `pending-${activeChannelId ?? "x"}`}
+            channelId={numericChannelId}
+            placeholder={`Message ${isDM ? dmUser?.name ?? "" : `#${activeChannel?.name ?? "channel"}`}`}
+            onSend={handleComposerSend}
           />
-          <div className="mt-3 pt-3 border-t border-border/30">
-            <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground mb-2">
-              How it will look
-            </p>
-            <div
-              className={cn(
-                "min-h-[3.25rem] rounded-lg border px-3 py-2.5 text-[15px] leading-relaxed break-words",
-                "bg-muted/25 border-border/60 text-foreground",
-                "[&_a]:text-primary [&_a]:underline [&_img]:max-h-40",
-              )}
-            >
-              {input.trim() ? (
-                formatChatMarkdown(input)
-              ) : (
-                <span className="text-muted-foreground text-sm">
-                  Bold, italics, links, and images show here while you type (markdown in the box above).
-                </span>
-              )}
-            </div>
-          </div>
-          <div className="flex justify-between items-center mt-2 pt-2 border-t border-border/40">
-            <div className="flex items-center gap-0.5">
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                type="button"
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  insertBullet();
-                }}
-                title="Bullet list"
-              >
-                <Plus className="w-4 h-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                type="button"
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  wrapSelection("**", "**");
-                }}
-                title="Bold"
-              >
-                <span className="font-bold text-xs">B</span>
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                type="button"
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  wrapSelection("*", "*");
-                }}
-                title="Italic"
-              >
-                <span className="italic text-xs font-serif">I</span>
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                type="button"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => fileInputRef.current?.click()}
-                disabled={uploading || numericChannelId == null}
-                title="Attach image or PDF"
-              >
-                {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Paperclip className="w-4 h-4" />}
-              </Button>
-            </div>
-            <div className="flex items-center gap-2">
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                    type="button"
-                    onMouseDown={(e) => e.preventDefault()}
-                  >
-                    <Smile className="w-5 h-5" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-2" align="end">
-                  <div className="grid grid-cols-5 gap-1">
-                    {QUICK_EMOJIS.map((em) => (
-                      <button
-                        key={em}
-                        type="button"
-                        className="text-xl p-2 rounded-md hover:bg-muted"
-                        onClick={() => insertEmoji(em)}
-                      >
-                        {em}
-                      </button>
-                    ))}
-                  </div>
-                </PopoverContent>
-              </Popover>
-              <Button size="sm" className="px-6" onClick={() => void handleSend()} disabled={!canSend}>
-                Send
-              </Button>
-            </div>
-          </div>
         </div>
       </div>
     </div>
