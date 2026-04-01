@@ -67,6 +67,30 @@ function safeUnlinkUserAvatar(avatarUrl: string | null | undefined, uploadsDir: 
 }
 
 const MAX_CHAT_UPLOAD_BYTES = 3 * 1024 * 1024;
+const MAX_TASK_ATTACHMENT_BYTES = 8 * 1024 * 1024;
+
+function persistTaskAttachmentFromDataUrl(
+  taskId: number,
+  dataUrl: string,
+  uploadsDir: string,
+): { url: string; sizeLabel: string; isImage: boolean } {
+  const trimmed = dataUrl.trim();
+  const m = /^data:(image\/(?:png|jpeg|jpg|webp)|application\/pdf);base64,([\s\S]+)$/i.exec(trimmed);
+  if (!m) throw new Error("File must be PNG, JPEG, WebP, or PDF.");
+  const buf = Buffer.from(m[2]!.replace(/\s/g, ""), "base64");
+  if (buf.length > MAX_TASK_ATTACHMENT_BYTES) throw new Error("File must be 8MB or smaller.");
+  const mime = m[1]!.toLowerCase();
+  const ext =
+    mime.includes("jpeg") || mime.includes("jpg") ? "jpg" : mime === "image/webp" ? "webp" : mime.includes("pdf") ? "pdf" : "png";
+  const filename = `task-${taskId}-${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}.${ext}`;
+  fs.writeFileSync(path.join(uploadsDir, filename), buf);
+  const isImage = ext !== "pdf";
+  return {
+    url: `/uploads/${filename}`,
+    sizeLabel: `${(buf.length / 1024).toFixed(1)} KB`,
+    isImage,
+  };
+}
 
 function persistChatUploadFromDataUrl(channelId: number, dataUrl: string, uploadsDir: string): string {
   const trimmed = dataUrl.trim();
@@ -819,19 +843,55 @@ export async function registerRoutes(
     res.json({ message: "Deleted" });
   });
 
+  const taskAttachmentUploadSchema = z.object({
+    fileDataUrl: z.string().min(1),
+    fileName: z.string().max(260).optional(),
+  });
+
   // Attachments
   app.post("/api/tasks/:taskId/attachments", requireAuth, async (req, res) => {
     const currentUser = req.user as any;
     const taskId = Number(req.params.taskId);
+    if (!Number.isInteger(taskId) || taskId <= 0) {
+      return res.status(400).json({ message: "Invalid task" });
+    }
+    const task = await storage.getTask(taskId);
+    if (!task) return res.status(404).json({ message: "Task not found" });
     // Clients without full access cannot add attachments
     if (currentUser.role === "client") {
       const ok = await clientHasFullAccess(currentUser.id, taskId);
       if (!ok) return res.status(403).json({ message: "Not authorized" });
     }
+
+    if (req.body?.fileDataUrl != null) {
+      const parsed = taskAttachmentUploadSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ message: "Invalid upload" });
+      try {
+        const { url, sizeLabel, isImage } = persistTaskAttachmentFromDataUrl(taskId, parsed.data.fileDataUrl, uploadsDir);
+        const rawName = parsed.data.fileName?.trim() || path.basename(url);
+        const safeName = rawName.replace(/[/\\?%*:|"<>]/g, "").slice(0, 240) || "attachment";
+        const attachment = await storage.createAttachment({
+          taskId,
+          commentId: null,
+          name: safeName,
+          type: isImage ? "image" : "file",
+          url,
+          size: sizeLabel,
+        });
+        return res.status(201).json(attachment);
+      } catch (e: unknown) {
+        const message = e instanceof Error ? e.message : "Upload failed";
+        return res.status(400).json({ message });
+      }
+    }
+
     const attachment = await storage.createAttachment({
       taskId,
       commentId: null,
-      ...req.body,
+      name: String(req.body?.name || "file"),
+      type: String(req.body?.type || "file"),
+      url: req.body?.url,
+      size: req.body?.size,
     });
     res.status(201).json(attachment);
   });

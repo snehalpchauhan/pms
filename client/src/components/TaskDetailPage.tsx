@@ -20,7 +20,7 @@ import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { Calendar, Paperclip, Tag, User as UserIcon, CheckCircle2, MoreHorizontal, MessageSquare, Plus, X, Reply, Clock, History, AlertCircle, FileText, Activity, Repeat, CalendarCheck, ArrowRight, CheckSquare, Trash2, Download, Lock, RotateCcw } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format } from "date-fns";
@@ -106,9 +106,24 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
   const [newChecklistInput, setNewChecklistInput] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>(task.attachments || []);
   const [assignees, setAssignees] = useState<string[]>(task.assignees || []);
+  const [tags, setTags] = useState<string[]>(task.tags || []);
+  const [description, setDescription] = useState(task.description || "");
+  const [newTagInput, setNewTagInput] = useState("");
+  const [tagPopoverOpen, setTagPopoverOpen] = useState(false);
+  const [savingDescription, setSavingDescription] = useState(false);
+  const [uploadingAttachment, setUploadingAttachment] = useState(false);
+  const [timeHours, setTimeHours] = useState("");
+  const [timeDate, setTimeDate] = useState(format(new Date(), "yyyy-MM-dd"));
+  const [timeDescription, setTimeDescription] = useState("");
+  const [timeLogging, setTimeLogging] = useState(false);
+  const [timeClientVisible, setTimeClientVisible] = useState(true);
+  const [clientActionLoading, setClientActionLoading] = useState(false);
+  const [revisionOpen, setRevisionOpen] = useState(false);
+  const [revisionReason, setRevisionReason] = useState("");
 
   const isClient = currentUser?.role === "client";
   const isFullAccess = isClient && clientPermissions?.clientTaskAccess === "full";
+  const canEditTaskFields = !isClient || isFullAccess;
 
   const numericTaskId = Number(task.id);
   const numericProjectId = Number(task.projectId);
@@ -117,16 +132,65 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
     queryClient.invalidateQueries({ queryKey: ["/api/projects", numericProjectId, "tasks"] });
   };
 
-  const [timeHours, setTimeHours] = useState("");
-  const [timeDate, setTimeDate] = useState(format(new Date(), "yyyy-MM-dd"));
-  const [timeDescription, setTimeDescription] = useState("");
-  const [timeLogging, setTimeLogging] = useState(false);
-  const [timeClientVisible, setTimeClientVisible] = useState(true);
+  useEffect(() => {
+    setComments(task.comments || []);
+    setAttachments(task.attachments || []);
+    setTags(task.tags?.length ? [...task.tags] : []);
+    setDescription(task.description || "");
+  }, [task.id]);
 
-  // Client Approve / Request Revision state
-  const [clientActionLoading, setClientActionLoading] = useState(false);
-  const [revisionOpen, setRevisionOpen] = useState(false);
-  const [revisionReason, setRevisionReason] = useState("");
+  const patchTask = async (updates: Record<string, unknown>) => {
+    await apiRequest("PATCH", `/api/tasks/${numericTaskId}`, updates);
+    invalidateTasks();
+  };
+
+  const saveDescription = async () => {
+    const next = description.trim();
+    if (!canEditTaskFields) return;
+    setSavingDescription(true);
+    try {
+      await patchTask({ description: next });
+      toast({ title: "Description saved" });
+    } catch {
+      toast({ title: "Could not save description", variant: "destructive" });
+    } finally {
+      setSavingDescription(false);
+    }
+  };
+
+  const addTag = async () => {
+    const t = newTagInput.trim();
+    if (!t || !canEditTaskFields) return;
+    if (tags.includes(t)) {
+      setNewTagInput("");
+      setTagPopoverOpen(false);
+      return;
+    }
+    const prev = [...tags];
+    const next = [...tags, t];
+    setTags(next);
+    setNewTagInput("");
+    setTagPopoverOpen(false);
+    try {
+      await patchTask({ tags: next });
+    } catch {
+      setTags(prev);
+      toast({ title: "Could not add tag", variant: "destructive" });
+    }
+  };
+
+  const removeTag = async (tag: string) => {
+    if (!canEditTaskFields) return;
+    const prev = [...tags];
+    const next = tags.filter((x) => x !== tag);
+    setTags(next);
+    try {
+      await patchTask({ tags: next });
+    } catch {
+      setTags(prev);
+      toast({ title: "Could not remove tag", variant: "destructive" });
+    }
+  };
 
   const handleApprove = async () => {
     setClientActionLoading(true);
@@ -283,13 +347,16 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
           type: "comment",
         });
         const created = await res.json();
-        setComments(prev => [...prev, {
-          id: String(created.id),
-          authorId: String(created.authorId),
-          content: created.content,
-          createdAt: created.createdAt || "Just now",
-          type: created.type || "comment",
-        }]);
+        setComments((prev) => [
+          {
+            id: String(created.id),
+            authorId: String(created.authorId),
+            content: created.content,
+            createdAt: created.createdAt || new Date().toISOString(),
+            type: created.type || "comment",
+          },
+          ...prev,
+        ]);
         setCommentInput("");
         invalidateTasks();
       } catch (e) {
@@ -299,16 +366,98 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
 
   const currentUserId = currentUser ? String(currentUser.id) : "";
 
-  const handleAttachmentUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-      if (e.target.files) {
-          const newFiles = Array.from(e.target.files).map((file, i) => ({
-              id: `att-new-${Date.now()}-${i}`,
-              name: file.name,
-              type: file.type.includes('image') ? 'image' as const : 'file' as const,
-              size: `${(file.size / 1024).toFixed(1)} KB`
-          }));
-          setAttachments([...attachments, ...newFiles]);
+  const sortedUserComments = useMemo(
+    () =>
+      [...comments.filter((c) => c.type !== "system")].sort((a, b) => {
+        const ta = new Date(a.createdAt).getTime();
+        const tb = new Date(b.createdAt).getTime();
+        return tb - ta;
+      }),
+    [comments],
+  );
+
+  const sortedSystemLogs = useMemo(
+    () =>
+      [...comments.filter((c) => c.type === "system")].sort((a, b) => {
+        const ta = new Date(a.createdAt).getTime();
+        const tb = new Date(b.createdAt).getTime();
+        return tb - ta;
+      }),
+    [comments],
+  );
+
+  const handleAttachmentUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    e.target.value = "";
+    if (!files?.length || !canEditTaskFields) return;
+    setUploadingAttachment(true);
+    let uploaded = 0;
+    try {
+      for (const file of Array.from(files)) {
+        if (file.size > 8 * 1024 * 1024) {
+          toast({ title: "File too large", description: `${file.name} must be 8MB or less.`, variant: "destructive" });
+          continue;
+        }
+        const allowed = ["image/png", "image/jpeg", "image/jpg", "image/webp", "application/pdf"];
+        if (!allowed.includes(file.type)) {
+          toast({ title: "Unsupported file", description: `${file.name}: use PNG, JPEG, WebP, or PDF.`, variant: "destructive" });
+          continue;
+        }
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            if (typeof reader.result === "string") resolve(reader.result);
+            else reject(new Error("read"));
+          };
+          reader.onerror = () => reject(new Error("read"));
+          reader.readAsDataURL(file);
+        });
+        const res = await apiRequest("POST", `/api/tasks/${numericTaskId}/attachments`, {
+          fileDataUrl: dataUrl,
+          fileName: file.name,
+        });
+        const created = await res.json();
+        const row: Attachment = {
+          id: String(created.id),
+          name: created.name,
+          type: created.type === "image" ? "image" : "file",
+          url: created.url,
+          size: created.size,
+        };
+        setAttachments((prev) => [...prev, row]);
+        uploaded += 1;
       }
+      if (uploaded > 0) {
+        invalidateTasks();
+        toast({ title: uploaded === 1 ? "Attachment uploaded" : `${uploaded} attachments uploaded` });
+      }
+    } catch (err) {
+      toast({
+        title: "Upload failed",
+        description: err instanceof Error ? err.message : "Try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setUploadingAttachment(false);
+    }
+  };
+
+  const handleRemoveAttachment = async (att: Attachment) => {
+    if (!canEditTaskFields) return;
+    const idNum = Number(att.id);
+    if (!Number.isInteger(idNum)) {
+      setAttachments((prev) => prev.filter((a) => a.id !== att.id));
+      return;
+    }
+    const prev = [...attachments];
+    setAttachments((p) => p.filter((a) => a.id !== att.id));
+    try {
+      await apiRequest("DELETE", `/api/attachments/${idNum}`);
+      invalidateTasks();
+    } catch {
+      setAttachments(prev);
+      toast({ title: "Could not remove attachment", variant: "destructive" });
+    }
   };
 
   const toggleAssignee = (userId: string) => {
@@ -353,9 +502,9 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
              </div>
          </div>
 
-         <div className="flex-1 overflow-hidden flex flex-col">
-             <ScrollArea className="flex-1">
-                 <div className="max-w-5xl mx-auto p-6 md:p-8 space-y-8 pb-32">
+         <div className="flex-1 overflow-hidden flex flex-col lg:flex-row min-h-0">
+             <ScrollArea className="flex-1 min-h-0 min-w-0 lg:min-h-0">
+                 <div className="max-w-3xl mx-auto p-6 md:p-8 space-y-8 pb-24 lg:pb-32">
                      
                      {/* Title & Status Block */}
                      <div className="space-y-4">
@@ -583,15 +732,56 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                          <div className="space-y-2">
                              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Tags</div>
                              <div className="flex flex-wrap gap-2">
-                                {task.tags.map(tag => (
-                                    <Badge key={tag} variant="secondary" className="bg-background hover:bg-muted border-border/50 shadow-sm cursor-pointer font-medium">
-                                        {tag}
+                                {tags.map((tag) => (
+                                    <Badge
+                                      key={tag}
+                                      variant="secondary"
+                                      className="bg-background hover:bg-muted border-border/50 shadow-sm font-medium gap-1 pr-1"
+                                    >
+                                      {tag}
+                                      {canEditTaskFields && (
+                                        <button
+                                          type="button"
+                                          className="rounded-full p-0.5 hover:bg-muted-foreground/20"
+                                          onClick={() => void removeTag(tag)}
+                                          aria-label={`Remove ${tag}`}
+                                        >
+                                          <X className="w-3 h-3" />
+                                        </button>
+                                      )}
                                     </Badge>
                                 ))}
-                                {(!isClient || isFullAccess) && (
-                                    <Button variant="ghost" size="icon" className="h-6 w-6 rounded-full border border-dashed border-border/50">
-                                        <Plus className="w-3 h-3" />
-                                    </Button>
+                                {canEditTaskFields && (
+                                    <Popover open={tagPopoverOpen} onOpenChange={setTagPopoverOpen}>
+                                      <PopoverTrigger asChild>
+                                        <Button variant="ghost" size="icon" className="h-6 w-6 rounded-full border border-dashed border-border/50" type="button">
+                                          <Plus className="w-3 h-3" />
+                                        </Button>
+                                      </PopoverTrigger>
+                                      <PopoverContent className="w-64 p-3" align="start">
+                                        <div className="space-y-2">
+                                          <Label htmlFor="new-tag" className="text-xs">
+                                            New tag
+                                          </Label>
+                                          <Input
+                                            id="new-tag"
+                                            value={newTagInput}
+                                            onChange={(e) => setNewTagInput(e.target.value)}
+                                            placeholder="e.g. design"
+                                            className="h-8 text-sm"
+                                            onKeyDown={(e) => {
+                                              if (e.key === "Enter") {
+                                                e.preventDefault();
+                                                void addTag();
+                                              }
+                                            }}
+                                          />
+                                          <Button size="sm" className="w-full h-8" type="button" onClick={() => void addTag()}>
+                                            Add tag
+                                          </Button>
+                                        </div>
+                                      </PopoverContent>
+                                    </Popover>
                                 )}
                             </div>
                         </div>
@@ -603,16 +793,18 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                             <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
                                 <Paperclip className="w-4 h-4 text-primary" /> Attachments
                             </h3>
-                            {(!isClient || isFullAccess) && (
+                            {canEditTaskFields && (
                                 <div className="relative">
-                                    <input 
-                                        type="file" 
-                                        multiple 
-                                        className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10"
-                                        onChange={handleAttachmentUpload}
+                                    <input
+                                        type="file"
+                                        multiple
+                                        accept="image/png,image/jpeg,image/jpg,image/webp,application/pdf"
+                                        className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10 disabled:cursor-not-allowed"
+                                        onChange={(e) => void handleAttachmentUpload(e)}
+                                        disabled={uploadingAttachment}
                                     />
-                                    <Button variant="ghost" size="sm" className="h-7 text-xs">
-                                        <Plus className="w-3 h-3 mr-1" /> Add File
+                                    <Button variant="ghost" size="sm" className="h-7 text-xs" type="button" disabled={uploadingAttachment}>
+                                        <Plus className="w-3 h-3 mr-1" /> {uploadingAttachment ? "Uploading…" : "Add File"}
                                     </Button>
                                 </div>
                             )}
@@ -622,9 +814,9 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                                 {attachments.map(att => (
                                     <div key={att.id} className="flex items-center gap-3 bg-background border border-border/50 rounded-lg p-3 shadow-sm hover:bg-muted/30 transition-colors group">
-                                        <div className="w-10 h-10 rounded bg-muted flex items-center justify-center shrink-0">
-                                            {att.type === 'image' ? (
-                                                <img src={att.url || "https://placehold.co/100x100"} alt="" className="w-full h-full object-cover rounded" />
+                                        <div className="w-10 h-10 rounded bg-muted flex items-center justify-center shrink-0 overflow-hidden">
+                                            {att.type === "image" && att.url ? (
+                                                <img src={att.url} alt="" className="w-full h-full object-cover" />
                                             ) : (
                                                 <FileText className="w-5 h-5 text-muted-foreground" />
                                             )}
@@ -634,11 +826,21 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                                             <div className="text-xs text-muted-foreground">{att.size}</div>
                                         </div>
                                         <div className="opacity-0 group-hover:opacity-100 flex gap-1 transition-opacity">
-                                            <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground">
-                                                <Download className="w-3.5 h-3.5" />
-                                            </Button>
-                                            {(!isClient || isFullAccess) && (
-                                                <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => setAttachments(attachments.filter(a => a.id !== att.id))}>
+                                            {att.url ? (
+                                              <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" asChild>
+                                                <a href={att.url} target="_blank" rel="noopener noreferrer" download={att.name}>
+                                                  <Download className="w-3.5 h-3.5" />
+                                                </a>
+                                              </Button>
+                                            ) : null}
+                                            {canEditTaskFields && (
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                                                    type="button"
+                                                    onClick={() => void handleRemoveAttachment(att)}
+                                                >
                                                     <X className="w-3.5 h-3.5" />
                                                 </Button>
                                             )}
@@ -655,12 +857,33 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
 
                      {/* Description */}
                      <div className="space-y-3">
-                        <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
-                            Description
-                        </h3>
-                        <div className="prose prose-sm dark:prose-invert max-w-none text-foreground/90 leading-relaxed p-6 bg-background rounded-xl border border-border/50 shadow-sm min-h-[100px]">
-                            <p>{task.description}</p>
+                        <div className="flex items-center justify-between gap-2">
+                          <h3 className="text-sm font-semibold text-foreground">Description</h3>
+                          {canEditTaskFields && (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="secondary"
+                              className="h-8 text-xs"
+                              disabled={savingDescription}
+                              onClick={() => void saveDescription()}
+                            >
+                              {savingDescription ? "Saving…" : "Save description"}
+                            </Button>
+                          )}
                         </div>
+                        {canEditTaskFields ? (
+                          <Textarea
+                            value={description}
+                            onChange={(e) => setDescription(e.target.value)}
+                            placeholder="Add a description…"
+                            className="min-h-[140px] text-sm bg-background border-border/50 rounded-xl shadow-sm resize-y"
+                          />
+                        ) : (
+                          <div className="prose prose-sm dark:prose-invert max-w-none text-foreground/90 leading-relaxed p-6 bg-background rounded-xl border border-border/50 shadow-sm min-h-[100px]">
+                            <p>{task.description || <span className="text-muted-foreground italic">No description</span>}</p>
+                          </div>
+                        )}
                     </div>
 
                     {/* Checklist */}
@@ -715,8 +938,14 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                             )}
                         </div>
                     </div>
+                 </div>
+             </ScrollArea>
 
-                     {/* Tabs for Comments vs Logs vs Time */}
+             <aside className="flex flex-col w-full lg:w-[min(428px,40vw)] shrink-0 border-t lg:border-t-0 lg:border-l border-border/50 bg-muted/10 min-h-0 lg:h-full">
+               <ScrollArea className="h-[min(52vh,480px)] lg:flex-1 lg:h-full lg:min-h-0">
+                 <div className="p-4 lg:p-5 pb-20">
+
+                     {/* Tabs: comments, time, system log — right column on large screens */}
                      <Tabs defaultValue="comments" className="w-full">
                         <div className="flex items-center justify-between border-b border-border/50 pb-px mb-6">
                             <TabsList className="bg-transparent h-10 p-0 gap-6">
@@ -909,10 +1138,10 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
 
                             {/* Comment Stream - Compact FB Style */}
                             <div className="space-y-4">
-                                {comments.filter(c => c.type !== 'system').map((comment) => (
+                                {sortedUserComments.map((comment) => (
                                     <CommentItem key={comment.id} comment={comment} users={users} currentUserId={currentUserId} />
                                 ))}
-                                {comments.filter(c => c.type !== 'system').length === 0 && (
+                                {sortedUserComments.length === 0 && (
                                     <div className="text-center text-sm text-muted-foreground py-6">
                                         No comments yet. Be the first to comment.
                                     </div>
@@ -922,7 +1151,7 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
 
                         <TabsContent value="logs" className="space-y-4 mt-0 pt-2">
                              <div className="relative pl-6 ml-3 space-y-6 border-l-2 border-border/40 pb-4">
-                                {comments.filter(c => c.type === 'system').map((log) => {
+                                {sortedSystemLogs.map((log) => {
                                     const author = users[log.authorId];
                                     return (
                                         <div key={log.id} className="relative">
@@ -941,22 +1170,15 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                                         </div>
                                     )
                                 })}
-                                {/* Example logs to fill space since we only have one in mock data */}
-                                <div className="relative">
-                                    <div className="absolute -left-[29px] top-1.5 bg-background rounded-full p-0.5 border border-border">
-                                        <div className="w-2 h-2 rounded-full bg-emerald-500" />
-                                    </div>
-                                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                                        <span className="font-medium text-foreground">System</span>
-                                        <span>Task created in Website Redesign</span>
-                                        <span className="opacity-50">• 2 days ago</span>
-                                    </div>
-                                </div>
+                                {sortedSystemLogs.length === 0 && (
+                                  <p className="text-xs text-muted-foreground pl-1">No system events recorded for this task.</p>
+                                )}
                             </div>
                         </TabsContent>
                      </Tabs>
                  </div>
-             </ScrollArea>
+               </ScrollArea>
+             </aside>
          </div>
     </div>
   );

@@ -304,7 +304,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getComments(taskId: number): Promise<Comment[]> {
-    return db.select().from(comments).where(eq(comments.taskId, taskId));
+    return db
+      .select()
+      .from(comments)
+      .where(eq(comments.taskId, taskId))
+      .orderBy(desc(comments.createdAt));
   }
 
   async createComment(comment: InsertComment): Promise<Comment> {
