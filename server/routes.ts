@@ -1,9 +1,39 @@
-import type { Express } from "express";
+import express, { type Express } from "express";
 import { createServer, type Server } from "http";
+import fs from "fs";
+import path from "path";
 import { z } from "zod";
 import { storage } from "./storage";
 import { setupAuth, requireAuth } from "./auth";
 import { seedDatabase } from "./seed";
+
+const MAX_COMPANY_LOGO_BYTES = 2 * 1024 * 1024;
+
+function persistCompanyLogoFromDataUrl(dataUrl: string, uploadsDir: string): string {
+  const trimmed = dataUrl.trim();
+  const m = /^data:(image\/(?:png|jpeg|jpg|webp));base64,([\s\S]+)$/i.exec(trimmed);
+  if (!m) throw new Error("Logo must be PNG, JPEG, or WebP.");
+  const buf = Buffer.from(m[2].replace(/\s/g, ""), "base64");
+  if (buf.length > MAX_COMPANY_LOGO_BYTES) throw new Error("Logo must be 2MB or smaller.");
+  const mime = m[1].toLowerCase();
+  const ext =
+    mime === "image/jpeg" || mime === "image/jpg" ? "jpg" : mime === "image/webp" ? "webp" : "png";
+  const filename = `company-logo.${ext}`;
+  fs.writeFileSync(path.join(uploadsDir, filename), buf);
+  return `/uploads/${filename}`;
+}
+
+function safeUnlinkCompanyLogo(logoUrl: string | null | undefined, uploadsDir: string) {
+  if (!logoUrl || !logoUrl.startsWith("/uploads/")) return;
+  const base = path.basename(logoUrl);
+  if (!/^company-logo\.(png|jpe?g|webp)$/i.test(base)) return;
+  const full = path.join(uploadsDir, base);
+  try {
+    if (fs.existsSync(full)) fs.unlinkSync(full);
+  } catch {
+    /* ignore */
+  }
+}
 
 export async function registerRoutes(
   httpServer: Server,
@@ -11,6 +41,82 @@ export async function registerRoutes(
 ): Promise<Server> {
   setupAuth(app);
   await seedDatabase();
+
+  const uploadsDir = path.join(process.cwd(), "uploads");
+  fs.mkdirSync(uploadsDir, { recursive: true });
+  app.use("/uploads", express.static(uploadsDir));
+
+  const companyPatchSchema = z.object({
+    companyName: z.string().min(1, "Company name is required").max(200).optional(),
+    workspaceSlug: z
+      .string()
+      .max(100)
+      .regex(/^[a-z0-9-]*$/, "Slug: lowercase letters, numbers, and hyphens only")
+      .optional(),
+    logoDataUrl: z.union([z.string().min(1), z.null()]).optional(),
+  });
+
+  app.get("/api/company-settings", requireAuth, async (_req, res) => {
+    const row = await storage.getCompanySettings();
+    res.json({
+      companyName: row.companyName || "",
+      workspaceSlug: row.workspaceSlug ?? "",
+      logoUrl: row.logoUrl ?? null,
+    });
+  });
+
+  app.patch("/api/company-settings", requireAuth, async (req, res) => {
+    const currentUser = req.user as { role?: string };
+    if (currentUser.role !== "admin") {
+      return res.status(403).json({ message: "Only admins can update company settings" });
+    }
+    const parsed = companyPatchSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: parsed.error.issues[0]?.message ?? "Invalid body" });
+    }
+    const body = parsed.data;
+    if (
+      body.companyName === undefined &&
+      body.workspaceSlug === undefined &&
+      body.logoDataUrl === undefined
+    ) {
+      return res.status(400).json({ message: "No changes provided" });
+    }
+
+    const current = await storage.getCompanySettings();
+    const updates: {
+      companyName?: string;
+      workspaceSlug?: string | null;
+      logoUrl?: string | null;
+    } = {};
+
+    if (body.companyName !== undefined) updates.companyName = body.companyName;
+    if (body.workspaceSlug !== undefined) {
+      updates.workspaceSlug = body.workspaceSlug === "" ? null : body.workspaceSlug;
+    }
+    if (body.logoDataUrl !== undefined) {
+      if (body.logoDataUrl === null) {
+        safeUnlinkCompanyLogo(current.logoUrl, uploadsDir);
+        updates.logoUrl = null;
+      } else {
+        try {
+          const newUrl = persistCompanyLogoFromDataUrl(body.logoDataUrl, uploadsDir);
+          safeUnlinkCompanyLogo(current.logoUrl, uploadsDir);
+          updates.logoUrl = newUrl;
+        } catch (e: unknown) {
+          const msg = e instanceof Error ? e.message : "Invalid logo";
+          return res.status(400).json({ message: msg });
+        }
+      }
+    }
+
+    const updated = await storage.updateCompanySettings(updates);
+    res.json({
+      companyName: updated.companyName || "",
+      workspaceSlug: updated.workspaceSlug ?? "",
+      logoUrl: updated.logoUrl ?? null,
+    });
+  });
 
   // Users
   app.get("/api/users", requireAuth, async (_req, res) => {

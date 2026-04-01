@@ -3,6 +3,14 @@ import { pgTable, text, varchar, boolean, timestamp, jsonb, json, serial, intege
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
+/** Single-tenant workspace branding (one row; created on first read). */
+export const companySettings = pgTable("company_settings", {
+  id: serial("id").primaryKey(),
+  companyName: text("company_name").notNull().default(""),
+  workspaceSlug: text("workspace_slug"),
+  logoUrl: text("logo_url"),
+});
+
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   username: text("username").notNull().unique(),
@@ -131,6 +139,7 @@ export const insertTimeEntrySchema = createInsertSchema(timeEntries).omit({ id: 
 // Types
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
+export type CompanySettings = typeof companySettings.$inferSelect;
 export type Project = typeof projects.$inferSelect;
 export type InsertProject = z.infer<typeof insertProjectSchema>;
 export type Task = typeof tasks.$inferSelect;

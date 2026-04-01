@@ -3,11 +3,13 @@ import { eq, and, desc, inArray, gte, lte } from "drizzle-orm";
 import {
   users, projects, projectMembers, tasks, taskAssignees,
   checklistItems, attachments, comments, channels, channelMembers, messages, timeEntries,
+  companySettings,
   type User, type InsertUser, type Project, type InsertProject,
   type Task, type InsertTask, type ChecklistItem, type Attachment,
   type Comment, type InsertComment, type Channel, type InsertChannel,
   type Message, type InsertMessage, type TimeEntry, type InsertTimeEntry,
   type ProjectMember,
+  type CompanySettings,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -65,6 +67,11 @@ export interface IStorage {
   getAllTimeEntries(filters?: { userId?: number; projectId?: number; startDate?: string; endDate?: string; clientVisibleOnly?: boolean; clientProjectIds?: number[] }): Promise<(TimeEntry & { taskTitle: string; projectId: number; userName: string })[]>;
   deleteTimeEntry(id: number): Promise<void>;
   getTimeEntry(id: number): Promise<TimeEntry | undefined>;
+
+  getCompanySettings(): Promise<CompanySettings>;
+  updateCompanySettings(
+    updates: Partial<{ companyName: string; workspaceSlug: string | null; logoUrl: string | null }>,
+  ): Promise<CompanySettings>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -365,6 +372,30 @@ export class DatabaseStorage implements IStorage {
   async getTimeEntry(id: number): Promise<TimeEntry | undefined> {
     const [entry] = await db.select().from(timeEntries).where(eq(timeEntries.id, id));
     return entry;
+  }
+
+  async getCompanySettings(): Promise<CompanySettings> {
+    const rows = await db.select().from(companySettings).limit(1);
+    if (rows.length === 0) {
+      const [inserted] = await db
+        .insert(companySettings)
+        .values({ companyName: "My company" })
+        .returning();
+      return inserted;
+    }
+    return rows[0];
+  }
+
+  async updateCompanySettings(
+    updates: Partial<{ companyName: string; workspaceSlug: string | null; logoUrl: string | null }>,
+  ): Promise<CompanySettings> {
+    const current = await this.getCompanySettings();
+    const [updated] = await db
+      .update(companySettings)
+      .set(updates)
+      .where(eq(companySettings.id, current.id))
+      .returning();
+    return updated!;
   }
 }
 

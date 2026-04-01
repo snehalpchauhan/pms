@@ -1,7 +1,9 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAppData } from "@/hooks/useAppData";
 import { useAuth } from "@/hooks/useAuth";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -26,11 +28,27 @@ const ROLE_COLORS: Record<UserRole, string> = {
 
 const ALL_ROLES: UserRole[] = ["admin", "manager", "employee", "client"];
 
+const MAX_LOGO_BYTES = 2 * 1024 * 1024;
+
+type CompanySettingsDto = {
+    companyName: string;
+    workspaceSlug: string;
+    logoUrl: string | null;
+};
+
 export default function CompanySettingsView() {
     const { usersArray, refetchUsers } = useAppData();
     const { user: currentUser } = useAuth();
+    const { toast } = useToast();
+    const logoInputRef = useRef<HTMLInputElement>(null);
 
-    const [companyName, setCompanyName] = useState("Acme Corp");
+    const isAdmin = currentUser?.role === "admin";
+
+    const { data: companyData, isLoading: companyLoading } = useQuery<CompanySettingsDto>({
+        queryKey: ["/api/company-settings"],
+    });
+
+    const [companyName, setCompanyName] = useState("");
     const [searchTerm, setSearchTerm] = useState("");
     const [roleFilter, setRoleFilter] = useState<string>("all");
 
@@ -47,6 +65,69 @@ export default function CompanySettingsView() {
     const [deleteUserId, setDeleteUserId] = useState<string | null>(null);
     const [deleteLoading, setDeleteLoading] = useState(false);
     const [deleteError, setDeleteError] = useState("");
+
+    const [workspaceSlug, setWorkspaceSlug] = useState("");
+    const [pendingLogoDataUrl, setPendingLogoDataUrl] = useState<string | null>(null);
+    const [logoRemoved, setLogoRemoved] = useState(false);
+
+    useEffect(() => {
+        if (!companyData) return;
+        setCompanyName(companyData.companyName);
+        setWorkspaceSlug(companyData.workspaceSlug);
+        setPendingLogoDataUrl(null);
+        setLogoRemoved(false);
+    }, [companyData]);
+
+    const displayLogoSrc =
+        pendingLogoDataUrl ??
+        (!logoRemoved && companyData?.logoUrl ? companyData.logoUrl : null);
+
+    const saveCompanyMutation = useMutation({
+        mutationFn: async () => {
+            const body: Record<string, unknown> = {
+                companyName: companyName.trim(),
+                workspaceSlug: workspaceSlug.trim().toLowerCase().replace(/[^a-z0-9-]/g, ""),
+            };
+            if (pendingLogoDataUrl) body.logoDataUrl = pendingLogoDataUrl;
+            else if (logoRemoved) body.logoDataUrl = null;
+            await apiRequest("PATCH", "/api/company-settings", body);
+        },
+        onSuccess: async () => {
+            await queryClient.invalidateQueries({ queryKey: ["/api/company-settings"] });
+            setPendingLogoDataUrl(null);
+            setLogoRemoved(false);
+            toast({ title: "Company settings saved" });
+        },
+        onError: (err: unknown) => {
+            toast({
+                title: "Could not save",
+                description: parseApiError(err),
+                variant: "destructive",
+            });
+        },
+    });
+
+    function handleLogoFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+        const file = e.target.files?.[0];
+        e.target.value = "";
+        if (!file) return;
+        if (!/^image\/(png|jpeg|jpg|webp)$/i.test(file.type)) {
+            toast({ title: "Use PNG, JPEG, or WebP", variant: "destructive" });
+            return;
+        }
+        if (file.size > MAX_LOGO_BYTES) {
+            toast({ title: "Max file size is 2MB", variant: "destructive" });
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = () => {
+            if (typeof reader.result === "string") {
+                setPendingLogoDataUrl(reader.result);
+                setLogoRemoved(false);
+            }
+        };
+        reader.readAsDataURL(file);
+    }
 
     const filteredUsers = usersArray.filter(u => {
         const matchesSearch = u.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -112,6 +193,9 @@ export default function CompanySettingsView() {
 
     const deleteUserName = usersArray.find(u => u.id === deleteUserId)?.name ?? "";
 
+    const hostPrefix =
+        typeof window !== "undefined" ? `${window.location.host}/` : "";
+
     return (
         <div className="h-full bg-background flex flex-col overflow-hidden animate-in fade-in duration-300">
             <div className="border-b border-border p-6 shrink-0 bg-background/80 backdrop-blur-md sticky top-0 z-10">
@@ -134,34 +218,117 @@ export default function CompanySettingsView() {
                         {/* General Tab */}
                         <TabsContent value="general" className="max-w-2xl space-y-8 mt-0">
                             <Card>
-                                <CardHeader>
-                                    <CardTitle>Company Profile</CardTitle>
-                                    <CardDescription>Update your company logo and details.</CardDescription>
+                                <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-4 space-y-0">
+                                    <div>
+                                        <CardTitle>Company Profile</CardTitle>
+                                        <CardDescription>Update your company logo and details.</CardDescription>
+                                    </div>
+                                    <Button
+                                        type="button"
+                                        disabled={!isAdmin || companyLoading || saveCompanyMutation.isPending}
+                                        onClick={() => saveCompanyMutation.mutate()}
+                                    >
+                                        {saveCompanyMutation.isPending ? "Saving…" : "Save changes"}
+                                    </Button>
                                 </CardHeader>
                                 <CardContent className="space-y-6">
+                                    {!isAdmin && (
+                                        <p className="text-sm text-muted-foreground rounded-md border border-border/60 bg-muted/30 px-3 py-2">
+                                            Only administrators can edit company profile. You can still manage users if your role allows it.
+                                        </p>
+                                    )}
+                                    <input
+                                        ref={logoInputRef}
+                                        type="file"
+                                        accept="image/png,image/jpeg,image/webp"
+                                        className="sr-only"
+                                        onChange={handleLogoFileChange}
+                                        disabled={!isAdmin || companyLoading}
+                                    />
                                     <div className="flex items-center gap-6">
-                                        <div className="w-24 h-24 bg-primary/10 rounded-xl border-2 border-dashed border-primary/20 flex flex-col items-center justify-center text-primary hover:bg-primary/20 cursor-pointer transition-colors group">
-                                            <Building2 className="w-8 h-8 mb-1 group-hover:scale-110 transition-transform" />
-                                            <span className="text-[10px] font-medium uppercase">Upload Logo</span>
-                                        </div>
-                                        <div className="space-y-1">
+                                        <button
+                                            type="button"
+                                            disabled={!isAdmin || companyLoading}
+                                            onClick={() => logoInputRef.current?.click()}
+                                            className="w-24 h-24 rounded-xl border-2 border-dashed border-primary/20 flex flex-col items-center justify-center text-primary hover:bg-primary/10 cursor-pointer transition-colors overflow-hidden shrink-0 disabled:opacity-50 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                        >
+                                            {displayLogoSrc ? (
+                                                <img
+                                                    src={displayLogoSrc}
+                                                    alt="Company logo"
+                                                    className="w-full h-full object-cover"
+                                                />
+                                            ) : (
+                                                <>
+                                                    <Building2 className="w-8 h-8 mb-1" />
+                                                    <span className="text-[10px] font-medium uppercase px-1 text-center leading-tight">
+                                                        Upload Logo
+                                                    </span>
+                                                </>
+                                            )}
+                                        </button>
+                                        <div className="space-y-1 min-w-0">
                                             <h3 className="font-medium">Company Logo</h3>
-                                            <p className="text-sm text-muted-foreground">Recommended size: 512x512px. <br />Max file size: 2MB.</p>
-                                            <Button variant="outline" size="sm" className="mt-2">
-                                                <Upload className="w-3 h-3 mr-2" /> Upload
-                                            </Button>
+                                            <p className="text-sm text-muted-foreground">
+                                                PNG, JPEG, or WebP. Recommended 512×512px. Max 2MB.
+                                            </p>
+                                            <div className="flex flex-wrap gap-2 mt-2">
+                                                <Button
+                                                    type="button"
+                                                    variant="outline"
+                                                    size="sm"
+                                                    disabled={!isAdmin || companyLoading}
+                                                    onClick={() => logoInputRef.current?.click()}
+                                                >
+                                                    <Upload className="w-3 h-3 mr-2" /> Upload
+                                                </Button>
+                                                {(displayLogoSrc || companyData?.logoUrl) && (
+                                                    <Button
+                                                        type="button"
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        className="text-muted-foreground"
+                                                        disabled={!isAdmin || companyLoading}
+                                                        onClick={() => {
+                                                            setPendingLogoDataUrl(null);
+                                                            setLogoRemoved(true);
+                                                        }}
+                                                    >
+                                                        Remove logo
+                                                    </Button>
+                                                )}
+                                            </div>
                                         </div>
                                     </div>
                                     <div className="space-y-2">
                                         <Label>Company Name</Label>
-                                        <Input value={companyName} onChange={(e) => setCompanyName(e.target.value)} />
+                                        <Input
+                                            value={companyName}
+                                            onChange={(e) => setCompanyName(e.target.value)}
+                                            disabled={!isAdmin || companyLoading}
+                                        />
                                     </div>
                                     <div className="space-y-2">
-                                        <Label>Workspace URL</Label>
+                                        <Label>Workspace URL slug</Label>
                                         <div className="flex items-center">
-                                            <span className="bg-muted px-3 py-2 border border-r-0 border-border rounded-l-md text-sm text-muted-foreground">taskflow.app/</span>
-                                            <Input defaultValue="acme-corp" className="rounded-l-none" />
+                                            <span className="bg-muted px-3 py-2 border border-r-0 border-border rounded-l-md text-sm text-muted-foreground whitespace-nowrap shrink-0 max-w-[50%] truncate" title={hostPrefix}>
+                                                {hostPrefix}
+                                            </span>
+                                            <Input
+                                                value={workspaceSlug}
+                                                onChange={(e) =>
+                                                    setWorkspaceSlug(
+                                                        e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""),
+                                                    )
+                                                }
+                                                placeholder="acme-corp"
+                                                className="rounded-l-none"
+                                                disabled={!isAdmin || companyLoading}
+                                            />
                                         </div>
+                                        <p className="text-xs text-muted-foreground">
+                                            Lowercase letters, numbers, and hyphens only. Display name for your workspace link.
+                                        </p>
                                     </div>
                                 </CardContent>
                             </Card>

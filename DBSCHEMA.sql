@@ -17,6 +17,12 @@ CREATE TABLE "channel_members" (
 	"user_id" integer,
 	CONSTRAINT "channel_members_channel_id_user_id_pk" PRIMARY KEY("channel_id","user_id")
 );
+CREATE TABLE "company_settings" (
+	"id" serial PRIMARY KEY,
+	"company_name" text DEFAULT '' NOT NULL,
+	"workspace_slug" text,
+	"logo_url" text
+);
 CREATE TABLE "channels" (
 	"id" serial PRIMARY KEY,
 	"name" text NOT NULL,
