@@ -6,6 +6,18 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { LogIn, Lock, Loader2 } from "lucide-react";
 
+/** Shown after oauth_failed when the server passes Azure's error code (see server logs for details). */
+const MS_OAUTH_HINT_MESSAGES: Record<string, string> = {
+  invalid_client:
+    "Azure rejected the client credentials. Regenerate the client secret in Entra and update it in Company Settings (or MS365_CLIENT_SECRET), with no extra spaces or line breaks.",
+  invalid_grant:
+    "The auth code was not accepted (often redirect URI mismatch between authorize and token, expired code, or PKCE/state). Set PUBLIC_APP_URL to https://pms.vnnovate.net and ensure the Entra redirect URI matches exactly.",
+  invalid_request: "Azure rejected the token request. Verify the app registration and redirect URI configuration.",
+  unauthorized_client: "This app registration is not allowed to use this flow. Check Entra authentication settings for the app.",
+  access_denied: "Sign-in was denied or cancelled at Microsoft.",
+  consent_required: "An administrator must grant consent for this app in Microsoft Entra.",
+};
+
 const MICROSOFT_ERROR_MESSAGES: Record<string, string> = {
   disabled: "Microsoft sign-in is turned off. Use username and password.",
   not_configured: "Microsoft sign-in is not fully configured yet. Use username and password or contact an administrator.",
@@ -56,9 +68,17 @@ export default function LoginPage() {
     const params = new URLSearchParams(window.location.search);
     const code = params.get("microsoft_error");
     if (!code) return;
-    setError(MICROSOFT_ERROR_MESSAGES[code] ?? "Microsoft sign-in failed.");
+    const hint = params.get("ms_oauth_hint");
+    let message = MICROSOFT_ERROR_MESSAGES[code] ?? "Microsoft sign-in failed.";
+    if (code === "oauth_failed" && hint) {
+      const hintMsg = MS_OAUTH_HINT_MESSAGES[hint];
+      if (hintMsg) message = `${message} ${hintMsg}`;
+      else message = `${message} (Azure error code: ${hint})`;
+    }
+    setError(message);
     const url = new URL(window.location.href);
     url.searchParams.delete("microsoft_error");
+    url.searchParams.delete("ms_oauth_hint");
     window.history.replaceState({}, "", url.pathname + url.search);
   }, []);
 

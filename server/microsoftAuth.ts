@@ -5,6 +5,7 @@ import { storage } from "./storage";
 import type { CompanySettings } from "@shared/schema";
 
 const oidcConfigCache = new Map<string, Promise<client.Configuration>>();
+let warnedMissingPublicAppUrl = false;
 
 function oidcCacheSecretPart(secret: string): string {
   return crypto.createHash("sha256").update(secret, "utf8").digest("hex").slice(0, 16);
@@ -23,16 +24,28 @@ export function clearMicrosoftOidcCache() {
 export function getPublicAppUrl(req: Request): string {
   const fromEnv = process.env.PUBLIC_APP_URL?.replace(/\/$/, "");
   if (fromEnv) return fromEnv;
+  if (process.env.NODE_ENV === "production" && !warnedMissingPublicAppUrl) {
+    warnedMissingPublicAppUrl = true;
+    console.warn(
+      "[ms365 OAuth] PUBLIC_APP_URL is unset in production; redirect_uri is inferred from proxy headers. Set PUBLIC_APP_URL=https://pms.vnnovate.net (your real host) to avoid Microsoft token errors.",
+    );
+  }
   const proto = (req.get("x-forwarded-proto") || req.protocol || "http").split(",")[0]!.trim();
   const host = (req.get("x-forwarded-host") || req.get("host") || "localhost:5000").split(",")[0]!.trim();
   return `${proto}://${host}`;
 }
 
+function normalizeClientSecret(raw: string | null | undefined): string | undefined {
+  if (!raw) return undefined;
+  const t = raw.replace(/^\uFEFF/, "").trim().replace(/\r/g, "");
+  return t || undefined;
+}
+
 /** Environment variable wins over database when both are set. */
 export function resolveMs365ClientSecret(settings: CompanySettings): string | undefined {
-  const env = process.env.MS365_CLIENT_SECRET || process.env.AZURE_CLIENT_SECRET;
-  if (env?.trim()) return env.trim();
-  return settings.ms365ClientSecret?.trim() || undefined;
+  const env = normalizeClientSecret(process.env.MS365_CLIENT_SECRET || process.env.AZURE_CLIENT_SECRET);
+  if (env) return env;
+  return normalizeClientSecret(settings.ms365ClientSecret ?? undefined);
 }
 
 export function ms365ClientSecretFromEnv(): boolean {
@@ -76,23 +89,49 @@ async function getOidcConfiguration(
   clientSecret: string,
   redirectUri: string,
 ): Promise<client.Configuration> {
-  const cacheKey = `${tenantId}:${clientId}:${redirectUri}:${oidcCacheSecretPart(clientSecret)}`;
+  const usePost = process.env.MS365_TOKEN_AUTH?.toLowerCase() === "post";
+  const authTag = usePost ? "post" : "basic";
+  const cacheKey = `${tenantId}:${clientId}:${redirectUri}:${oidcCacheSecretPart(clientSecret)}:${authTag}`;
   let pending = oidcConfigCache.get(cacheKey);
   if (!pending) {
+    const clientAuth = usePost
+      ? client.ClientSecretPost(clientSecret)
+      : client.ClientSecretBasic(clientSecret);
     pending = client.discovery(
       new URL(`https://login.microsoftonline.com/${tenantId}/v2.0`),
       clientId,
       { redirect_uris: [redirectUri] },
-      client.ClientSecretPost(clientSecret),
+      clientAuth,
     );
     oidcConfigCache.set(cacheKey, pending);
   }
   return pending;
 }
 
-function loginErrorRedirect(req: Request, code: string) {
-  const base = getPublicAppUrl(req);
-  return `${base}/?microsoft_error=${encodeURIComponent(code)}`;
+function safeOauthHint(raw: string | undefined): string | undefined {
+  if (!raw || !/^[a-z0-9_.-]+$/i.test(raw)) return undefined;
+  return raw.slice(0, 80);
+}
+
+function loginErrorRedirect(req: Request, code: string, extra?: Record<string, string>) {
+  const base = getPublicAppUrl(req).replace(/\/$/, "");
+  const u = new URL(`${base}/`);
+  u.searchParams.set("microsoft_error", code);
+  if (extra) {
+    for (const [k, v] of Object.entries(extra)) {
+      if (v) u.searchParams.set(k, v);
+    }
+  }
+  return u.href;
+}
+
+/** Callback URL for openid-client: canonical redirect_uri origin + query from this request (avoids broken req.originalUrl behind some proxies). */
+function buildOAuthCallbackUrl(req: Request, redirectUri: string): URL {
+  const url = new URL(redirectUri);
+  const pathAndQuery = req.url || "";
+  const q = pathAndQuery.includes("?") ? pathAndQuery.slice(pathAndQuery.indexOf("?") + 1) : "";
+  url.search = q;
+  return url;
 }
 
 export function registerMicrosoftAuth(app: Express) {
@@ -195,7 +234,14 @@ export function registerMicrosoftAuth(app: Express) {
         return res.redirect(302, loginErrorRedirect(req, "session_lost"));
       }
 
-      const callbackUrl = new URL(req.originalUrl, `${getPublicAppUrl(req)}/`);
+      const callbackUrl = buildOAuthCallbackUrl(req, redirectUri);
+      if (!callbackUrl.searchParams.get("code") && !callbackUrl.searchParams.get("error")) {
+        console.error("[ms365 OAuth] callback has no code or error query param.", {
+          reqUrl: req.url,
+          originalUrl: req.originalUrl,
+          redirectUri,
+        });
+      }
 
       let tokens: Awaited<ReturnType<typeof client.authorizationCodeGrant>>;
       try {
@@ -206,6 +252,22 @@ export function registerMicrosoftAuth(app: Express) {
         });
       } catch (err) {
         console.error("[ms365 OAuth] authorizationCodeGrant failed:", err);
+        if (err instanceof client.ResponseBodyError) {
+          const hint = safeOauthHint(err.error);
+          console.error("[ms365 OAuth] token endpoint:", err.error, err.error_description);
+          return res.redirect(
+            302,
+            loginErrorRedirect(req, "oauth_failed", hint ? { ms_oauth_hint: hint } : undefined),
+          );
+        }
+        if (err instanceof client.AuthorizationResponseError) {
+          const hint = safeOauthHint(err.error ?? undefined);
+          console.error("[ms365 OAuth] authorize callback:", err.error, err.error_description);
+          return res.redirect(
+            302,
+            loginErrorRedirect(req, "oauth_failed", hint ? { ms_oauth_hint: hint } : undefined),
+          );
+        }
         return res.redirect(302, loginErrorRedirect(req, "oauth_failed"));
       }
 
