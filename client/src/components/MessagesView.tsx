@@ -79,7 +79,7 @@ export default function MessagesView({ project, channelId }: MessagesViewProps) 
       return res.json();
     },
     enabled: numericChannelId != null && !Number.isNaN(numericChannelId),
-    refetchInterval: 12_000,
+    refetchInterval: 3_000,
   });
 
   useEffect(() => {
@@ -93,7 +93,7 @@ export default function MessagesView({ project, channelId }: MessagesViewProps) 
       try {
         const data = JSON.parse(String(ev.data)) as { type?: string; channelId?: number };
         if (data.type === "channel_messages" && data.channelId === numericChannelId) {
-          queryClient.invalidateQueries({ queryKey: ["/api/channels", numericChannelId, "messages"] });
+          void queryClient.refetchQueries({ queryKey: ["/api/channels", numericChannelId, "messages"] });
         }
       } catch {
         /* ignore */
@@ -115,7 +115,7 @@ export default function MessagesView({ project, channelId }: MessagesViewProps) 
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    el.scrollTo({ top: el.scrollHeight, behavior: "auto" });
   }, [channelMessages.length, numericChannelId]);
 
   const canSend = Boolean(input.trim()) && numericChannelId != null && !Number.isNaN(numericChannelId);
@@ -218,16 +218,33 @@ export default function MessagesView({ project, channelId }: MessagesViewProps) 
   };
 
   const handleSend = async () => {
-    if (!canSend || numericChannelId == null) return;
+    if (!canSend || numericChannelId == null || user == null) return;
+    const content = input.trim();
+    const optimisticId = -Date.now();
+    setInput("");
+    queryClient.setQueryData(
+      ["/api/channels", numericChannelId, "messages"],
+      (old: unknown) => {
+        const prev = Array.isArray(old) ? old : [];
+        return [
+          ...prev,
+          {
+            id: optimisticId,
+            channelId: numericChannelId,
+            authorId: user.id,
+            content,
+            createdAt: new Date().toISOString(),
+          },
+        ];
+      },
+    );
     try {
-      await apiRequest("POST", `/api/channels/${numericChannelId}/messages`, {
-        content: input.trim(),
-      });
-      queryClient.invalidateQueries({ queryKey: ["/api/channels", numericChannelId, "messages"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/channels"] });
-      setInput("");
+      await apiRequest("POST", `/api/channels/${numericChannelId}/messages`, { content });
+      await queryClient.refetchQueries({ queryKey: ["/api/channels", numericChannelId, "messages"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/channels"] });
     } catch (e) {
       console.error("Failed to send message:", e);
+      await queryClient.refetchQueries({ queryKey: ["/api/channels", numericChannelId, "messages"] });
       toast({
         title: "Message not sent",
         description: e instanceof Error ? e.message : "Try again.",
@@ -408,6 +425,26 @@ export default function MessagesView({ project, channelId }: MessagesViewProps) 
               }
             }}
           />
+          <div className="mt-3 pt-3 border-t border-border/30">
+            <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground mb-2">
+              How it will look
+            </p>
+            <div
+              className={cn(
+                "min-h-[3.25rem] rounded-lg border px-3 py-2.5 text-[15px] leading-relaxed break-words",
+                "bg-muted/25 border-border/60 text-foreground",
+                "[&_a]:text-primary [&_a]:underline [&_img]:max-h-40",
+              )}
+            >
+              {input.trim() ? (
+                formatChatMarkdown(input)
+              ) : (
+                <span className="text-muted-foreground text-sm">
+                  Bold, italics, links, and images show here while you type (markdown in the box above).
+                </span>
+              )}
+            </div>
+          </div>
           <div className="flex justify-between items-center mt-2 pt-2 border-t border-border/40">
             <div className="flex items-center gap-0.5">
               <Button
