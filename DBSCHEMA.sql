@@ -83,6 +83,7 @@ CREATE TABLE "task_assignees" (
 CREATE TABLE "tasks" (
 	"id" serial PRIMARY KEY,
 	"project_id" integer NOT NULL,
+	"owner_id" integer,
 	"title" text NOT NULL,
 	"description" text DEFAULT '',
 	"status" text DEFAULT 'todo' NOT NULL,
@@ -95,6 +96,8 @@ CREATE TABLE "tasks" (
 	"cover_image" text,
 	"created_at" timestamp DEFAULT now()
 );
+-- If the DB predates owner_id, run once:
+--   ALTER TABLE tasks ADD COLUMN IF NOT EXISTS owner_id integer REFERENCES users(id);
 -- If the DB predates board_order, run once:
 --   ALTER TABLE tasks ADD COLUMN IF NOT EXISTS board_order integer NOT NULL DEFAULT 0;
 CREATE TABLE "time_entries" (
@@ -130,6 +133,7 @@ ALTER TABLE "project_members" ADD CONSTRAINT "project_members_user_id_users_id_f
 ALTER TABLE "task_assignees" ADD CONSTRAINT "task_assignees_task_id_tasks_id_fk" FOREIGN KEY ("task_id") REFERENCES "tasks"("id") ON DELETE CASCADE;
 ALTER TABLE "task_assignees" ADD CONSTRAINT "task_assignees_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE;
 ALTER TABLE "tasks" ADD CONSTRAINT "tasks_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "projects"("id") ON DELETE CASCADE;
+ALTER TABLE "tasks" ADD CONSTRAINT "tasks_owner_id_users_id_fk" FOREIGN KEY ("owner_id") REFERENCES "users"("id");
 ALTER TABLE "time_entries" ADD CONSTRAINT "time_entries_task_id_tasks_id_fk" FOREIGN KEY ("task_id") REFERENCES "tasks"("id") ON DELETE CASCADE;
 ALTER TABLE "time_entries" ADD CONSTRAINT "time_entries_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE;
 CREATE UNIQUE INDEX "attachments_pkey" ON "attachments" ("id");

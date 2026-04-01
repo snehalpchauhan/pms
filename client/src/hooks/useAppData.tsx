@@ -120,6 +120,7 @@ export function convertTask(t: any): Task {
 
   return {
     id: String(t.id),
+    ownerId: t.ownerId != null ? Number(t.ownerId) : null,
     projectId: String(t.projectId),
     title: t.title,
     description: t.description || "",

@@ -7,6 +7,16 @@ import {
   DialogClose,
   DialogTrigger
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -304,10 +314,20 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
   const [clientActionLoading, setClientActionLoading] = useState(false);
   const [revisionOpen, setRevisionOpen] = useState(false);
   const [revisionReason, setRevisionReason] = useState("");
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   const isClient = currentUser?.role === "client";
   const isFullAccess = isClient && clientPermissions?.clientTaskAccess === "full";
   const canEditTaskFields = !isClient || isFullAccess;
+
+  const canDeleteTask = useMemo(() => {
+    if (!currentUser) return false;
+    const oid = task.ownerId;
+    const isOwner = oid != null && Number(oid) === Number(currentUser.id);
+    const legacyStaffDelete = (oid == null || Number.isNaN(Number(oid))) && !isClient;
+    return isOwner || legacyStaffDelete;
+  }, [currentUser, isClient, task.ownerId]);
 
   const numericTaskId = Number(task.id);
   const numericProjectId = Number(task.projectId);
@@ -315,6 +335,7 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
   const invalidateTasks = () => {
     queryClient.invalidateQueries({ queryKey: ["/api/projects", numericProjectId, "tasks"] });
     queryClient.invalidateQueries({ queryKey: ["/api/tasks", String(task.id)] });
+    queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
   };
 
   useEffect(() => {
@@ -773,6 +794,25 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
     }
   };
 
+  const handleDeleteTask = async () => {
+    if (!canDeleteTask || !Number.isInteger(numericTaskId) || numericTaskId <= 0) return;
+    setDeleteLoading(true);
+    try {
+      await apiRequest("DELETE", `/api/tasks/${numericTaskId}`);
+      invalidateTasks();
+      setDeleteDialogOpen(false);
+      onClose();
+    } catch {
+      toast({
+        title: "Could not delete task",
+        description: "You may not have permission, or the network failed.",
+        variant: "destructive",
+      });
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
   const toggleAssignee = async (userId: string) => {
     if (!canEditTaskFields || !Number.isInteger(numericTaskId) || numericTaskId <= 0) return;
     const next = assignees.includes(userId)
@@ -808,6 +848,18 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
              </div>
              
              <div className="flex items-center gap-2">
+                 {canDeleteTask && (
+                   <Button
+                     type="button"
+                     variant="outline"
+                     size="sm"
+                     className="text-destructive border-destructive/30 hover:bg-destructive/10"
+                     onClick={() => setDeleteDialogOpen(true)}
+                   >
+                     <Trash2 className="w-4 h-4 sm:mr-2" />
+                     <span className="hidden sm:inline">Delete</span>
+                   </Button>
+                 )}
                  {(!isClient || isFullAccess) && (
                     <>
                         <Button variant="outline" size="sm" className="hidden sm:flex">
@@ -829,6 +881,30 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                  )}
              </div>
          </div>
+
+         <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+           <AlertDialogContent>
+             <AlertDialogHeader>
+               <AlertDialogTitle>Delete this task?</AlertDialogTitle>
+               <AlertDialogDescription>
+                 This permanently removes the task, comments, attachments, checklist, assignees, and time entries. This cannot be undone.
+               </AlertDialogDescription>
+             </AlertDialogHeader>
+             <AlertDialogFooter>
+               <AlertDialogCancel disabled={deleteLoading}>Cancel</AlertDialogCancel>
+               <AlertDialogAction
+                 className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                 disabled={deleteLoading}
+                 onClick={(e) => {
+                   e.preventDefault();
+                   void handleDeleteTask();
+                 }}
+               >
+                 {deleteLoading ? "Deleting…" : "Delete task"}
+               </AlertDialogAction>
+             </AlertDialogFooter>
+           </AlertDialogContent>
+         </AlertDialog>
 
          <div className="flex-1 overflow-hidden flex flex-col lg:flex-row min-h-0">
              <ScrollArea className="flex-1 min-h-0 min-w-0 lg:min-h-0">

@@ -41,6 +41,7 @@ export interface IStorage {
   getTask(id: number): Promise<Task | undefined>;
   createTask(task: InsertTask): Promise<Task>;
   updateTask(id: number, updates: Partial<InsertTask>): Promise<Task | undefined>;
+  deleteTask(id: number): Promise<void>;
   getTaskAssignees(taskId: number): Promise<User[]>;
   setTaskAssignees(taskId: number, userIds: number[]): Promise<void>;
 
@@ -261,6 +262,10 @@ export class DatabaseStorage implements IStorage {
   async updateTask(id: number, updates: Partial<InsertTask>): Promise<Task | undefined> {
     const [updated] = await db.update(tasks).set(updates).where(eq(tasks.id, id)).returning();
     return updated;
+  }
+
+  async deleteTask(id: number): Promise<void> {
+    await db.delete(tasks).where(eq(tasks.id, id));
   }
 
   async getTaskAssignees(taskId: number): Promise<User[]> {

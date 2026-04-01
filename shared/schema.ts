@@ -46,6 +46,8 @@ export const projectMembers = pgTable("project_members", {
 export const tasks = pgTable("tasks", {
   id: serial("id").primaryKey(),
   projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  /** User who created the task; may delete the task and all related data. */
+  ownerId: integer("owner_id").references(() => users.id),
   title: text("title").notNull(),
   description: text("description").default(""),
   status: text("status").notNull().default("todo"),

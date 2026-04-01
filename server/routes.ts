@@ -92,6 +92,18 @@ function persistTaskAttachmentFromDataUrl(
   };
 }
 
+function safeUnlinkTaskAttachmentUrl(url: string | null | undefined, uploadsDir: string) {
+  if (!url?.startsWith("/uploads/")) return;
+  const base = path.basename(url);
+  if (!/^task-\d+-[a-f0-9]{16}\.(png|jpe?g|webp|pdf)$/i.test(base)) return;
+  const full = path.join(uploadsDir, base);
+  try {
+    if (fs.existsSync(full)) fs.unlinkSync(full);
+  } catch {
+    /* ignore */
+  }
+}
+
 function persistChatUploadFromDataUrl(channelId: number, dataUrl: string, uploadsDir: string): string {
   const trimmed = dataUrl.trim();
   const m = /^data:(image\/(?:png|jpeg|jpg|webp)|application\/pdf);base64,([\s\S]+)$/i.exec(trimmed);
@@ -680,7 +692,7 @@ export async function registerRoutes(
 
   app.post("/api/tasks", requireAuth, async (req, res) => {
     const currentUser = req.user as any;
-    const { assignees, ...taskData } = req.body;
+    const { assignees, ownerId: _ignoreOwner, ...taskData } = req.body;
     // Clients with "contribute" access can create tasks tagged [Client Request]
     if (currentUser.role === "client") {
       const membership = await storage.getProjectMembership(taskData.projectId, currentUser.id);
@@ -696,16 +708,45 @@ export async function registerRoutes(
       const maxOrder = await storage.getMaxBoardOrderForStatus(pid, st);
       taskData.boardOrder = maxOrder + 1;
     }
-    const task = await storage.createTask(taskData);
+    const task = await storage.createTask({ ...taskData, ownerId: currentUser.id });
     if (assignees && assignees.length > 0) {
       await storage.setTaskAssignees(task.id, assignees);
     }
     res.status(201).json(task);
   });
 
+  app.delete("/api/tasks/:id", requireAuth, async (req, res) => {
+    const currentUser = req.user as any;
+    const taskId = Number(req.params.id);
+    if (!Number.isInteger(taskId) || taskId <= 0) {
+      return res.status(400).json({ message: "Invalid task" });
+    }
+    const task = await storage.getTask(taskId);
+    if (!task) return res.status(404).json({ message: "Task not found" });
+
+    const membership = await storage.getProjectMembership(task.projectId, currentUser.id);
+    if (!membership) {
+      return res.status(403).json({ message: "Access denied" });
+    }
+
+    const isOwner = task.ownerId != null && Number(task.ownerId) === Number(currentUser.id);
+    const legacyStaffDelete = task.ownerId == null && currentUser.role !== "client";
+
+    if (!isOwner && !legacyStaffDelete) {
+      return res.status(403).json({ message: "Only the task owner can delete this task" });
+    }
+
+    const attachmentRows = await storage.getAttachments(taskId);
+    await storage.deleteTask(taskId);
+    for (const a of attachmentRows) {
+      safeUnlinkTaskAttachmentUrl(a.url, uploadsDir);
+    }
+    res.status(204).end();
+  });
+
   app.patch("/api/tasks/:id", requireAuth, async (req, res) => {
     const currentUser = req.user as any;
-    const { assignees, ...updates } = req.body;
+    const { assignees, ownerId: _ignoreOwnerPatch, ...updates } = req.body;
     const taskId = Number(req.params.id);
 
     if (currentUser.role === "client") {

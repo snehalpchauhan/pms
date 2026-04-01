@@ -51,6 +51,8 @@ export interface Recurrence {
 
 export interface Task {
   id: string;
+  /** Server user id of the creator; only they may delete the task (unless legacy null owner). */
+  ownerId?: number | null;
   title: string;
   description: string;
   status: Status;
