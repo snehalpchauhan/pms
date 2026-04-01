@@ -372,6 +372,13 @@ export default function Board({ project, tasks, onTaskClick, onAddTask, clientPe
     return overTask?.status;
   };
 
+  /** Column droppables use `id__drop`; sortable columns use `id` — normalize for reorder. */
+  const resolveColumnTargetId = (overId: string | number): string => {
+    const s = String(overId);
+    const m = /^(.+)__drop$/.exec(s);
+    return m ? m[1] : s;
+  };
+
   const handleDragEnd = async (event: DragEndEvent) => {
     if (isClient && !isFullAccess) return;
     const { active, over } = event;
@@ -384,7 +391,7 @@ export default function Board({ project, tasks, onTaskClick, onAddTask, clientPe
 
     if (active.data.current?.type === "column") {
       const activeColId = String(active.id);
-      const overColId = String(over.id);
+      const overColId = resolveColumnTargetId(over.id);
       if (activeColId === overColId) {
         setActiveTask(null);
         setActiveColumnId(null);
@@ -404,7 +411,7 @@ export default function Board({ project, tasks, onTaskClick, onAddTask, clientPe
         .filter((c): c is (typeof project.columns)[number] => !!c);
       try {
         await apiRequest("PATCH", `/api/projects/${project.id}`, { columns: cols });
-        queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+        await queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
       } catch {
         setOrderedColumnIds(project.columns.map((c) => c.id));
         toast({ title: "Could not reorder sections", variant: "destructive" });
@@ -424,16 +431,39 @@ export default function Board({ project, tasks, onTaskClick, onAddTask, clientPe
     }
 
     const newStatus = resolveStatusFromOverId(overId);
+    const taskIdNum = Number(activeId);
+    if (!Number.isInteger(taskIdNum) || taskIdNum <= 0) {
+      setActiveTask(null);
+      setActiveColumnId(null);
+      return;
+    }
 
-    if (newStatus) {
+    const moved = localTasks.find((t) => String(t.id) === String(activeId));
+    const prevStatus = moved?.status;
+
+    if (newStatus && moved && newStatus !== prevStatus) {
       setLocalTasks((prev) =>
         prev.map((t) => {
-          if (t.id === activeId) {
+          if (String(t.id) === String(activeId)) {
             return { ...t, status: newStatus as Status };
           }
           return t;
         }),
       );
+      try {
+        await apiRequest("PATCH", `/api/tasks/${taskIdNum}`, { status: newStatus });
+        await queryClient.invalidateQueries({ queryKey: ["/api/projects", Number(project.id), "tasks"] });
+      } catch {
+        setLocalTasks((prev) =>
+          prev.map((t) => {
+            if (String(t.id) === String(activeId) && prevStatus !== undefined) {
+              return { ...t, status: prevStatus as Status };
+            }
+            return t;
+          }),
+        );
+        toast({ title: "Could not move task", variant: "destructive" });
+      }
     }
 
     setActiveTask(null);
@@ -454,7 +484,7 @@ export default function Board({ project, tasks, onTaskClick, onAddTask, clientPe
     setSectionSaving(true);
     try {
       await apiRequest("PATCH", `/api/projects/${project.id}`, { columns: nextCols });
-      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      await queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
       setAddSectionOpen(false);
       setNewSectionTitle("");
       toast({ title: "Section added" });
