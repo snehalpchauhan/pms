@@ -45,6 +45,16 @@ export async function registerRoutes(
   });
 
   // Tasks
+  app.get("/api/tasks", requireAuth, async (req, res) => {
+    const allProjects = await storage.getProjects();
+    const allTasks: any[] = [];
+    for (const project of allProjects) {
+      const projectTasks = await storage.getTasksByProject(project.id);
+      projectTasks.forEach(t => allTasks.push({ id: t.id, title: t.title, projectId: t.projectId, projectName: project.name, status: t.status }));
+    }
+    res.json(allTasks);
+  });
+
   app.get("/api/projects/:projectId/tasks", requireAuth, async (req, res) => {
     const projectTasks = await storage.getTasksByProject(Number(req.params.projectId));
     const tasksWithDetails = await Promise.all(
@@ -221,11 +231,23 @@ export async function registerRoutes(
     if (req.query.projectId) filters.projectId = Number(req.query.projectId);
     if (req.query.startDate) filters.startDate = String(req.query.startDate);
     if (req.query.endDate) filters.endDate = String(req.query.endDate);
-    if (isManagerOrAdmin && req.query.userId) {
-      filters.userId = Number(req.query.userId);
+    if (isManagerOrAdmin) {
+      if (req.query.userId) filters.userId = Number(req.query.userId);
+    } else {
+      filters.userId = currentUser.id;
     }
     const entries = await storage.getAllTimeEntries(filters);
     res.json(entries);
+  });
+
+  app.post("/api/time-entries", requireAuth, async (req, res) => {
+    const userId = (req.user as any).id;
+    const { taskId, hours, description, logDate } = req.body;
+    if (!taskId || !hours || !logDate) return res.status(400).json({ message: "taskId, hours and logDate are required" });
+    const task = await storage.getTask(Number(taskId));
+    if (!task) return res.status(404).json({ message: "Task not found" });
+    const entry = await storage.createTimeEntry({ taskId: Number(taskId), userId, hours: String(hours), description: description || null, logDate });
+    res.status(201).json(entry);
   });
 
   return httpServer;

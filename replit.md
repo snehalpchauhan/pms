@@ -2,7 +2,7 @@
 
 ## Overview
 
-TaskFlow is a full-stack project management tool built for developers and clients. It provides Kanban boards, task management with checklists and attachments, team collaboration with messaging channels, calendar views, and role-based access control (admin, manager, employee, client). The app uses a monorepo structure with a React frontend and Express backend, backed by PostgreSQL.
+TaskFlow is a full-stack project management tool built for developers and clients. It provides Kanban boards, task management with checklists and attachments, team collaboration with messaging channels, calendar views, time tracking with timecards, and role-based access control (admin, manager, employee, client). The app uses a monorepo structure with a React frontend and Express backend, backed by PostgreSQL.
 
 ## User Preferences
 
