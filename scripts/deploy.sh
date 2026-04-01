@@ -5,7 +5,8 @@
 #   ./scripts/deploy.sh 1
 #
 # Steps (local): optional scripts/deploy.local.env (gitignored) loads DEPLOY_SSH_PASSWORD,
-#                then git push origin $DEPLOY_BRANCH, then SSH remote pull/build/restart.
+#                then (on $DEPLOY_BRANCH) commit if dirty, push origin $DEPLOY_BRANCH,
+#                then SSH remote pull/build/restart.
 #
 # Run: ./scripts/deploy.sh
 #   You will be prompted to choose 1 (code), 2 (DB), or 3 (both).
@@ -19,7 +20,10 @@
 #   DEPLOY_SERVICE       default: pms.service
 #   DEPLOY_SSH_KEY       optional path to private key (-i)
 #   DEPLOY_SSH_PASSWORD  optional; if set and sshpass is installed, uses password auth
-#   DEPLOY_SKIP_GIT_PUSH=1   skip git push (e.g. remote-only sync)
+#   DEPLOY_SKIP_GIT_PUSH=1   skip local git commit/push (remote-only sync)
+#   DEPLOY_SKIP_COMMIT=1     push only; do not auto-commit (you committed already)
+#   DEPLOY_COMMIT_MESSAGE=   message for auto-commit (default: chore: deploy <timestamp>)
+#   DEPLOY_ALLOW_OTHER_BRANCH=1  allow deploy when not checked out on DEPLOY_BRANCH
 #
 # Local credentials: copy scripts/deploy.local.env.example → scripts/deploy.local.env
 # (never commit deploy.local.env — it is in .gitignore.)
@@ -50,16 +54,20 @@ Run:
   ./scripts/deploy.sh 1|2|3        # skip menu (for scripts/CI)
 
 Options:
-  1  Code only:  git pull, npm ci, build, restart systemd service
-  2  DB only:     npm run db:push (needs node_modules on server)
-  3  Code + DB:   pull, npm ci, db:push, build, restart
+  1  Code only:  local commit+push, then remote git pull, npm ci, build, restart
+  2  DB only:     local commit+push, then remote db:push (needs node_modules on server)
+  3  Code + DB:   local commit+push, then remote pull, ci, db:push, build, restart
 
 Environment:
   DEPLOY_HOST, DEPLOY_PATH, DEPLOY_BRANCH, DEPLOY_SERVICE
   DEPLOY_SSH_KEY=/path/to/key     Use this identity file
   DEPLOY_SSH_PASSWORD=...         Use sshpass (brew install hudochenkov/sshpass/sshpass)
   scripts/deploy.local.env        Gitignored file: export DEPLOY_SSH_PASSWORD='...'
-  DEPLOY_SKIP_GIT_PUSH=1          Skip git push before SSH
+  DEPLOY_SKIP_GIT_PUSH=1          Skip local commit/push before SSH
+  DEPLOY_SKIP_COMMIT=1            Skip auto-commit; still runs git push
+  DEPLOY_COMMIT_MESSAGE='msg'     Auto-commit message when the tree is dirty
+  DEPLOY_ALLOW_OTHER_BRANCH=1     Allow running when not on DEPLOY_BRANCH
+
 USAGE
 }
 
@@ -72,9 +80,9 @@ pick_mode() {
   echo ""
   echo "Deploy to ${DEPLOY_HOST}:${DEPLOY_PATH} (branch: ${DEPLOY_BRANCH})"
   echo ""
-  echo "  1) Deploy code only     — git pull, npm ci, build, restart ${DEPLOY_SERVICE}"
-  echo "  2) Deploy database only — npm run db:push (schema already on server)"
-  echo "  3) Deploy code + DB     — pull, ci, db:push, build, restart"
+  echo "  1) Deploy code only     — local commit+push, then pull, npm ci, build, restart ${DEPLOY_SERVICE}"
+  echo "  2) Deploy database only — local commit+push, then npm run db:push on server"
+  echo "  3) Deploy code + DB     — local commit+push, then pull, ci, db:push, build, restart"
   echo "  q) Quit"
   echo ""
   while true; do
@@ -135,12 +143,43 @@ echo "==> Deploy mode: $MODE  |  $DEPLOY_HOST:$DEPLOY_PATH  (branch: $DEPLOY_BRA
 echo ""
 
 if [[ "${DEPLOY_SKIP_GIT_PUSH:-0}" != "1" ]]; then
-  echo "==> Git: push origin $DEPLOY_BRANCH (from $REPO_ROOT)"
+  echo "==> Git: commit (if needed), push origin $DEPLOY_BRANCH — $REPO_ROOT"
   cd "$REPO_ROOT"
   if [[ ! -d .git ]]; then
     echo "error: $REPO_ROOT is not a git repository" >&2
     exit 1
   fi
+
+  current_branch="$(git rev-parse --abbrev-ref HEAD)"
+  if [[ "$current_branch" != "$DEPLOY_BRANCH" ]]; then
+    if [[ "${DEPLOY_ALLOW_OTHER_BRANCH:-0}" != "1" ]]; then
+      echo "error: checked out '$current_branch' but DEPLOY_BRANCH is '$DEPLOY_BRANCH'." >&2
+      echo "  Checkout the deploy branch first, or run with DEPLOY_ALLOW_OTHER_BRANCH=1." >&2
+      exit 1
+    fi
+    echo "warning: on branch '$current_branch' (DEPLOY_BRANCH=$DEPLOY_BRANCH); continuing."
+  fi
+
+  if [[ "${DEPLOY_SKIP_COMMIT:-0}" != "1" ]]; then
+    if [[ -n "$(git status --porcelain)" ]]; then
+      git add -A
+      if ! git diff --cached --quiet; then
+        msg="${DEPLOY_COMMIT_MESSAGE:-chore: deploy $(date -u +%Y-%m-%dT%H:%M:%SZ)}"
+        echo "==> Git: committing with message: $msg"
+        git commit -m "$msg"
+      else
+        echo "==> Git: nothing to commit after add (only ignored/untracked noise?)"
+      fi
+    else
+      echo "==> Git: working tree clean, no commit needed"
+    fi
+  else
+    echo "==> Git: skip auto-commit (DEPLOY_SKIP_COMMIT=1)"
+    if [[ -n "$(git status --porcelain)" ]]; then
+      echo "warning: you have uncommitted changes; push may not include them." >&2
+    fi
+  fi
+
   git push origin "$DEPLOY_BRANCH"
   echo ""
 else
