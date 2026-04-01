@@ -278,6 +278,7 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
   const [commentInput, setCommentInput] = useState("");
   const [composerFiles, setComposerFiles] = useState<File[]>([]);
   const composerFileInputRef = useRef<HTMLInputElement>(null);
+  const taskAttachFileInputRef = useRef<HTMLInputElement>(null);
   const [comments, setComments] = useState(task.comments || []);
   const [status, setStatus] = useState(task.status);
   const [checklist, setChecklist] = useState<ChecklistItem[]>(task.checklist || []);
@@ -1054,28 +1055,28 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                                 <Paperclip className="w-4 h-4 text-primary" /> Attachments
                             </h3>
                             {canEditTaskFields && (
-                                <div className="relative inline-flex">
+                                <>
+                                    <input
+                                        ref={taskAttachFileInputRef}
+                                        type="file"
+                                        multiple
+                                        accept=".png,.jpg,.jpeg,.webp,.pdf,image/png,image/jpeg,image/webp,application/pdf"
+                                        className="sr-only"
+                                        onChange={(e) => void handleAttachmentUpload(e)}
+                                        aria-label="Add attachment"
+                                    />
                                     <Button
                                         type="button"
                                         variant="ghost"
                                         size="sm"
-                                        className="h-7 text-xs pointer-events-none select-none"
-                                        tabIndex={-1}
-                                        aria-hidden
+                                        className="h-7 text-xs"
                                         disabled={uploadingAttachment}
+                                        onClick={() => taskAttachFileInputRef.current?.click()}
                                     >
-                                        <Plus className="w-3 h-3 mr-1" /> {uploadingAttachment ? "Uploading…" : "Add File"}
+                                        <Plus className="w-3 h-3 mr-1" />
+                                        {uploadingAttachment ? "Uploading…" : "Add File"}
                                     </Button>
-                                    <input
-                                        type="file"
-                                        multiple
-                                        accept="image/png,image/jpeg,image/jpg,image/webp,application/pdf"
-                                        className="absolute inset-0 cursor-pointer opacity-0 disabled:cursor-not-allowed"
-                                        onChange={(e) => void handleAttachmentUpload(e)}
-                                        disabled={uploadingAttachment}
-                                        aria-label="Add attachment"
-                                    />
-                                </div>
+                                </>
                             )}
                         </div>
                         
