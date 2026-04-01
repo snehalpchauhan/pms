@@ -36,6 +36,34 @@ function safeUnlinkCompanyLogo(logoUrl: string | null | undefined, uploadsDir: s
   }
 }
 
+const MAX_USER_AVATAR_BYTES = 800 * 1024;
+
+function persistUserAvatarFromDataUrl(userId: number, dataUrl: string, uploadsDir: string): string {
+  const trimmed = dataUrl.trim();
+  const m = /^data:(image\/(?:png|jpeg|jpg|webp));base64,([\s\S]+)$/i.exec(trimmed);
+  if (!m) throw new Error("Avatar must be PNG, JPEG, or WebP.");
+  const buf = Buffer.from(m[2]!.replace(/\s/g, ""), "base64");
+  if (buf.length > MAX_USER_AVATAR_BYTES) throw new Error("Avatar must be 800KB or smaller.");
+  const mime = m[1]!.toLowerCase();
+  const ext =
+    mime === "image/jpeg" || mime === "image/jpg" ? "jpg" : mime === "image/webp" ? "webp" : "png";
+  const filename = `user-${userId}-avatar.${ext}`;
+  fs.writeFileSync(path.join(uploadsDir, filename), buf);
+  return `/uploads/${filename}`;
+}
+
+function safeUnlinkUserAvatar(avatarUrl: string | null | undefined, uploadsDir: string, userId: number) {
+  if (!avatarUrl?.startsWith("/uploads/")) return;
+  const base = path.basename(avatarUrl);
+  if (!new RegExp(`^user-${userId}-avatar\\.(png|jpe?g|webp)$`, "i").test(base)) return;
+  const full = path.join(uploadsDir, base);
+  try {
+    if (fs.existsSync(full)) fs.unlinkSync(full);
+  } catch {
+    /* ignore */
+  }
+}
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -47,6 +75,36 @@ export async function registerRoutes(
   const uploadsDir = path.join(process.cwd(), "uploads");
   fs.mkdirSync(uploadsDir, { recursive: true });
   app.use("/uploads", express.static(uploadsDir));
+
+  const patchMeAvatarSchema = z.object({
+    avatarDataUrl: z.union([z.string().min(1), z.null()]),
+  });
+
+  app.patch("/api/auth/me", requireAuth, async (req, res) => {
+    const parsed = patchMeAvatarSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: parsed.error.issues[0]?.message || "Invalid request" });
+    }
+    const current = req.user as Express.User;
+    try {
+      if (parsed.data.avatarDataUrl === null) {
+        safeUnlinkUserAvatar(current.avatar, uploadsDir, current.id);
+        const updated = await storage.updateUser(current.id, { avatar: null });
+        if (!updated) return res.status(404).json({ message: "User not found" });
+        const { password, ...safe } = updated;
+        return res.json(safe);
+      }
+      safeUnlinkUserAvatar(current.avatar, uploadsDir, current.id);
+      const url = persistUserAvatarFromDataUrl(current.id, parsed.data.avatarDataUrl, uploadsDir);
+      const updated = await storage.updateUser(current.id, { avatar: url });
+      if (!updated) return res.status(404).json({ message: "User not found" });
+      const { password, ...safe } = updated;
+      return res.json(safe);
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Failed to update avatar";
+      return res.status(400).json({ message });
+    }
+  });
 
   const companyPatchSchema = z.object({
     companyName: z.string().min(1, "Company name is required").max(200).optional(),
