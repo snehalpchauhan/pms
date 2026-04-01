@@ -1,9 +1,10 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAppData } from "@/hooks/useAppData";
 import { useAuth } from "@/hooks/useAuth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { COMPANY_SETTINGS_TAB_EVENT } from "@/lib/companySettingsNav";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,7 +17,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
-import { Building2, Upload, Plus, MoreHorizontal, Search, Trash2, UserCog } from "lucide-react";
+import { Building2, Upload, Plus, MoreHorizontal, Search, Trash2, UserCog, LogIn } from "lucide-react";
 
 type UserRole = "admin" | "manager" | "employee" | "client";
 
@@ -30,6 +31,15 @@ const ROLE_COLORS: Record<UserRole, string> = {
 const ALL_ROLES: UserRole[] = ["admin", "manager", "employee", "client"];
 
 const MAX_LOGO_BYTES = 2 * 1024 * 1024;
+
+const SETTINGS_TABS = ["general", "login", "users", "billing"] as const;
+type SettingsTab = (typeof SETTINGS_TABS)[number];
+
+function settingsTabFromHash(): SettingsTab {
+    if (typeof window === "undefined") return "general";
+    const h = window.location.hash.replace(/^#/, "");
+    return SETTINGS_TABS.includes(h as SettingsTab) ? (h as SettingsTab) : "general";
+}
 
 type CompanySettingsDto = {
     companyName: string;
@@ -79,6 +89,36 @@ export default function CompanySettingsView() {
     const [ms365TenantId, setMs365TenantId] = useState("");
     const [ms365ClientId, setMs365ClientId] = useState("");
     const [ms365AllowedDomains, setMs365AllowedDomains] = useState("");
+
+    const [activeSettingsTab, setActiveSettingsTab] = useState<SettingsTab>(settingsTabFromHash);
+
+    const syncSettingsTabToUrl = useCallback((v: SettingsTab) => {
+        setActiveSettingsTab(v);
+        const base = window.location.pathname + window.location.search;
+        window.history.replaceState(null, "", v === "general" ? base : `${base}#${v}`);
+    }, []);
+
+    useEffect(() => {
+        const onHash = () => setActiveSettingsTab(settingsTabFromHash());
+        window.addEventListener("hashchange", onHash);
+        return () => window.removeEventListener("hashchange", onHash);
+    }, []);
+
+    useEffect(() => {
+        const onNav = (e: Event) => {
+            const detail = (e as CustomEvent<string>).detail as SettingsTab;
+            if (!SETTINGS_TABS.includes(detail)) return;
+            syncSettingsTabToUrl(detail);
+        };
+        window.addEventListener(COMPANY_SETTINGS_TAB_EVENT, onNav);
+        return () => window.removeEventListener(COMPANY_SETTINGS_TAB_EVENT, onNav);
+    }, [syncSettingsTabToUrl]);
+
+    const handleSettingsTabChange = (value: string) => {
+        const v = value as SettingsTab;
+        syncSettingsTabToUrl(v);
+        window.dispatchEvent(new CustomEvent(COMPANY_SETTINGS_TAB_EVENT, { detail: v }));
+    };
 
     useEffect(() => {
         if (!companyData) return;
@@ -227,10 +267,14 @@ export default function CompanySettingsView() {
             </div>
 
             <div className="flex-1 overflow-hidden">
-                <Tabs defaultValue="general" className="h-full flex flex-col">
+                <Tabs value={activeSettingsTab} onValueChange={handleSettingsTabChange} className="h-full flex flex-col">
                     <div className="px-6 border-b border-border bg-muted/10">
                         <TabsList className="bg-transparent h-12 gap-6 p-0">
                             <TabsTrigger value="general" className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-0 h-full font-medium">General</TabsTrigger>
+                            <TabsTrigger value="login" className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-0 h-full font-medium gap-1.5 inline-flex items-center">
+                                <LogIn className="h-3.5 w-3.5 opacity-70" />
+                                Login options
+                            </TabsTrigger>
                             <TabsTrigger value="users" className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-0 h-full font-medium">User Management</TabsTrigger>
                             <TabsTrigger value="billing" className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-0 h-full font-medium">Billing</TabsTrigger>
                         </TabsList>
@@ -355,7 +399,19 @@ export default function CompanySettingsView() {
                                     </div>
                                 </CardContent>
                             </Card>
+                        </TabsContent>
 
+                        {/* Login options (Microsoft 365) */}
+                        <TabsContent value="login" className="max-w-2xl space-y-8 mt-0">
+                            <div className="flex justify-end">
+                                <Button
+                                    type="button"
+                                    disabled={!isAdmin || companyLoading || saveCompanyMutation.isPending}
+                                    onClick={() => saveCompanyMutation.mutate()}
+                                >
+                                    {saveCompanyMutation.isPending ? "Saving…" : "Save changes"}
+                                </Button>
+                            </div>
                             <Card>
                                 <CardHeader>
                                     <CardTitle>Microsoft 365 sign-in</CardTitle>

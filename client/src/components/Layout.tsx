@@ -1,4 +1,4 @@
-import { Plus, LayoutGrid, CheckSquare, Settings, Users, MessageSquare, Bell, Search, Hash, Lock, ListTodo, FolderKanban, LogOut, Briefcase, Building2, User, Shield, Key, Clock } from "lucide-react";
+import { Plus, LayoutGrid, CheckSquare, Settings, Users, MessageSquare, Bell, Search, Hash, Lock, ListTodo, FolderKanban, LogOut, Briefcase, Building2, User, Shield, Key, Clock, LogIn } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,7 +10,8 @@ import { Project } from "@/lib/mockData";
 import { useAppData } from "@/hooks/useAppData";
 import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { COMPANY_SETTINGS_TAB_EVENT } from "@/lib/companySettingsNav";
 import { Badge } from "@/components/ui/badge";
 import { CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { NotificationsPopover } from "@/components/NotificationsPopover";
@@ -29,10 +30,38 @@ interface SidebarProps {
     clientPermissions?: ClientPermissions;
 }
 
+const SETTINGS_SIDEBAR_TABS = ["general", "login", "users", "billing"] as const;
+
+function settingsSidebarTabFromHash(): (typeof SETTINGS_SIDEBAR_TABS)[number] {
+  if (typeof window === "undefined") return "general";
+  const h = window.location.hash.replace(/^#/, "");
+  return SETTINGS_SIDEBAR_TABS.includes(h as (typeof SETTINGS_SIDEBAR_TABS)[number])
+    ? (h as (typeof SETTINGS_SIDEBAR_TABS)[number])
+    : "general";
+}
+
 export function Sidebar({ currentView, currentChannelId, onViewChange, currentProject, onProjectChange, onAddProject, onAddChannel, currentUserRole, clientPermissions }: SidebarProps) {
   const { users, projects, channels } = useAppData();
   const { logout } = useAuth();
   const [projectSearchOpen, setProjectSearchOpen] = useState(false);
+  const [settingsSidebarTab, setSettingsSidebarTab] = useState(settingsSidebarTabFromHash);
+
+  useEffect(() => {
+    const onHash = () => setSettingsSidebarTab(settingsSidebarTabFromHash());
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
+
+  useEffect(() => {
+    const onTab = (e: Event) => {
+      const d = (e as CustomEvent<string>).detail;
+      if (SETTINGS_SIDEBAR_TABS.includes(d as (typeof SETTINGS_SIDEBAR_TABS)[number])) {
+        setSettingsSidebarTab(d as (typeof SETTINGS_SIDEBAR_TABS)[number]);
+      }
+    };
+    window.addEventListener(COMPANY_SETTINGS_TAB_EVENT, onTab);
+    return () => window.removeEventListener(COMPANY_SETTINGS_TAB_EVENT, onTab);
+  }, []);
   const projectChannels = currentProject
     ? channels.filter((c) => c.projectId === currentProject.id)
     : [];
@@ -205,15 +234,63 @@ export function Sidebar({ currentView, currentChannelId, onViewChange, currentPr
                      </div>
                      <ScrollArea className="flex-1 px-3 py-4">
                          <div className="space-y-1">
-                             <Button variant="ghost" className="w-full justify-start font-medium bg-background shadow-sm text-primary">
+                             <Button
+                                 variant="ghost"
+                                 className={cn(
+                                     "w-full justify-start font-medium",
+                                     settingsSidebarTab === "general"
+                                         ? "bg-background shadow-sm text-primary"
+                                         : "text-muted-foreground",
+                                 )}
+                                 onClick={() =>
+                                     window.dispatchEvent(new CustomEvent(COMPANY_SETTINGS_TAB_EVENT, { detail: "general" }))
+                                 }
+                             >
                                  <Settings className="w-4 h-4 mr-2" />
                                  General
                              </Button>
-                             <Button variant="ghost" className="w-full justify-start font-medium text-muted-foreground">
-                                 <Users className="w-4 h-4 mr-2" />
-                                 Users & Roles
+                             <Button
+                                 variant="ghost"
+                                 className={cn(
+                                     "w-full justify-start font-medium",
+                                     settingsSidebarTab === "login"
+                                         ? "bg-background shadow-sm text-primary"
+                                         : "text-muted-foreground",
+                                 )}
+                                 onClick={() =>
+                                     window.dispatchEvent(new CustomEvent(COMPANY_SETTINGS_TAB_EVENT, { detail: "login" }))
+                                 }
+                             >
+                                 <LogIn className="w-4 h-4 mr-2" />
+                                 Login options
                              </Button>
-                             <Button variant="ghost" className="w-full justify-start font-medium text-muted-foreground">
+                             <Button
+                                 variant="ghost"
+                                 className={cn(
+                                     "w-full justify-start font-medium",
+                                     settingsSidebarTab === "users"
+                                         ? "bg-background shadow-sm text-primary"
+                                         : "text-muted-foreground",
+                                 )}
+                                 onClick={() =>
+                                     window.dispatchEvent(new CustomEvent(COMPANY_SETTINGS_TAB_EVENT, { detail: "users" }))
+                                 }
+                             >
+                                 <Users className="w-4 h-4 mr-2" />
+                                 User Management
+                             </Button>
+                             <Button
+                                 variant="ghost"
+                                 className={cn(
+                                     "w-full justify-start font-medium",
+                                     settingsSidebarTab === "billing"
+                                         ? "bg-background shadow-sm text-primary"
+                                         : "text-muted-foreground",
+                                 )}
+                                 onClick={() =>
+                                     window.dispatchEvent(new CustomEvent(COMPANY_SETTINGS_TAB_EVENT, { detail: "billing" }))
+                                 }
+                             >
                                  <Briefcase className="w-4 h-4 mr-2" />
                                  Billing
                              </Button>
