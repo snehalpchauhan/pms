@@ -12,6 +12,8 @@ const MICROSOFT_ERROR_MESSAGES: Record<string, string> = {
   no_domains: "Allowed email domains are not set. An administrator must add domains in Company Settings.",
   session_lost: "Sign-in session expired. Please try Microsoft sign-in again.",
   oauth_failed: "Microsoft sign-in was cancelled or failed. Try again.",
+  ms_oauth_error:
+    "Microsoft returned an error (wrong redirect URI, consent, or app registration). Check server logs and Entra app settings.",
   no_email: "Microsoft did not return an email address for your account.",
   domain_not_allowed: "Your Microsoft account is not from an allowed organization domain.",
   no_account: "No workspace user matches this Microsoft email. Ask an administrator to add you with this email.",

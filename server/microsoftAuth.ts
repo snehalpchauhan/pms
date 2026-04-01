@@ -1,9 +1,20 @@
+import crypto from "crypto";
 import type { Express, Request, Response, NextFunction } from "express";
 import * as client from "openid-client";
 import { storage } from "./storage";
 import type { CompanySettings } from "@shared/schema";
 
 const oidcConfigCache = new Map<string, Promise<client.Configuration>>();
+
+function oidcCacheSecretPart(secret: string): string {
+  return crypto.createHash("sha256").update(secret, "utf8").digest("hex").slice(0, 16);
+}
+
+function saveSession(req: Request): Promise<void> {
+  return new Promise((resolve, reject) => {
+    req.session.save((err) => (err ? reject(err) : resolve()));
+  });
+}
 
 export function clearMicrosoftOidcCache() {
   oidcConfigCache.clear();
@@ -65,7 +76,7 @@ async function getOidcConfiguration(
   clientSecret: string,
   redirectUri: string,
 ): Promise<client.Configuration> {
-  const cacheKey = `${tenantId}:${clientId}:${redirectUri}`;
+  const cacheKey = `${tenantId}:${clientId}:${redirectUri}:${oidcCacheSecretPart(clientSecret)}`;
   let pending = oidcConfigCache.get(cacheKey);
   if (!pending) {
     pending = client.discovery(
@@ -137,6 +148,7 @@ export function registerMicrosoftAuth(app: Express) {
         nonce,
       });
 
+      await saveSession(req);
       res.redirect(302, redirectTo.href);
     } catch (err) {
       next(err);
@@ -160,6 +172,18 @@ export function registerMicrosoftAuth(app: Express) {
       const redirectUri = `${getPublicAppUrl(req)}/api/auth/microsoft/callback`;
       const config = await getOidcConfiguration(tenantId, clientId, clientSecret, redirectUri);
 
+      const msAuthError = typeof req.query.error === "string" ? req.query.error : null;
+      if (msAuthError) {
+        const desc =
+          typeof req.query.error_description === "string" ? req.query.error_description : "";
+        console.error("[ms365 OAuth] Microsoft returned error:", msAuthError, desc);
+        delete req.session.msPkceVerifier;
+        delete req.session.msOAuthState;
+        delete req.session.msOAuthNonce;
+        await saveSession(req);
+        return res.redirect(302, loginErrorRedirect(req, "ms_oauth_error"));
+      }
+
       const codeVerifier = req.session.msPkceVerifier;
       const expectedState = req.session.msOAuthState;
       const expectedNonce = req.session.msOAuthNonce;
@@ -180,7 +204,8 @@ export function registerMicrosoftAuth(app: Express) {
           expectedState,
           expectedNonce,
         });
-      } catch {
+      } catch (err) {
+        console.error("[ms365 OAuth] authorizationCodeGrant failed:", err);
         return res.redirect(302, loginErrorRedirect(req, "oauth_failed"));
       }
 
