@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, boolean, timestamp, jsonb, serial, integer, primaryKey, numeric } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, boolean, timestamp, jsonb, json, serial, integer, primaryKey, numeric, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -105,6 +105,17 @@ export const timeEntries = pgTable("time_entries", {
   logDate: text("log_date").notNull(),
   clientVisible: boolean("client_visible").default(true),
 });
+
+/** connect-pg-simple / express-session store (see DBSCHEMA.sql) */
+export const expressSession = pgTable(
+  "session",
+  {
+    sid: varchar("sid").primaryKey(),
+    sess: json("sess").notNull(),
+    expire: timestamp("expire").notNull(),
+  },
+  (t) => [index("IDX_session_expire").on(t.expire)],
+);
 
 // Insert schemas
 export const insertUserSchema = createInsertSchema(users).omit({ id: true });
