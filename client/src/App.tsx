@@ -4,6 +4,7 @@ import MessagesView from "@/components/MessagesView";
 import TeamView from "@/components/TeamView";
 import CompanySettingsView from "@/components/CompanySettingsView";
 import UserProfileView from "@/components/UserProfileView";
+import TimecardsView from "@/components/TimecardsView";
 import { NewTaskModal } from "@/components/NewTaskModal";
 import { NewProjectModal } from "@/components/NewProjectModal";
 import { NewChannelModal } from "@/components/NewChannelModal";
@@ -35,7 +36,7 @@ function AuthenticatedApp() {
   const { user } = useAuth();
   const { projects, channels } = useAppData();
 
-  const [currentView, setCurrentView] = useState<"tasks" | "messages" | "team" | "settings" | "profile">("tasks");
+  const [currentView, setCurrentView] = useState<"tasks" | "messages" | "team" | "settings" | "profile" | "timecards">("tasks");
   const [currentProjectId, setCurrentProjectId] = useState<string>("");
   const [currentChannelId, setCurrentChannelId] = useState<string | undefined>(undefined);
 
@@ -132,7 +133,7 @@ function AuthenticatedApp() {
     }
   };
 
-  const handleViewChange = (view: "tasks" | "messages" | "team" | "settings" | "profile", channelId?: string) => {
+  const handleViewChange = (view: "tasks" | "messages" | "team" | "settings" | "profile" | "timecards", channelId?: string) => {
     setCurrentView(view);
     if (channelId) {
       setCurrentChannelId(channelId);
@@ -165,7 +166,7 @@ function AuthenticatedApp() {
         <div className="flex-1 flex flex-col h-full overflow-hidden relative z-0">
           <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 pointer-events-none mix-blend-overlay z-[1]" />
 
-          {currentView !== "settings" && currentView !== "profile" && (
+          {currentView !== "settings" && currentView !== "profile" && currentView !== "timecards" && (
             <Header
               title={currentProject.name}
               view={currentView}
@@ -180,6 +181,7 @@ function AuthenticatedApp() {
             {currentView === "messages" && <MessagesView project={currentProject} channelId={currentChannelId} />}
             {currentView === "team" && <TeamView project={currentProject} currentUserRole={currentUserRole} />}
             {currentView === "tasks" && <ProjectTasksView project={currentProject} tasks={tasks} />}
+            {currentView === "timecards" && <TimecardsView currentUserRole={currentUserRole} />}
           </main>
         </div>
       </div>

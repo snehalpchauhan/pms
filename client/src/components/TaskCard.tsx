@@ -5,7 +5,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { MessageSquare, Paperclip, Calendar, MoreHorizontal } from "lucide-react";
+import { MessageSquare, Paperclip, Calendar, MoreHorizontal, Clock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
@@ -103,6 +103,12 @@ export function TaskCard({ task, onClick }: TaskCardProps) {
                         <Calendar className="w-3.5 h-3.5" />
                         <span>Mar 20</span>
                      </div>
+                )}
+                {(task.totalHours ?? 0) > 0 && (
+                    <div className="flex items-center gap-1 hover:text-foreground text-primary/70" data-testid={`text-hours-${task.id}`}>
+                        <Clock className="w-3.5 h-3.5" />
+                        <span>{(task.totalHours ?? 0).toFixed(1)}h</span>
+                    </div>
                 )}
            </div>
 

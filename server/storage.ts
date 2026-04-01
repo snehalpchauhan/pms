@@ -1,12 +1,12 @@
 import { db } from "./db";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, inArray, gte, lte } from "drizzle-orm";
 import {
   users, projects, projectMembers, tasks, taskAssignees,
-  checklistItems, attachments, comments, channels, channelMembers, messages,
+  checklistItems, attachments, comments, channels, channelMembers, messages, timeEntries,
   type User, type InsertUser, type Project, type InsertProject,
   type Task, type InsertTask, type ChecklistItem, type Attachment,
   type Comment, type InsertComment, type Channel, type InsertChannel,
-  type Message, type InsertMessage,
+  type Message, type InsertMessage, type TimeEntry, type InsertTimeEntry,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -48,6 +48,13 @@ export interface IStorage {
 
   getMessages(channelId: number): Promise<Message[]>;
   createMessage(message: InsertMessage): Promise<Message>;
+
+  createTimeEntry(entry: InsertTimeEntry): Promise<TimeEntry>;
+  getTimeEntriesByTask(taskId: number): Promise<(TimeEntry & { userName: string })[]>;
+  getTimeEntriesByUser(userId: number): Promise<TimeEntry[]>;
+  getAllTimeEntries(filters?: { userId?: number; projectId?: number; startDate?: string; endDate?: string }): Promise<(TimeEntry & { taskTitle: string; projectId: number; userName: string })[]>;
+  deleteTimeEntry(id: number): Promise<void>;
+  getTimeEntry(id: number): Promise<TimeEntry | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -212,6 +219,68 @@ export class DatabaseStorage implements IStorage {
   async createMessage(message: InsertMessage): Promise<Message> {
     const [created] = await db.insert(messages).values(message).returning();
     return created;
+  }
+
+  async createTimeEntry(entry: InsertTimeEntry): Promise<TimeEntry> {
+    const [created] = await db.insert(timeEntries).values(entry).returning();
+    return created;
+  }
+
+  async getTimeEntriesByTask(taskId: number): Promise<(TimeEntry & { userName: string })[]> {
+    const rows = await db
+      .select({
+        id: timeEntries.id,
+        taskId: timeEntries.taskId,
+        userId: timeEntries.userId,
+        hours: timeEntries.hours,
+        description: timeEntries.description,
+        logDate: timeEntries.logDate,
+        userName: users.name,
+      })
+      .from(timeEntries)
+      .innerJoin(users, eq(timeEntries.userId, users.id))
+      .where(eq(timeEntries.taskId, taskId))
+      .orderBy(desc(timeEntries.id));
+    return rows;
+  }
+
+  async getTimeEntriesByUser(userId: number): Promise<TimeEntry[]> {
+    return db.select().from(timeEntries).where(eq(timeEntries.userId, userId)).orderBy(desc(timeEntries.id));
+  }
+
+  async getAllTimeEntries(filters?: { userId?: number; projectId?: number; startDate?: string; endDate?: string }): Promise<(TimeEntry & { taskTitle: string; projectId: number; userName: string })[]> {
+    const rows = await db
+      .select({
+        id: timeEntries.id,
+        taskId: timeEntries.taskId,
+        userId: timeEntries.userId,
+        hours: timeEntries.hours,
+        description: timeEntries.description,
+        logDate: timeEntries.logDate,
+        taskTitle: tasks.title,
+        projectId: tasks.projectId,
+        userName: users.name,
+      })
+      .from(timeEntries)
+      .innerJoin(tasks, eq(timeEntries.taskId, tasks.id))
+      .innerJoin(users, eq(timeEntries.userId, users.id));
+
+    return rows.filter(row => {
+      if (filters?.userId && row.userId !== filters.userId) return false;
+      if (filters?.projectId && row.projectId !== filters.projectId) return false;
+      if (filters?.startDate && row.logDate < filters.startDate) return false;
+      if (filters?.endDate && row.logDate > filters.endDate) return false;
+      return true;
+    });
+  }
+
+  async deleteTimeEntry(id: number): Promise<void> {
+    await db.delete(timeEntries).where(eq(timeEntries.id, id));
+  }
+
+  async getTimeEntry(id: number): Promise<TimeEntry | undefined> {
+    const [entry] = await db.select().from(timeEntries).where(eq(timeEntries.id, id));
+    return entry;
   }
 }
 

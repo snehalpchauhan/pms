@@ -53,12 +53,15 @@ export async function registerRoutes(
         const checklist = await storage.getChecklistItems(task.id);
         const taskAttachments = await storage.getAttachments(task.id);
         const taskComments = await storage.getComments(task.id);
+        const taskTimeEntries = await storage.getTimeEntriesByTask(task.id);
+        const totalHours = taskTimeEntries.reduce((sum, e) => sum + parseFloat(e.hours || "0"), 0);
         return {
           ...task,
           assignees: assignees.map(({ password, ...u }) => u),
           checklist,
           attachments: taskAttachments,
           comments: taskComments,
+          totalHours,
         };
       })
     );
@@ -184,6 +187,45 @@ export async function registerRoutes(
       content: req.body.content,
     });
     res.status(201).json(message);
+  });
+
+  // Time Entries
+  app.post("/api/tasks/:taskId/time-entries", requireAuth, async (req, res) => {
+    const taskId = Number(req.params.taskId);
+    const userId = (req.user as any).id;
+    const { hours, description, logDate } = req.body;
+    if (!hours || !logDate) return res.status(400).json({ message: "hours and logDate are required" });
+    const entry = await storage.createTimeEntry({ taskId, userId, hours: String(hours), description: description || null, logDate });
+    res.status(201).json(entry);
+  });
+
+  app.get("/api/tasks/:taskId/time-entries", requireAuth, async (req, res) => {
+    const entries = await storage.getTimeEntriesByTask(Number(req.params.taskId));
+    res.json(entries);
+  });
+
+  app.delete("/api/time-entries/:id", requireAuth, async (req, res) => {
+    const currentUser = req.user as any;
+    const entry = await storage.getTimeEntry(Number(req.params.id));
+    if (!entry) return res.status(404).json({ message: "Time entry not found" });
+    const canDelete = entry.userId === currentUser.id || currentUser.role === "admin" || currentUser.role === "manager";
+    if (!canDelete) return res.status(403).json({ message: "Not authorized to delete this entry" });
+    await storage.deleteTimeEntry(Number(req.params.id));
+    res.json({ message: "Deleted" });
+  });
+
+  app.get("/api/time-entries", requireAuth, async (req, res) => {
+    const currentUser = req.user as any;
+    const isManagerOrAdmin = currentUser.role === "admin" || currentUser.role === "manager";
+    const filters: { userId?: number; projectId?: number; startDate?: string; endDate?: string } = {};
+    if (req.query.projectId) filters.projectId = Number(req.query.projectId);
+    if (req.query.startDate) filters.startDate = String(req.query.startDate);
+    if (req.query.endDate) filters.endDate = String(req.query.endDate);
+    if (isManagerOrAdmin && req.query.userId) {
+      filters.userId = Number(req.query.userId);
+    }
+    const entries = await storage.getAllTimeEntries(filters);
+    res.json(entries);
   });
 
   return httpServer;

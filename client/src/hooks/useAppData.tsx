@@ -125,5 +125,6 @@ export function convertTask(t: any): Task {
       url: a.url,
       size: a.size,
     })),
+    totalHours: typeof t.totalHours === "number" ? t.totalHours : 0,
   };
 }

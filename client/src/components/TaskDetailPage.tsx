@@ -16,7 +16,7 @@ import { Task, ChecklistItem, Attachment } from "@/lib/mockData";
 import { useAppData } from "@/hooks/useAppData";
 import { useAuth } from "@/hooks/useAuth";
 import { apiRequest } from "@/lib/queryClient";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { Calendar, Paperclip, Tag, User as UserIcon, CheckCircle2, MoreHorizontal, MessageSquare, Plus, X, Reply, Clock, History, AlertCircle, FileText, Activity, Repeat, CalendarCheck, ArrowRight, CheckSquare, Trash2, Download } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
@@ -107,6 +107,52 @@ export function TaskDetailPage({ task, onClose }: TaskDetailPageProps) {
 
   const invalidateTasks = () => {
     queryClient.invalidateQueries({ queryKey: ["/api/projects", numericProjectId, "tasks"] });
+  };
+
+  const [timeHours, setTimeHours] = useState("");
+  const [timeDate, setTimeDate] = useState(format(new Date(), "yyyy-MM-dd"));
+  const [timeDescription, setTimeDescription] = useState("");
+  const [timeLogging, setTimeLogging] = useState(false);
+
+  const { data: timeEntries = [], refetch: refetchTimeEntries } = useQuery<any[]>({
+    queryKey: ["/api/tasks", numericTaskId, "time-entries"],
+    queryFn: async () => {
+      const res = await fetch(`/api/tasks/${numericTaskId}/time-entries`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch time entries");
+      return res.json();
+    },
+  });
+
+  const totalHours = timeEntries.reduce((sum: number, e: any) => sum + parseFloat(e.hours || "0"), 0);
+
+  const handleLogTime = async () => {
+    if (!timeHours || isNaN(Number(timeHours)) || Number(timeHours) <= 0) return;
+    setTimeLogging(true);
+    try {
+      await apiRequest("POST", `/api/tasks/${numericTaskId}/time-entries`, {
+        hours: Number(timeHours),
+        description: timeDescription || null,
+        logDate: timeDate,
+      });
+      setTimeHours("");
+      setTimeDescription("");
+      refetchTimeEntries();
+      invalidateTasks();
+    } catch (e) {
+      console.error("Failed to log time:", e);
+    } finally {
+      setTimeLogging(false);
+    }
+  };
+
+  const handleDeleteTimeEntry = async (id: number) => {
+    try {
+      await apiRequest("DELETE", `/api/time-entries/${id}`);
+      refetchTimeEntries();
+      invalidateTasks();
+    } catch (e) {
+      console.error("Failed to delete time entry:", e);
+    }
   };
 
   const toggleChecklistItem = async (id: string) => {
@@ -486,7 +532,7 @@ export function TaskDetailPage({ task, onClose }: TaskDetailPageProps) {
                         </div>
                     </div>
 
-                     {/* Tabs for Comments vs Logs */}
+                     {/* Tabs for Comments vs Logs vs Time */}
                      <Tabs defaultValue="comments" className="w-full">
                         <div className="flex items-center justify-between border-b border-border/50 pb-px mb-6">
                             <TabsList className="bg-transparent h-10 p-0 gap-6">
@@ -496,6 +542,14 @@ export function TaskDetailPage({ task, onClose }: TaskDetailPageProps) {
                                 >
                                     <MessageSquare className="w-4 h-4 mr-2" />
                                     Comments
+                                </TabsTrigger>
+                                <TabsTrigger 
+                                    value="time" 
+                                    className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-0 pb-2 font-medium text-muted-foreground data-[state=active]:text-foreground transition-all"
+                                    data-testid="tab-time"
+                                >
+                                    <Clock className="w-4 h-4 mr-2" />
+                                    Time {totalHours > 0 && <span className="ml-1 text-xs font-normal text-muted-foreground">({totalHours.toFixed(1)}h)</span>}
                                 </TabsTrigger>
                                 <TabsTrigger 
                                     value="logs" 
@@ -509,6 +563,104 @@ export function TaskDetailPage({ task, onClose }: TaskDetailPageProps) {
                                 Visible to team only
                             </div>
                         </div>
+
+                        <TabsContent value="time" className="space-y-6 mt-0">
+                            {/* Time total */}
+                            <div className="flex items-center gap-3 p-4 bg-primary/5 border border-primary/20 rounded-xl">
+                                <Clock className="w-5 h-5 text-primary" />
+                                <div>
+                                    <div className="text-sm font-semibold text-foreground">Total Time Logged</div>
+                                    <div className="text-2xl font-bold text-primary">{totalHours.toFixed(1)}h</div>
+                                </div>
+                            </div>
+
+                            {/* Log time form */}
+                            <div className="bg-background border border-border/50 rounded-xl p-4 space-y-3 shadow-sm">
+                                <h4 className="text-sm font-semibold text-foreground">Log Time</h4>
+                                <div className="flex gap-3 flex-wrap">
+                                    <div className="flex-1 min-w-[100px]">
+                                        <label className="text-xs text-muted-foreground mb-1 block">Hours</label>
+                                        <Input
+                                            type="number"
+                                            min="0.25"
+                                            step="0.25"
+                                            placeholder="e.g. 1.5"
+                                            value={timeHours}
+                                            onChange={e => setTimeHours(e.target.value)}
+                                            className="h-9 text-sm"
+                                            data-testid="input-time-hours"
+                                        />
+                                    </div>
+                                    <div className="flex-1 min-w-[130px]">
+                                        <label className="text-xs text-muted-foreground mb-1 block">Date</label>
+                                        <Input
+                                            type="date"
+                                            value={timeDate}
+                                            onChange={e => setTimeDate(e.target.value)}
+                                            className="h-9 text-sm"
+                                            data-testid="input-time-date"
+                                        />
+                                    </div>
+                                    <div className="flex-[2] min-w-[150px]">
+                                        <label className="text-xs text-muted-foreground mb-1 block">Note (optional)</label>
+                                        <Input
+                                            placeholder="What did you work on?"
+                                            value={timeDescription}
+                                            onChange={e => setTimeDescription(e.target.value)}
+                                            className="h-9 text-sm"
+                                            data-testid="input-time-description"
+                                        />
+                                    </div>
+                                    <div className="flex items-end">
+                                        <Button
+                                            size="sm"
+                                            className="h-9 px-4"
+                                            onClick={handleLogTime}
+                                            disabled={timeLogging || !timeHours}
+                                            data-testid="button-log-time"
+                                        >
+                                            Log Time
+                                        </Button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Time entries list */}
+                            <div className="space-y-2">
+                                {timeEntries.length === 0 ? (
+                                    <div className="text-center text-sm text-muted-foreground py-6 border-2 border-dashed border-border/50 rounded-xl">
+                                        No time logged yet. Use the form above to track your work.
+                                    </div>
+                                ) : timeEntries.map((entry: any) => {
+                                    const canDelete = (currentUser?.role === "admin" || currentUser?.role === "manager") || String(entry.userId) === currentUserId;
+                                    return (
+                                        <div key={entry.id} className="flex items-center gap-3 bg-background border border-border/50 rounded-lg p-3 shadow-sm group" data-testid={`time-entry-${entry.id}`}>
+                                            <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                                                <span className="text-xs font-bold text-primary">{parseFloat(entry.hours).toFixed(1)}h</span>
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-xs font-semibold text-foreground">{entry.userName || "Unknown"}</span>
+                                                    <span className="text-xs text-muted-foreground">· {entry.logDate}</span>
+                                                </div>
+                                                <div className="text-sm text-foreground/80 mt-0.5">{entry.description || <span className="text-muted-foreground italic text-xs">No note</span>}</div>
+                                            </div>
+                                            {canDelete && (
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
+                                                    onClick={() => handleDeleteTimeEntry(entry.id)}
+                                                    data-testid={`button-delete-time-entry-${entry.id}`}
+                                                >
+                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                </Button>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </TabsContent>
 
                         <TabsContent value="comments" className="space-y-6 mt-0">
                              {/* Comment Input */}

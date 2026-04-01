@@ -2,7 +2,7 @@ import { Task, Project, Status } from "@/lib/mockData";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { CheckCircle2, Circle, Clock, MoreHorizontal, Calendar, ChevronDown } from "lucide-react";
+import { CheckCircle2, Circle, Clock, MoreHorizontal, Calendar, ChevronDown, Timer } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 import { isToday, isTomorrow, isThisWeek, isFuture, isPast, parseISO } from "date-fns";
@@ -150,17 +150,25 @@ export default function TaskListView({ tasks, project, onTaskClick }: TaskListVi
                                                 <span className="text-muted-foreground/50">-</span>
                                             )}
                                         </div>
-                                        <div className="col-span-2 flex items-center justify-between">
-                                            <Badge 
-                                                className={cn(
-                                                    "text-[10px] uppercase font-bold border-none",
-                                                    task.priority === 'high' ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" :
-                                                    task.priority === 'medium' ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" :
-                                                    "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
+                                        <div className="col-span-2 flex items-center justify-between gap-2">
+                                            <div className="flex items-center gap-2">
+                                                <Badge 
+                                                    className={cn(
+                                                        "text-[10px] uppercase font-bold border-none",
+                                                        task.priority === 'high' ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" :
+                                                        task.priority === 'medium' ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" :
+                                                        "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
+                                                    )}
+                                                >
+                                                    {task.priority}
+                                                </Badge>
+                                                {(task.totalHours ?? 0) > 0 && (
+                                                    <span className="flex items-center gap-1 text-xs text-primary/70 font-medium" data-testid={`text-list-hours-${task.id}`}>
+                                                        <Timer className="w-3 h-3" />
+                                                        {(task.totalHours ?? 0).toFixed(1)}h
+                                                    </span>
                                                 )}
-                                            >
-                                                {task.priority}
-                                            </Badge>
+                                            </div>
                                             <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground opacity-0 group-hover:opacity-100">
                                                 <MoreHorizontal className="w-4 h-4" />
                                             </Button>

@@ -1,4 +1,4 @@
-import { Plus, LayoutGrid, CheckSquare, Settings, Users, MessageSquare, Bell, Search, Hash, Lock, ListTodo, FolderKanban, LogOut, Briefcase, Building2, User, Shield, Key } from "lucide-react";
+import { Plus, LayoutGrid, CheckSquare, Settings, Users, MessageSquare, Bell, Search, Hash, Lock, ListTodo, FolderKanban, LogOut, Briefcase, Building2, User, Shield, Key, Clock } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,9 +16,9 @@ import { CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, C
 import { NotificationsPopover } from "@/components/NotificationsPopover";
 
 interface SidebarProps {
-    currentView: "tasks" | "messages" | "team" | "settings" | "profile";
+    currentView: "tasks" | "messages" | "team" | "settings" | "profile" | "timecards";
     currentChannelId?: string; 
-    onViewChange: (view: "tasks" | "messages" | "team" | "settings" | "profile", channelId?: string) => void;
+    onViewChange: (view: "tasks" | "messages" | "team" | "settings" | "profile" | "timecards", channelId?: string) => void;
     currentProject: Project;
     onProjectChange: (projectId: string) => void;
     onAddProject: () => void;
@@ -34,9 +34,10 @@ export function Sidebar({ currentView, currentChannelId, onViewChange, currentPr
   const projectMembers = Object.values(users);
 
   // Determine if we're in a "Global" context (outside a project)
-  const isGlobalView = currentView === "settings" || currentView === "profile";
+  const isGlobalView = currentView === "settings" || currentView === "profile" || currentView === "timecards";
   const isSettingsView = currentView === "settings";
   const isProfileView = currentView === "profile";
+  const isTimecardsView = currentView === "timecards";
 
   return (
     <div className="flex h-screen bg-sidebar border-r border-border shadow-2xl z-20">
@@ -107,6 +108,24 @@ export function Sidebar({ currentView, currentChannelId, onViewChange, currentPr
 
              {/* Bottom Actions: Admin/Settings & User */}
              <div className="mt-auto pb-4 flex flex-col gap-3 items-center">
+                 <Tooltip>
+                    <TooltipTrigger asChild>
+                        <button
+                            onClick={() => onViewChange("timecards")}
+                            className={cn(
+                                "w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-200",
+                                isTimecardsView 
+                                    ? "bg-blue-600 text-white shadow-md ring-2 ring-blue-600 ring-offset-2 ring-offset-background" 
+                                    : "hover:bg-muted text-muted-foreground hover:text-foreground"
+                            )}
+                            data-testid="button-nav-timecards"
+                        >
+                            <Clock className="w-5 h-5" />
+                        </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="right">Timecards</TooltipContent>
+                 </Tooltip>
+
                  {currentUserRole === 'admin' && (
                      <Tooltip>
                         <TooltipTrigger asChild>
@@ -150,7 +169,21 @@ export function Sidebar({ currentView, currentChannelId, onViewChange, currentPr
 
         {/* Secondary Sidebar - Context Aware */}
         <div className="w-60 flex flex-col bg-muted/5 animate-in slide-in-from-left-2 duration-200">
-             {isSettingsView ? (
+             {isTimecardsView ? (
+                <div className="flex-1 flex flex-col">
+                    <div className="h-16 flex items-center px-5 border-b border-border/40 shrink-0">
+                        <h2 className="font-display font-bold text-lg">Timecards</h2>
+                    </div>
+                    <ScrollArea className="flex-1 px-3 py-4">
+                        <div className="space-y-1">
+                            <Button variant="ghost" className="w-full justify-start font-medium bg-background shadow-sm text-primary">
+                                <Clock className="w-4 h-4 mr-2" />
+                                Time Log
+                            </Button>
+                        </div>
+                    </ScrollArea>
+                </div>
+             ) : isSettingsView ? (
                  <div className="flex-1 flex flex-col">
                      <div className="h-16 flex items-center px-5 border-b border-border/40 shrink-0">
                          <h2 className="font-display font-bold text-lg">Administration</h2>

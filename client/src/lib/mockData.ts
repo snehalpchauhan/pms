@@ -65,6 +65,7 @@ export interface Task {
   attachments: Attachment[];
   coverImage?: string;
   projectId: string;
+  totalHours?: number;
 }
 
 export interface Column {
