@@ -61,6 +61,10 @@ async function readFileAsDataUrl(file: File): Promise<string> {
 
 type CommentPayload = { fileName: string; dataUrl: string };
 
+function coerceTaskPriority(p: string | undefined): string {
+  return p === "low" || p === "medium" || p === "high" ? p : "medium";
+}
+
 function CommentItem({
   comment,
   allComments,
@@ -290,6 +294,8 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
   const [tagPopoverOpen, setTagPopoverOpen] = useState(false);
   const [uploadingAttachment, setUploadingAttachment] = useState(false);
   const [statusSaving, setStatusSaving] = useState(false);
+  const [priority, setPriority] = useState<string>(() => coerceTaskPriority(task.priority));
+  const [prioritySaving, setPrioritySaving] = useState(false);
   const [timeHours, setTimeHours] = useState("");
   const [timeDate, setTimeDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [timeDescription, setTimeDescription] = useState("");
@@ -319,6 +325,10 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
     setAssignees(task.assignees?.length ? [...task.assignees] : []);
   }, [task.id]);
 
+  useEffect(() => {
+    setPriority(coerceTaskPriority(task.priority));
+  }, [task.id, task.priority]);
+
   const patchTask = async (updates: Record<string, unknown>) => {
     await apiRequest("PATCH", `/api/tasks/${numericTaskId}`, updates);
     invalidateTasks();
@@ -336,6 +346,28 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
       toast({ title: "Could not update status", variant: "destructive" });
     } finally {
       setStatusSaving(false);
+    }
+  };
+
+  const priorityTriggerClass = (p: string) =>
+    p === "high"
+      ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+      : p === "medium"
+        ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
+        : "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400";
+
+  const handlePriorityChange = async (next: string) => {
+    if (next === priority || !canEditTaskFields || !Number.isInteger(numericTaskId) || numericTaskId <= 0) return;
+    const prev = priority;
+    setPriority(next);
+    setPrioritySaving(true);
+    try {
+      await patchTask({ priority: next });
+    } catch {
+      setPriority(prev);
+      toast({ title: "Could not update priority", variant: "destructive" });
+    } finally {
+      setPrioritySaving(false);
     }
   };
 
@@ -840,16 +872,55 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                                 </Select>
                             )}
 
-                            <Badge 
-                                className={cn(
-                                    "text-[10px] uppercase font-bold border-none h-8 px-3",
-                                    task.priority === 'high' ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" :
-                                    task.priority === 'medium' ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" :
-                                    "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
-                                )}
-                            >
-                                {task.priority} Priority
-                            </Badge>
+                            {canEditTaskFields ? (
+                                <Select
+                                    value={priority}
+                                    onValueChange={(v) => void handlePriorityChange(v)}
+                                    disabled={prioritySaving}
+                                >
+                                    <SelectTrigger
+                                        className={cn(
+                                            "min-w-[132px] max-w-[200px] h-8 border-none text-[10px] uppercase font-bold transition-colors",
+                                            priorityTriggerClass(priority),
+                                        )}
+                                    >
+                                        <SelectValue placeholder="Priority" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem
+                                            value="low"
+                                            className={cn("font-semibold uppercase text-[10px]", priorityTriggerClass("low"))}
+                                        >
+                                            Low
+                                        </SelectItem>
+                                        <SelectItem
+                                            value="medium"
+                                            className={cn("font-semibold uppercase text-[10px]", priorityTriggerClass("medium"))}
+                                        >
+                                            Medium
+                                        </SelectItem>
+                                        <SelectItem
+                                            value="high"
+                                            className={cn("font-semibold uppercase text-[10px]", priorityTriggerClass("high"))}
+                                        >
+                                            High
+                                        </SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            ) : (
+                                <Badge
+                                    className={cn(
+                                        "text-[10px] uppercase font-bold border-none h-8 px-3",
+                                        task.priority === "high"
+                                            ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                                            : task.priority === "medium"
+                                              ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
+                                              : "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
+                                    )}
+                                >
+                                    {task.priority} Priority
+                                </Badge>
+                            )}
 
                             {task.recurrence && (
                                 <Badge variant="secondary" className="h-8 px-3 gap-1.5 font-medium border-primary/20 bg-primary/5 text-primary">

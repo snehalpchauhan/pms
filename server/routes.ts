@@ -718,10 +718,20 @@ export async function registerRoutes(
     }
 
     const before = await storage.getTask(taskId);
-    const task = await storage.updateTask(taskId, updates);
-    if (!task) return res.status(404).json({ message: "Task not found" });
-    if (assignees) {
-      await storage.setTaskAssignees(task.id, assignees);
+    if (!before) return res.status(404).json({ message: "Task not found" });
+
+    let task = before;
+    if (Object.keys(updates).length > 0) {
+      const updated = await storage.updateTask(taskId, updates);
+      if (!updated) return res.status(404).json({ message: "Task not found" });
+      task = updated;
+    }
+
+    if (Array.isArray(assignees)) {
+      const ids = assignees
+        .map((id: unknown) => Number(id))
+        .filter((n: number) => Number.isInteger(n) && n > 0);
+      await storage.setTaskAssignees(task.id, ids);
     }
     if (
       before &&
