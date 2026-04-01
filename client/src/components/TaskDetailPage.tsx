@@ -107,11 +107,10 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
   const [attachments, setAttachments] = useState<Attachment[]>(task.attachments || []);
   const [assignees, setAssignees] = useState<string[]>(task.assignees || []);
   const [tags, setTags] = useState<string[]>(task.tags || []);
-  const [description, setDescription] = useState(task.description || "");
   const [newTagInput, setNewTagInput] = useState("");
   const [tagPopoverOpen, setTagPopoverOpen] = useState(false);
-  const [savingDescription, setSavingDescription] = useState(false);
   const [uploadingAttachment, setUploadingAttachment] = useState(false);
+  const [statusSaving, setStatusSaving] = useState(false);
   const [timeHours, setTimeHours] = useState("");
   const [timeDate, setTimeDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [timeDescription, setTimeDescription] = useState("");
@@ -136,7 +135,7 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
     setComments(task.comments || []);
     setAttachments(task.attachments || []);
     setTags(task.tags?.length ? [...task.tags] : []);
-    setDescription(task.description || "");
+    setStatus(task.status);
   }, [task.id]);
 
   const patchTask = async (updates: Record<string, unknown>) => {
@@ -144,17 +143,18 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
     invalidateTasks();
   };
 
-  const saveDescription = async () => {
-    const next = description.trim();
-    if (!canEditTaskFields) return;
-    setSavingDescription(true);
+  const handleStatusChange = async (next: string) => {
+    if (next === status || !Number.isInteger(numericTaskId) || numericTaskId <= 0) return;
+    const prev = status;
+    setStatus(next);
+    setStatusSaving(true);
     try {
-      await patchTask({ description: next });
-      toast({ title: "Description saved" });
+      await patchTask({ status: next });
     } catch {
-      toast({ title: "Could not save description", variant: "destructive" });
+      setStatus(prev);
+      toast({ title: "Could not update status", variant: "destructive" });
     } finally {
-      setSavingDescription(false);
+      setStatusSaving(false);
     }
   };
 
@@ -229,9 +229,31 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
   // Dynamically detect review column (second-to-last) for client actions
   const currentProject = projects.find(p => String(p.id) === String(numericProjectId));
   const projectColumns = (currentProject as any)?.columns || [];
+  const fallbackBoardColumns = [
+    { id: "todo", title: "To Do" },
+    { id: "in-progress", title: "In Progress" },
+    { id: "review", title: "Review" },
+    { id: "done", title: "Done" },
+  ];
+  const boardColumnsForStatus = projectColumns.length > 0 ? projectColumns : fallbackBoardColumns;
+  const statusStr = String(status);
+  const statusColumnIds = new Set(boardColumnsForStatus.map((c: { id: string }) => String(c.id)));
+  const statusNotOnBoard = Boolean(statusStr && !statusColumnIds.has(statusStr));
+  const statusTitleFor = (s: string) => {
+    const col = boardColumnsForStatus.find((c: { id: string }) => String(c.id) === String(s));
+    if (col?.title) return col.title;
+    if (s === "in-progress") return "In Progress";
+    return s ? s.charAt(0).toUpperCase() + s.slice(1).replace(/-/g, " ") : "";
+  };
+  const statusColIdx = boardColumnsForStatus.findIndex((c: { id: string }) => String(c.id) === statusStr);
+  const isDoneStatusBadge =
+    boardColumnsForStatus.length > 0 && statusColIdx === boardColumnsForStatus.length - 1;
   const reviewColumnId = projectColumns.length >= 2
     ? projectColumns[projectColumns.length - 2]?.id
     : projectColumns[projectColumns.length - 1]?.id;
+  const isReviewStatusBadge = reviewColumnId != null && String(status) === String(reviewColumnId);
+  const isTodoLikeBadge = statusColIdx === 0;
+  const isInProgressStatusBadge = !isDoneStatusBadge && !isReviewStatusBadge && !isTodoLikeBadge;
   const isReviewStatus = reviewColumnId ? task.status === reviewColumnId : task.status === "review";
 
   // "full" clients are treated as employees, so only feedback/contribute get approve/revision
@@ -513,28 +535,33 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                         </h1>
                         <div className="flex flex-wrap items-center gap-3">
                             {isClient && !isFullAccess ? (
-                                <Badge className={cn("h-8 px-3 border-none font-medium",
-                                    status === 'done' ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" :
-                                    status === 'in-progress' ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400" :
-                                    status === 'review' ? "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400" :
+                                <Badge className={cn("h-8 px-3 border-none font-medium max-w-[200px] truncate",
+                                    isDoneStatusBadge ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" :
+                                    isInProgressStatusBadge ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400" :
+                                    isReviewStatusBadge ? "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400" :
                                     "bg-slate-100 text-slate-700 dark:bg-slate-800/50 dark:text-slate-400"
-                                )}>
-                                    {status === 'in-progress' ? 'In Progress' : status === 'todo' ? 'To Do' : status.charAt(0).toUpperCase() + status.slice(1)}
+                                )} title={statusTitleFor(statusStr)}>
+                                    {statusTitleFor(statusStr)}
                                 </Badge>
                             ) : (
-                                <Select value={status} onValueChange={setStatus}>
-                                    <SelectTrigger className={cn("w-[140px] h-8 border-none font-medium transition-colors", 
-                                        status === 'done' ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" :
-                                        status === 'in-progress' ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400" :
+                                <Select value={statusStr} onValueChange={(v) => void handleStatusChange(v)} disabled={statusSaving}>
+                                    <SelectTrigger className={cn("min-w-[140px] max-w-[220px] h-8 border-none font-medium transition-colors", 
+                                        isDoneStatusBadge ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" :
+                                        isInProgressStatusBadge ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400" :
+                                        isReviewStatusBadge ? "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400" :
                                         "bg-slate-100 text-slate-700 dark:bg-slate-800/50 dark:text-slate-400"
                                     )}>
-                                        <SelectValue />
+                                        <SelectValue placeholder="Status" />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        <SelectItem value="todo">To Do</SelectItem>
-                                        <SelectItem value="in-progress">In Progress</SelectItem>
-                                        <SelectItem value="review">Review</SelectItem>
-                                        <SelectItem value="done">Done</SelectItem>
+                                        {statusNotOnBoard && (
+                                          <SelectItem value={statusStr}>{statusTitleFor(statusStr)} (current)</SelectItem>
+                                        )}
+                                        {boardColumnsForStatus.map((col: { id: string; title: string }) => (
+                                          <SelectItem key={col.id} value={String(col.id)}>
+                                            {col.title}
+                                          </SelectItem>
+                                        ))}
                                     </SelectContent>
                                 </Select>
                             )}
@@ -794,18 +821,27 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                                 <Paperclip className="w-4 h-4 text-primary" /> Attachments
                             </h3>
                             {canEditTaskFields && (
-                                <div className="relative">
+                                <div className="relative inline-flex">
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-7 text-xs pointer-events-none select-none"
+                                        tabIndex={-1}
+                                        aria-hidden
+                                        disabled={uploadingAttachment}
+                                    >
+                                        <Plus className="w-3 h-3 mr-1" /> {uploadingAttachment ? "Uploading…" : "Add File"}
+                                    </Button>
                                     <input
                                         type="file"
                                         multiple
                                         accept="image/png,image/jpeg,image/jpg,image/webp,application/pdf"
-                                        className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10 disabled:cursor-not-allowed"
+                                        className="absolute inset-0 cursor-pointer opacity-0 disabled:cursor-not-allowed"
                                         onChange={(e) => void handleAttachmentUpload(e)}
                                         disabled={uploadingAttachment}
+                                        aria-label="Add attachment"
                                     />
-                                    <Button variant="ghost" size="sm" className="h-7 text-xs" type="button" disabled={uploadingAttachment}>
-                                        <Plus className="w-3 h-3 mr-1" /> {uploadingAttachment ? "Uploading…" : "Add File"}
-                                    </Button>
                                 </div>
                             )}
                         </div>
@@ -855,35 +891,12 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                         )}
                      </div>
 
-                     {/* Description */}
+                     {/* Description (read-only) */}
                      <div className="space-y-3">
-                        <div className="flex items-center justify-between gap-2">
-                          <h3 className="text-sm font-semibold text-foreground">Description</h3>
-                          {canEditTaskFields && (
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="secondary"
-                              className="h-8 text-xs"
-                              disabled={savingDescription}
-                              onClick={() => void saveDescription()}
-                            >
-                              {savingDescription ? "Saving…" : "Save description"}
-                            </Button>
-                          )}
+                        <h3 className="text-sm font-semibold text-foreground">Description</h3>
+                        <div className="prose prose-sm dark:prose-invert max-w-none text-foreground/90 leading-relaxed p-6 bg-background rounded-xl border border-border/50 shadow-sm min-h-[100px]">
+                          <p>{task.description?.trim() ? task.description : <span className="text-muted-foreground italic">No description</span>}</p>
                         </div>
-                        {canEditTaskFields ? (
-                          <Textarea
-                            value={description}
-                            onChange={(e) => setDescription(e.target.value)}
-                            placeholder="Add a description…"
-                            className="min-h-[140px] text-sm bg-background border-border/50 rounded-xl shadow-sm resize-y"
-                          />
-                        ) : (
-                          <div className="prose prose-sm dark:prose-invert max-w-none text-foreground/90 leading-relaxed p-6 bg-background rounded-xl border border-border/50 shadow-sm min-h-[100px]">
-                            <p>{task.description || <span className="text-muted-foreground italic">No description</span>}</p>
-                          </div>
-                        )}
                     </div>
 
                     {/* Checklist */}
@@ -947,11 +960,11 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
 
                      {/* Tabs: comments, time, system log — right column on large screens */}
                      <Tabs defaultValue="comments" className="w-full">
-                        <div className="flex items-center justify-between border-b border-border/50 pb-px mb-6">
-                            <TabsList className="bg-transparent h-10 p-0 gap-6">
+                        <div className="flex flex-col gap-2 border-b border-border/50 pb-3 mb-6">
+                            <TabsList className="bg-transparent h-auto min-h-10 p-0 gap-4 sm:gap-6 flex flex-wrap justify-start w-full">
                                 <TabsTrigger 
                                     value="comments" 
-                                    className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-0 pb-2 font-medium text-muted-foreground data-[state=active]:text-foreground transition-all"
+                                    className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-0 pb-2 font-medium text-muted-foreground data-[state=active]:text-foreground transition-all shrink-0"
                                 >
                                     <MessageSquare className="w-4 h-4 mr-2" />
                                     Comments
@@ -959,7 +972,7 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                                 {(!isClient || clientPermissions?.clientShowTimecards) && (
                                     <TabsTrigger 
                                         value="time" 
-                                        className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-0 pb-2 font-medium text-muted-foreground data-[state=active]:text-foreground transition-all"
+                                        className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-0 pb-2 font-medium text-muted-foreground data-[state=active]:text-foreground transition-all shrink-0"
                                         data-testid="tab-time"
                                     >
                                         <Clock className="w-4 h-4 mr-2" />
@@ -969,16 +982,16 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                                 {(!isClient || isFullAccess) && (
                                     <TabsTrigger 
                                         value="logs" 
-                                        className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-0 pb-2 font-medium text-muted-foreground data-[state=active]:text-foreground transition-all"
+                                        className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-0 pb-2 font-medium text-muted-foreground data-[state=active]:text-foreground transition-all shrink-0"
                                     >
                                         <Activity className="w-4 h-4 mr-2" />
                                         System Logs
                                     </TabsTrigger>
                                 )}
                             </TabsList>
-                            <div className="text-xs text-muted-foreground hidden sm:block">
+                            <p className="text-xs text-muted-foreground pl-0.5">
                                 {(isClient && !isFullAccess) ? "Client view" : "Visible to team only"}
-                            </div>
+                            </p>
                         </div>
 
                         <TabsContent value="time" className="space-y-6 mt-0">
