@@ -885,6 +885,13 @@ export async function registerRoutes(
     res.status(201).json(comment);
   });
 
+  const createChannelBodySchema = z.object({
+    name: z.string().min(1).max(200),
+    type: z.enum(["public", "private"]),
+    projectId: z.coerce.number().int().positive(),
+    memberIds: z.array(z.number().int().positive()).optional().default([]),
+  });
+
   // Channels
   app.get("/api/channels", requireAuth, async (req, res) => {
     const currentUser = req.user as any;
@@ -894,11 +901,26 @@ export async function registerRoutes(
     }
     const projectId = req.query.projectId ? Number(req.query.projectId) : undefined;
     const allChannels = await storage.getChannels(projectId);
+    const uniqueProjectIds = [
+      ...new Set(allChannels.map((c) => c.projectId).filter((id): id is number => id != null)),
+    ];
+    const projectMemberCountMap = new Map<number, number>();
+    await Promise.all(
+      uniqueProjectIds.map(async (pid) => {
+        const pm = await storage.getProjectMembers(pid);
+        projectMemberCountMap.set(pid, pm.length);
+      }),
+    );
     const channelsWithMembers = await Promise.all(
       allChannels.map(async (channel) => {
         const members = await storage.getChannelMembers(channel.id);
-        return { ...channel, members: members.map(({ password, ...u }) => u) };
-      })
+        const memberUsers = members.map(({ password, ...u }) => u);
+        const memberCountDisplay =
+          channel.type === "public" && channel.projectId != null
+            ? (projectMemberCountMap.get(channel.projectId) ?? 0)
+            : memberUsers.length;
+        return { ...channel, members: memberUsers, memberCountDisplay };
+      }),
     );
     res.json(channelsWithMembers);
   });
@@ -906,12 +928,35 @@ export async function registerRoutes(
   app.post("/api/channels", requireAuth, async (req, res) => {
     const currentUser = req.user as any;
     if (currentUser.role === "client") return res.status(403).json({ message: "Clients cannot create channels" });
-    const channel = await storage.createChannel(req.body);
-    if (req.body.members) {
-      for (const userId of req.body.members) {
-        await storage.addChannelMember(channel.id, userId);
+    const parsed = createChannelBodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: "Invalid channel data" });
+    }
+    let { name, type, projectId, memberIds } = parsed.data;
+    name = name
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, "-")
+      .replace(/[^a-z0-9-]/g, "");
+    if (!name) return res.status(400).json({ message: "Invalid channel name" });
+
+    const myMembership = await storage.getProjectMembership(projectId, currentUser.id);
+    if (!myMembership) return res.status(403).json({ message: "You are not a member of this project" });
+
+    const channel = await storage.createChannel({ name, type, projectId });
+
+    if (type === "private") {
+      await storage.addChannelMember(channel.id, currentUser.id);
+      const seen = new Set<number>([currentUser.id]);
+      for (const uid of memberIds) {
+        if (seen.has(uid)) continue;
+        seen.add(uid);
+        const theirMembership = await storage.getProjectMembership(projectId, uid);
+        if (!theirMembership) continue;
+        await storage.addChannelMember(channel.id, uid);
       }
     }
+
     res.status(201).json(channel);
   });
 
@@ -920,6 +965,17 @@ export async function registerRoutes(
     if (!channel) return false;
     const members = await storage.getChannelMembers(channelId);
     if (channel.type === "direct") {
+      return members.some((m) => m.id === userId);
+    }
+    if (channel.type === "public" && channel.projectId != null) {
+      const m = await storage.getProjectMembership(channel.projectId, userId);
+      return !!m;
+    }
+    if (channel.type === "private") {
+      if (members.length === 0 && channel.projectId != null) {
+        const m = await storage.getProjectMembership(channel.projectId, userId);
+        return !!m;
+      }
       return members.some((m) => m.id === userId);
     }
     if (members.length > 0) {

@@ -4,6 +4,7 @@ import StarterKit from "@tiptap/starter-kit";
 import Image from "@tiptap/extension-image";
 import Placeholder from "@tiptap/extension-placeholder";
 import Link from "@tiptap/extension-link";
+import Underline from "@tiptap/extension-underline";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Plus, Smile, Paperclip, Loader2 } from "lucide-react";
@@ -47,6 +48,7 @@ export function ChatRichComposer({ channelId, placeholder, onSend }: ChatRichCom
             rel: "noopener noreferrer",
           },
         }),
+        Underline,
         Image.configure({
           inline: false,
           allowBase64: false,
@@ -149,7 +151,6 @@ export function ChatRichComposer({ channelId, placeholder, onSend }: ChatRichCom
           })
           .run();
       }
-      toast({ title: "Attachment added" });
     } catch (err) {
       toast({
         title: "Upload failed",
@@ -229,6 +230,22 @@ export function ChatRichComposer({ channelId, placeholder, onSend }: ChatRichCom
             title="Italic"
           >
             <span className="italic text-xs font-serif">I</span>
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className={cn(
+              "h-8 w-8 text-muted-foreground hover:text-foreground",
+              editor.isActive("underline") && "bg-muted text-foreground",
+            )}
+            type="button"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              editor.chain().focus().toggleUnderline().run();
+            }}
+            title="Underline"
+          >
+            <span className="text-xs underline underline-offset-2">U</span>
           </Button>
           <Button
             variant="ghost"

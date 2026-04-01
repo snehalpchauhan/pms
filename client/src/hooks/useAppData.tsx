@@ -45,6 +45,7 @@ function convertChannel(c: any): Channel {
     type: c.type as "public" | "private" | "direct",
     members: (c.members || []).map((m: any) => String(m.id)),
     projectId: c.projectId ? String(c.projectId) : undefined,
+    memberCountDisplay: typeof c.memberCountDisplay === "number" ? c.memberCountDisplay : undefined,
   };
 }
 

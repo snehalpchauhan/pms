@@ -96,7 +96,9 @@ export interface Channel {
     name: string;
     type: "public" | "private" | "direct";
     members: string[];
-    projectId?: string; 
+    projectId?: string;
+    /** Public: all project members; private/direct: channel member count. From API for headers. */
+    memberCountDisplay?: number;
 }
 
 export const USERS: Record<string, User> = {

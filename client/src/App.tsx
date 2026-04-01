@@ -15,6 +15,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { useState, useEffect, useRef, createContext, useContext } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
+import { toast } from "@/hooks/use-toast";
 import { AppDataProvider, useAppData, convertTask } from "@/hooks/useAppData";
 import { getQueryFn } from "@/lib/queryClient";
 import LoginPage from "@/pages/LoginPage";
@@ -206,10 +207,16 @@ function AuthenticatedApp() {
         name: newChannel.name,
         type: newChannel.type || "public",
         projectId: Number(currentProjectId),
+        memberIds: Array.isArray(newChannel.memberIds) ? newChannel.memberIds : [],
       });
       queryClient.invalidateQueries({ queryKey: ["/api/channels"] });
     } catch (e) {
       console.error("Failed to create channel:", e);
+      toast({
+        title: "Could not create channel",
+        description: e instanceof Error ? e.message : "Try again.",
+        variant: "destructive",
+      });
     }
   };
 

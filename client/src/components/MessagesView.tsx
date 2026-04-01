@@ -182,7 +182,12 @@ export default function MessagesView({ project, channelId }: MessagesViewProps) 
               )}
               <h3 className="font-semibold text-foreground">{activeChannel?.name}</h3>
               <div className="h-4 w-px bg-border mx-2" />
-              <span className="text-xs text-muted-foreground">{activeChannel?.members.length} members</span>
+              <span className="text-xs text-muted-foreground">
+                {activeChannel?.type === "public"
+                  ? (activeChannel.memberCountDisplay ?? activeChannel.members.length)
+                  : activeChannel.members.length}{" "}
+                members
+              </span>
             </div>
           )}
         </div>
@@ -280,7 +285,12 @@ export default function MessagesView({ project, channelId }: MessagesViewProps) 
                         : "bg-muted/80 text-foreground border-border/60 rounded-tl-md",
                     )}
                   >
-                    <div className={cn("break-words whitespace-pre-wrap", isMine && " [&_a]:text-primary-foreground/90 [&_a]:underline")}>
+                    <div
+                      className={cn(
+                        "break-words whitespace-pre-wrap",
+                        isMine && " [&_a]:text-primary-foreground/90 [&_a]:underline [&_u]:text-primary-foreground/95",
+                      )}
+                    >
                       {formatChatMarkdown(msg.content)}
                     </div>
                   </div>

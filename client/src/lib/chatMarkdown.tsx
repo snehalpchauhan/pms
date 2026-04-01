@@ -37,6 +37,9 @@ function formatPlainWithUrls(text: string, keyBase: string): ReactNode[] {
 }
 
 function formatSegment(part: string, i: number): ReactNode {
+  if (part.startsWith("++") && part.endsWith("++") && part.length > 4) {
+    return <u className="underline underline-offset-2">{part.slice(2, -2)}</u>;
+  }
   if (part.startsWith("**") && part.endsWith("**") && part.length > 4) {
     return <strong>{part.slice(2, -2)}</strong>;
   }
@@ -69,7 +72,7 @@ function formatSegment(part: string, i: number): ReactNode {
   return <span>{formatPlainWithUrls(part, `p${i}`)}</span>;
 }
 
-/** Renders a small markdown subset: **bold**, *italic*, ![alt](url), [text](url), URLs, newlines. */
+/** Renders a small markdown subset: ++underline++, **bold**, *italic*, ![alt](url), [text](url), URLs, newlines. */
 export function formatChatMarkdown(text: string): ReactNode {
   if (!text) return null;
   const lines = text.split("\n");
@@ -86,7 +89,9 @@ export function formatChatMarkdown(text: string): ReactNode {
 }
 
 function formatChatLine(line: string, lineKey: number): ReactNode {
-  const parts = line.split(/(\*\*[^*]+\*\*|\*[^*]+\*|!\[[^\]]*\]\([^)]+\)|\[[^\]]+\]\([^)]+\))/g);
+  const parts = line.split(
+    /(\+\+[^+]+\+\+|\*\*[^*]+\*\*|\*[^*]+\*|!\[[^\]]*\]\([^)]+\)|\[[^\]]+\]\([^)]+\))/g,
+  );
   return (
     <>
       {parts.map((part, i) => (
