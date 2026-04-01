@@ -23,6 +23,10 @@ export interface IStorage {
   getProjects(): Promise<Project[]>;
   getProject(id: number): Promise<Project | undefined>;
   createProject(project: InsertProject): Promise<Project>;
+  updateProject(
+    id: number,
+    updates: Partial<{ name: string; color: string; description: string | null; columns: unknown }>,
+  ): Promise<Project | undefined>;
   getProjectMembers(projectId: number): Promise<User[]>;
   getProjectMembersWithSettings(projectId: number): Promise<(User & { clientShowTimecards: boolean; clientTaskAccess: string })[]>;
   addProjectMember(projectId: number, userId: number): Promise<void>;
@@ -54,9 +58,11 @@ export interface IStorage {
   createComment(comment: InsertComment): Promise<Comment>;
 
   getChannels(projectId?: number): Promise<Channel[]>;
+  getChannel(id: number): Promise<Channel | undefined>;
   createChannel(channel: InsertChannel): Promise<Channel>;
   getChannelMembers(channelId: number): Promise<User[]>;
   addChannelMember(channelId: number, userId: number): Promise<void>;
+  getOrCreateDirectChannel(projectId: number, userId1: number, userId2: number): Promise<Channel>;
 
   getMessages(channelId: number): Promise<Message[]>;
   createMessage(message: InsertMessage): Promise<Message>;
@@ -139,6 +145,14 @@ export class DatabaseStorage implements IStorage {
   async createProject(project: InsertProject): Promise<Project> {
     const [created] = await db.insert(projects).values(project).returning();
     return created;
+  }
+
+  async updateProject(
+    id: number,
+    updates: Partial<{ name: string; color: string; description: string | null; columns: unknown }>,
+  ): Promise<Project | undefined> {
+    const [updated] = await db.update(projects).set(updates).where(eq(projects.id, id)).returning();
+    return updated;
   }
 
   async getProjectMembers(projectId: number): Promise<User[]> {
@@ -303,8 +317,33 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(channels);
   }
 
+  async getChannel(id: number): Promise<Channel | undefined> {
+    const [row] = await db.select().from(channels).where(eq(channels.id, id)).limit(1);
+    return row;
+  }
+
   async createChannel(channel: InsertChannel): Promise<Channel> {
     const [created] = await db.insert(channels).values(channel).returning();
+    return created;
+  }
+
+  async getOrCreateDirectChannel(projectId: number, userId1: number, userId2: number): Promise<Channel> {
+    if (userId1 === userId2) throw new Error("Invalid peer");
+    const a = Math.min(userId1, userId2);
+    const b = Math.max(userId1, userId2);
+    const name = `dm:${a}:${b}`;
+    const existing = await db
+      .select()
+      .from(channels)
+      .where(and(eq(channels.projectId, projectId), eq(channels.type, "direct"), eq(channels.name, name)))
+      .limit(1);
+    if (existing[0]) return existing[0];
+    const [created] = await db
+      .insert(channels)
+      .values({ name, type: "direct", projectId })
+      .returning();
+    await this.addChannelMember(created.id, userId1);
+    await this.addChannelMember(created.id, userId2);
     return created;
   }
 

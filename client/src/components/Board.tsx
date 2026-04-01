@@ -1,9 +1,9 @@
-import { useState, useEffect } from "react";
-import { 
-  DndContext, 
-  DragOverlay, 
-  useDroppable, 
-  DragStartEvent, 
+import { useState, useEffect, type CSSProperties } from "react";
+import {
+  DndContext,
+  DragOverlay,
+  useDroppable,
+  DragStartEvent,
   DragEndEvent,
   closestCorners,
   defaultDropAnimationSideEffects,
@@ -11,19 +11,22 @@ import {
   useSensor,
   useSensors,
   PointerSensor,
-  KeyboardSensor
+  KeyboardSensor,
 } from "@dnd-kit/core";
+import { arrayMove, SortableContext, horizontalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { Task, Status, Project } from "@/lib/mockData";
 import { TaskCard } from "./TaskCard";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
-import { Plus, CheckCircle2, RotateCcw } from "lucide-react";
+import { Plus, CheckCircle2, RotateCcw, GripVertical, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { isPast, isToday, isTomorrow, isThisWeek } from "date-fns";
 import type { ClientPermissions } from "@/App";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { apiRequest } from "@/lib/queryClient";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -164,12 +167,33 @@ interface ColumnProps {
   onAddTask: (status: string) => void;
   isReviewColumn: boolean;
   clientPermissions?: ClientPermissions;
+  /** When true, column can be reordered via drag handle (same users who can add sections). */
+  columnReorderEnabled: boolean;
 }
 
-function Column({ id, title, tasks, color, onTaskClick, onAddTask, isReviewColumn, clientPermissions }: ColumnProps) {
-  const { setNodeRef } = useDroppable({
-    id: id,
+function Column({
+  id,
+  title,
+  tasks,
+  color,
+  onTaskClick,
+  onAddTask,
+  isReviewColumn,
+  clientPermissions,
+  columnReorderEnabled,
+}: ColumnProps) {
+  const droppableId = `${id}__drop`;
+  const { setNodeRef: setDropRef } = useDroppable({
+    id: droppableId,
   });
+  const { attributes, listeners, setNodeRef: setSortableRef, transform, transition, isDragging } = useSortable({
+    id,
+    disabled: !columnReorderEnabled,
+    data: { type: "column" as const },
+  });
+  const sortableStyle = columnReorderEnabled
+    ? { transform: CSS.Transform.toString(transform), transition }
+    : undefined;
   const queryClient = useQueryClient();
 
   const isClient = clientPermissions?.role === "client";
@@ -201,11 +225,29 @@ function Column({ id, title, tasks, color, onTaskClick, onAddTask, isReviewColum
   });
 
   return (
-    <div className="flex flex-col h-full min-w-[320px] max-w-[320px] bg-muted/30 rounded-xl border border-border/60 backdrop-blur-md shadow-sm">
+    <div
+      ref={setSortableRef}
+      style={sortableStyle as CSSProperties | undefined}
+      className={cn(
+        "flex flex-col h-full min-w-[320px] max-w-[320px] bg-muted/30 rounded-xl border border-border/60 backdrop-blur-md shadow-sm",
+        columnReorderEnabled && isDragging && "opacity-70 z-50 ring-2 ring-primary/30",
+      )}
+    >
       <div className="p-4 pb-3 flex items-center justify-between border-b border-border/40">
-         <div className="flex items-center gap-2">
-            <div className={cn("w-2.5 h-2.5 rounded-full ring-2 ring-offset-2 ring-offset-muted/30 shadow-sm", color)} />
-            <h3 className="font-display font-semibold text-sm text-foreground tracking-tight">{title}</h3>
+         <div className="flex items-center gap-1 min-w-0 flex-1">
+            {columnReorderEnabled && (
+              <button
+                type="button"
+                className="shrink-0 touch-none p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/80 cursor-grab active:cursor-grabbing"
+                aria-label="Drag to reorder section"
+                {...attributes}
+                {...listeners}
+              >
+                <GripVertical className="w-4 h-4" />
+              </button>
+            )}
+            <div className={cn("w-2.5 h-2.5 rounded-full ring-2 ring-offset-2 ring-offset-muted/30 shadow-sm shrink-0", color)} />
+            <h3 className="font-display font-semibold text-sm text-foreground tracking-tight truncate">{title}</h3>
             <span className="ml-1 text-[10px] font-mono font-medium text-muted-foreground bg-background/50 border border-border px-1.5 py-0.5 rounded shadow-sm">
                 {tasks.length}
             </span>
@@ -219,7 +261,7 @@ function Column({ id, title, tasks, color, onTaskClick, onAddTask, isReviewColum
       
       <div className="flex-1 p-3 overflow-hidden">
         <ScrollArea className="h-full pr-3 -mr-3">
-            <div ref={setNodeRef} className="min-h-[150px] pb-4 space-y-4">
+            <div ref={setDropRef} className="min-h-[150px] pb-4 space-y-4">
                 {Object.entries(groupedTasks).map(([groupName, groupTasks]) => {
                     if (groupTasks.length === 0) return null;
                     return (
@@ -276,116 +318,238 @@ interface BoardProps {
 export default function Board({ project, tasks, onTaskClick, onAddTask, clientPermissions }: BoardProps) {
   const [localTasks, setLocalTasks] = useState<Task[]>(tasks);
   const [activeTask, setActiveTask] = useState<Task | null>(null);
+  const [activeColumnId, setActiveColumnId] = useState<string | null>(null);
+  const [orderedColumnIds, setOrderedColumnIds] = useState<string[]>(() => project.columns.map((c) => c.id));
+  const [addSectionOpen, setAddSectionOpen] = useState(false);
+  const [newSectionTitle, setNewSectionTitle] = useState("");
+  const [sectionSaving, setSectionSaving] = useState(false);
+
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   const isClient = clientPermissions?.role === "client";
   const isFullAccess = isClient && clientPermissions?.clientTaskAccess === "full";
+  const canEditLayout = !isClient || isFullAccess;
 
   useEffect(() => {
     setLocalTasks(tasks);
   }, [tasks]);
 
+  useEffect(() => {
+    setOrderedColumnIds(project.columns.map((c) => c.id));
+  }, [project.id, project.columns.map((c) => c.id).join("|")]);
+
+  const orderedColumns = orderedColumnIds
+    .map((oid) => project.columns.find((c) => c.id === oid))
+    .filter((c): c is (typeof project.columns)[number] => !!c);
+
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
-        distance: (isClient && !isFullAccess) ? 999999 : 8, // Disable for non-full clients
+        distance: isClient && !isFullAccess ? 999999 : 8,
       },
     }),
-    useSensor(KeyboardSensor)
+    useSensor(KeyboardSensor),
   );
 
   const handleDragStart = (event: DragStartEvent) => {
     if (isClient && !isFullAccess) return;
-    setActiveTask(event.active.data.current?.task);
+    if (event.active.data.current?.type === "column") {
+      setActiveColumnId(String(event.active.id));
+      setActiveTask(null);
+      return;
+    }
+    setActiveColumnId(null);
+    setActiveTask(event.active.data.current?.task ?? null);
   };
 
-  const handleDragEnd = (event: DragEndEvent) => {
+  const resolveStatusFromOverId = (overId: string | number): Status | undefined => {
+    const overStr = String(overId);
+    const dropMatch = /^(.*)__drop$/.exec(overStr);
+    if (dropMatch) return dropMatch[1] as Status;
+    if (project.columns.some((col) => col.id === overStr)) return overStr as Status;
+    const overTask = localTasks.find((t) => t.id === overStr);
+    return overTask?.status;
+  };
+
+  const handleDragEnd = async (event: DragEndEvent) => {
     if (isClient && !isFullAccess) return;
     const { active, over } = event;
-    
+
     if (!over) {
+      setActiveTask(null);
+      setActiveColumnId(null);
+      return;
+    }
+
+    if (active.data.current?.type === "column") {
+      const activeColId = String(active.id);
+      const overColId = String(over.id);
+      if (activeColId === overColId) {
         setActiveTask(null);
+        setActiveColumnId(null);
         return;
+      }
+      const oldIndex = orderedColumnIds.indexOf(activeColId);
+      const newIndex = orderedColumnIds.indexOf(overColId);
+      if (oldIndex < 0 || newIndex < 0) {
+        setActiveTask(null);
+        setActiveColumnId(null);
+        return;
+      }
+      const nextOrder = arrayMove(orderedColumnIds, oldIndex, newIndex);
+      setOrderedColumnIds(nextOrder);
+      const cols = nextOrder
+        .map((oid) => project.columns.find((c) => c.id === oid))
+        .filter((c): c is (typeof project.columns)[number] => !!c);
+      try {
+        await apiRequest("PATCH", `/api/projects/${project.id}`, { columns: cols });
+        queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      } catch {
+        setOrderedColumnIds(project.columns.map((c) => c.id));
+        toast({ title: "Could not reorder sections", variant: "destructive" });
+      }
+      setActiveTask(null);
+      setActiveColumnId(null);
+      return;
     }
 
     const activeId = active.id;
     const overId = over.id;
 
     if (activeId === overId) {
-        setActiveTask(null);
-        return;
+      setActiveTask(null);
+      setActiveColumnId(null);
+      return;
     }
 
-    let newStatus: Status | undefined;
-
-    if (project.columns.some(col => col.id === overId)) {
-        newStatus = overId as Status;
-    } 
-    else {
-        const overTask = localTasks.find(t => t.id === overId);
-        if (overTask) {
-            newStatus = overTask.status;
-        }
-    }
+    const newStatus = resolveStatusFromOverId(overId);
 
     if (newStatus) {
-        setLocalTasks(prev => prev.map(t => {
-            if (t.id === activeId) {
-                return { ...t, status: newStatus as Status };
-            }
-            return t;
-        }));
+      setLocalTasks((prev) =>
+        prev.map((t) => {
+          if (t.id === activeId) {
+            return { ...t, status: newStatus as Status };
+          }
+          return t;
+        }),
+      );
     }
-    
+
     setActiveTask(null);
+    setActiveColumnId(null);
   };
 
-  // Determine the review column (second to last active column)
-  const columns = project.columns;
-  const reviewColumnId = columns.length >= 2 ? columns[columns.length - 2].id : null;
+  const reviewColumnId =
+    orderedColumns.length >= 2 ? orderedColumns[orderedColumns.length - 2]!.id : null;
+
+  const handleAddSection = async () => {
+    const title = newSectionTitle.trim();
+    if (!title) {
+      toast({ title: "Enter a section name", variant: "destructive" });
+      return;
+    }
+    const slug = `s-${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;
+    const nextCols = [...project.columns, { id: slug, title, color: "bg-slate-500" }];
+    setSectionSaving(true);
+    try {
+      await apiRequest("PATCH", `/api/projects/${project.id}`, { columns: nextCols });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      setAddSectionOpen(false);
+      setNewSectionTitle("");
+      toast({ title: "Section added" });
+    } catch {
+      toast({ title: "Could not add section", variant: "destructive" });
+    } finally {
+      setSectionSaving(false);
+    }
+  };
+
+  const activeColumn = activeColumnId ? project.columns.find((c) => c.id === activeColumnId) : null;
 
   return (
     <div className="flex-1 h-full overflow-hidden flex flex-col bg-background/50">
-       <div className="flex-1 overflow-x-auto overflow-y-hidden">
-          <DndContext 
-            sensors={sensors}
-            collisionDetection={closestCorners}
-            onDragStart={handleDragStart} 
-            onDragEnd={handleDragEnd}
-          >
+      <div className="flex-1 overflow-x-auto overflow-y-hidden">
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCorners}
+          onDragStart={handleDragStart}
+          onDragEnd={(e) => void handleDragEnd(e)}
+        >
+          <SortableContext items={orderedColumnIds} strategy={horizontalListSortingStrategy}>
             <div className="flex h-full p-6 gap-6 w-max min-w-full">
-                {project.columns.map((col) => (
-                    <Column 
-                        key={col.id} 
-                        id={col.id} 
-                        title={col.title} 
-                        color={col.color}
-                        tasks={localTasks.filter(t => t.status === col.id)}
-                        onTaskClick={onTaskClick || (() => {})}
-                        onAddTask={onAddTask || (() => {})}
-                        isReviewColumn={col.id === reviewColumnId}
-                        clientPermissions={clientPermissions}
-                    />
-                ))}
-                
-                {(!isClient || isFullAccess) && (
-                    <div className="min-w-[320px] max-w-[320px] h-[100px] border-2 border-dashed border-border/50 rounded-xl flex items-center justify-center hover:bg-muted/10 transition-colors cursor-pointer group">
-                        <div className="flex items-center gap-2 text-muted-foreground group-hover:text-primary transition-colors">
-                            <Plus className="w-5 h-5" />
-                            <span className="font-medium">Add Section</span>
-                        </div>
-                    </div>
-                )}
-            </div>
+              {orderedColumns.map((col) => (
+                <Column
+                  key={col.id}
+                  id={col.id}
+                  title={col.title}
+                  color={col.color}
+                  tasks={localTasks.filter((t) => t.status === col.id)}
+                  onTaskClick={onTaskClick || (() => {})}
+                  onAddTask={onAddTask || (() => {})}
+                  isReviewColumn={col.id === reviewColumnId}
+                  clientPermissions={clientPermissions}
+                  columnReorderEnabled={canEditLayout}
+                />
+              ))}
 
-            <DragOverlay dropAnimation={dropAnimation}>
-                {activeTask ? (
-                    <div className="rotate-2 cursor-grabbing">
-                        <TaskCard task={activeTask} onClick={() => {}} />
-                    </div>
-                ) : null}
-            </DragOverlay>
-          </DndContext>
-       </div>
+              {canEditLayout && (
+                <button
+                  type="button"
+                  className="min-w-[320px] max-w-[320px] h-[100px] border-2 border-dashed border-border/50 rounded-xl flex items-center justify-center hover:bg-muted/10 transition-colors cursor-pointer group text-left"
+                  onClick={() => setAddSectionOpen(true)}
+                >
+                  <span className="flex items-center gap-2 text-muted-foreground group-hover:text-primary transition-colors">
+                    <Plus className="w-5 h-5" />
+                    <span className="font-medium">Add Section</span>
+                  </span>
+                </button>
+              )}
+            </div>
+          </SortableContext>
+
+          <DragOverlay dropAnimation={dropAnimation}>
+            {activeTask ? (
+              <div className="rotate-2 cursor-grabbing">
+                <TaskCard task={activeTask} onClick={() => {}} />
+              </div>
+            ) : activeColumn ? (
+              <div className="min-w-[280px] max-w-[320px] rounded-xl border-2 border-primary/40 bg-muted/40 p-4 shadow-lg">
+                <p className="text-sm font-semibold">{activeColumn.title}</p>
+                <p className="text-xs text-muted-foreground mt-1">Moving section…</p>
+              </div>
+            ) : null}
+          </DragOverlay>
+        </DndContext>
+      </div>
+
+      <Dialog open={addSectionOpen} onOpenChange={setAddSectionOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Add board section</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label htmlFor="section-name">Section name</Label>
+            <Input
+              id="section-name"
+              value={newSectionTitle}
+              onChange={(e) => setNewSectionTitle(e.target.value)}
+              placeholder="e.g. Backlog, QA, Blocked"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void handleAddSection();
+              }}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" type="button" onClick={() => setAddSectionOpen(false)} disabled={sectionSaving}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={() => void handleAddSection()} disabled={sectionSaving || !newSectionTitle.trim()}>
+              {sectionSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Add section"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

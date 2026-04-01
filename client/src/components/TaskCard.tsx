@@ -32,7 +32,7 @@ export function TaskCard({ task, onClick }: TaskCardProps) {
   const { users } = useAppData();
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: task.id,
-    data: { task },
+    data: { type: "task" as const, task },
   });
 
   const style = {

@@ -11,10 +11,18 @@ import { useAppData } from "@/hooks/useAppData";
 import { useAuth } from "@/hooks/useAuth";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 interface MessagesViewProps {
     project: Project;
     channelId?: string;
+}
+
+function formatMessageTime(iso: string | undefined): string {
+    if (!iso) return "Just now";
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "Just now";
+    return d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
 export default function MessagesView({ project, channelId }: MessagesViewProps) {
@@ -22,23 +30,46 @@ export default function MessagesView({ project, channelId }: MessagesViewProps) 
     const { users, channels } = useAppData();
     const { user } = useAuth();
     const queryClient = useQueryClient();
+    const { toast } = useToast();
 
-    const activeChannelId = channelId || channels.find(c => c.projectId === project.id)?.id;
-    const activeChannel = channels.find(c => c.id === activeChannelId);
-    
-    const isDM = activeChannelId?.startsWith('dm-');
-    const dmUser = isDM ? users[activeChannelId!.replace('dm-', '')] : null;
+    const activeChannelId = channelId || channels.find((c) => c.projectId === project.id && c.type !== "direct")?.id;
+    const activeChannel = channels.find((c) => c.id === activeChannelId);
 
-    const numericChannelId = activeChannelId && !isDM ? Number(activeChannelId) : null;
+    const isDM = Boolean(activeChannelId?.startsWith("dm-"));
+    const dmPeerIdStr = isDM && activeChannelId ? activeChannelId.replace(/^dm-/, "") : "";
+    const dmPeerNumericId = dmPeerIdStr ? Number(dmPeerIdStr) : NaN;
+    const dmUser = isDM && dmPeerIdStr ? users[dmPeerIdStr] : null;
+
+    const { data: dmChannelId } = useQuery({
+        queryKey: ["/api/projects", project.id, "direct-messages", dmPeerNumericId],
+        queryFn: async () => {
+            const res = await apiRequest("POST", `/api/projects/${project.id}/direct-messages`, {
+                peerUserId: dmPeerNumericId,
+            });
+            const j = (await res.json()) as { channelId: number };
+            return j.channelId;
+        },
+        enabled: isDM && Number.isInteger(dmPeerNumericId) && dmPeerNumericId > 0,
+        staleTime: Infinity,
+        retry: false,
+    });
+
+    const numericChannelId =
+        isDM && dmChannelId != null
+            ? dmChannelId
+            : activeChannelId && !isDM
+              ? Number(activeChannelId)
+              : null;
+
     const { data: rawMessages } = useQuery<any[]>({
         queryKey: ["/api/channels", numericChannelId, "messages"],
         queryFn: async () => {
-            if (!numericChannelId) return [];
+            if (numericChannelId == null) return [];
             const res = await fetch(`/api/channels/${numericChannelId}/messages`, { credentials: "include" });
             if (!res.ok) return [];
             return res.json();
         },
-        enabled: !!numericChannelId,
+        enabled: numericChannelId != null && !Number.isNaN(numericChannelId),
     });
 
     const channelMessages: Message[] = (rawMessages || []).map((m: any) => ({
@@ -46,19 +77,27 @@ export default function MessagesView({ project, channelId }: MessagesViewProps) 
         channelId: String(m.channelId),
         authorId: String(m.authorId),
         content: m.content,
-        createdAt: m.createdAt || "Just now",
+        createdAt: formatMessageTime(m.createdAt),
     }));
 
+    const canSend = Boolean(input.trim()) && numericChannelId != null && !Number.isNaN(numericChannelId);
+
     const handleSend = async () => {
-        if (!input.trim() || !numericChannelId) return;
+        if (!canSend || numericChannelId == null) return;
         try {
             await apiRequest("POST", `/api/channels/${numericChannelId}/messages`, {
-                content: input,
+                content: input.trim(),
             });
             queryClient.invalidateQueries({ queryKey: ["/api/channels", numericChannelId, "messages"] });
+            queryClient.invalidateQueries({ queryKey: ["/api/channels"] });
             setInput("");
         } catch (e) {
             console.error("Failed to send message:", e);
+            toast({
+                title: "Message not sent",
+                description: e instanceof Error ? e.message : "Try again.",
+                variant: "destructive",
+            });
         }
     };
 
@@ -202,7 +241,7 @@ export default function MessagesView({ project, channelId }: MessagesViewProps) 
                             <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground">
                                 <Smile className="w-5 h-5" />
                             </Button>
-                            <Button size="sm" className="px-6" onClick={handleSend}>
+                            <Button size="sm" className="px-6" onClick={handleSend} disabled={!canSend}>
                                 Send
                             </Button>
                         </div>

@@ -341,6 +341,81 @@ export async function registerRoutes(
     res.status(201).json(project);
   });
 
+  const projectColumnSchema = z.object({
+    id: z.string().min(1).max(80),
+    title: z.string().min(1).max(120),
+    color: z.string().min(1).max(80),
+  });
+
+  const patchProjectSchema = z.object({
+    columns: z.array(projectColumnSchema).min(1).max(24).optional(),
+    name: z.string().min(1).max(200).optional(),
+  });
+
+  app.patch("/api/projects/:id", requireAuth, async (req, res) => {
+    const currentUser = req.user as any;
+    if (currentUser.role === "client") {
+      return res.status(403).json({ message: "Clients cannot edit board layout" });
+    }
+    const projectId = Number(req.params.id);
+    if (!Number.isInteger(projectId) || projectId <= 0) {
+      return res.status(400).json({ message: "Invalid project id" });
+    }
+    const membership = await storage.getProjectMembership(projectId, currentUser.id);
+    if (!membership) return res.status(403).json({ message: "Access denied" });
+    const parsed = patchProjectSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: parsed.error.issues[0]?.message || "Invalid body" });
+    }
+    if (parsed.data.name !== undefined) {
+      if (currentUser.role !== "admin" && currentUser.role !== "manager") {
+        return res.status(403).json({ message: "Only admins and managers can rename a project" });
+      }
+    }
+    const updates: { name?: string; columns?: unknown } = {};
+    if (parsed.data.name !== undefined) updates.name = parsed.data.name;
+    if (parsed.data.columns !== undefined) updates.columns = parsed.data.columns;
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ message: "No changes provided" });
+    }
+    const updated = await storage.updateProject(projectId, updates);
+    if (!updated) return res.status(404).json({ message: "Project not found" });
+    res.json(updated);
+  });
+
+  app.post("/api/projects/:id/direct-messages", requireAuth, async (req, res) => {
+    const currentUser = req.user as any;
+    if (currentUser.role === "client") {
+      return res.status(403).json({ message: "Clients cannot start direct messages" });
+    }
+    const projectId = Number(req.params.id);
+    const peerUserId = Number(req.body?.peerUserId);
+    if (!Number.isInteger(projectId) || projectId <= 0) {
+      return res.status(400).json({ message: "Invalid project" });
+    }
+    if (!Number.isInteger(peerUserId) || peerUserId <= 0) {
+      return res.status(400).json({ message: "Invalid peer user" });
+    }
+    if (peerUserId === currentUser.id) {
+      return res.status(400).json({ message: "Cannot message yourself" });
+    }
+    const project = await storage.getProject(projectId);
+    if (!project) return res.status(404).json({ message: "Project not found" });
+    for (const uid of [currentUser.id, peerUserId]) {
+      const m = await storage.getProjectMembership(projectId, uid);
+      if (!m) {
+        return res.status(403).json({ message: "Both users must be members of this project" });
+      }
+    }
+    try {
+      const channel = await storage.getOrCreateDirectChannel(projectId, currentUser.id, peerUserId);
+      res.json({ channelId: channel.id });
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Failed to open conversation";
+      return res.status(400).json({ message });
+    }
+  });
+
   app.get("/api/projects/:id/members", requireAuth, async (req, res) => {
     const currentUser = req.user as any;
     const projectId = Number(req.params.id);
@@ -772,17 +847,50 @@ export async function registerRoutes(
     res.status(201).json(channel);
   });
 
+  async function userCanAccessChannel(userId: number, channelId: number): Promise<boolean> {
+    const channel = await storage.getChannel(channelId);
+    if (!channel) return false;
+    const members = await storage.getChannelMembers(channelId);
+    if (channel.type === "direct") {
+      return members.some((m) => m.id === userId);
+    }
+    if (members.length > 0) {
+      return members.some((m) => m.id === userId);
+    }
+    if (channel.projectId != null) {
+      const m = await storage.getProjectMembership(channel.projectId, userId);
+      return !!m;
+    }
+    return false;
+  }
+
   // Messages
   app.get("/api/channels/:channelId/messages", requireAuth, async (req, res) => {
-    const channelMessages = await storage.getMessages(Number(req.params.channelId));
+    const currentUser = req.user as any;
+    const channelId = Number(req.params.channelId);
+    if (!Number.isInteger(channelId) || channelId <= 0) {
+      return res.status(400).json({ message: "Invalid channel" });
+    }
+    const ok = await userCanAccessChannel(currentUser.id, channelId);
+    if (!ok) return res.status(403).json({ message: "Access denied" });
+    const channelMessages = await storage.getMessages(channelId);
     res.json(channelMessages);
   });
 
   app.post("/api/channels/:channelId/messages", requireAuth, async (req, res) => {
+    const currentUser = req.user as any;
+    const channelId = Number(req.params.channelId);
+    if (!Number.isInteger(channelId) || channelId <= 0) {
+      return res.status(400).json({ message: "Invalid channel" });
+    }
+    const ok = await userCanAccessChannel(currentUser.id, channelId);
+    if (!ok) return res.status(403).json({ message: "Access denied" });
+    const content = typeof req.body?.content === "string" ? req.body.content.trim() : "";
+    if (!content) return res.status(400).json({ message: "Message content is required" });
     const message = await storage.createMessage({
-      channelId: Number(req.params.channelId),
-      authorId: (req.user as any).id,
-      content: req.body.content,
+      channelId,
+      authorId: currentUser.id,
+      content,
     });
     res.status(201).json(message);
   });

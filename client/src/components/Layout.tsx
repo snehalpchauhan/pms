@@ -10,6 +10,8 @@ import { useAppData } from "@/hooks/useAppData";
 import { useAuth } from "@/hooks/useAuth";
 import { cn, getUserInitials } from "@/lib/utils";
 import { useState, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
+import type { User as BoardUser } from "@/lib/mockData";
 import { COMPANY_SETTINGS_TAB_EVENT } from "@/lib/companySettingsNav";
 import { Badge } from "@/components/ui/badge";
 import { CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
@@ -63,12 +65,32 @@ export function Sidebar({ currentView, currentChannelId, onViewChange, currentPr
     window.addEventListener(COMPANY_SETTINGS_TAB_EVENT, onTab);
     return () => window.removeEventListener(COMPANY_SETTINGS_TAB_EVENT, onTab);
   }, []);
-  const projectChannels = currentProject
-    ? channels.filter((c) => c.projectId === currentProject.id)
-    : [];
-  const projectMembers = Object.values(users);
-
   const isClient = currentUserRole === "client";
+
+  const projectChannels = currentProject
+    ? channels.filter((c) => c.projectId === currentProject.id && c.type !== "direct")
+    : [];
+  const numericProjectId = currentProject ? Number(currentProject.id) : null;
+  const { data: projectMembersRaw = [] } = useQuery<any[]>({
+    queryKey: ["/api/projects", numericProjectId, "members"],
+    queryFn: async () => {
+      if (!numericProjectId) return [];
+      const res = await fetch(`/api/projects/${numericProjectId}/members`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!numericProjectId && !isClient,
+  });
+  const dmEligibleMembers: BoardUser[] = projectMembersRaw
+    .filter((m) => String(m.id) !== String(authUser?.id))
+    .map((m) => ({
+      id: String(m.id),
+      name: m.name,
+      avatar: m.avatar || "",
+      role: m.role,
+      status: m.status || "offline",
+      email: m.email || "",
+    }));
   const showTimecards = !isClient || (clientPermissions?.clientShowTimecards === true);
   const showTeam = !isClient;
   const showSettings = !isClient && currentUserRole === "admin";
@@ -419,7 +441,7 @@ export function Sidebar({ currentView, currentChannelId, onViewChange, currentPr
                                             <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Direct Messages</h3>
                                         </div>
                                         <div className="space-y-0.5">
-                                            {projectMembers.map(user => (
+                                            {dmEligibleMembers.map(user => (
                                                 <Button
                                                     key={user.id}
                                                     variant={currentView === "messages" && currentChannelId === `dm-${user.id}` ? "secondary" : "ghost"} 
