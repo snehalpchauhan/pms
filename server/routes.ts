@@ -338,6 +338,7 @@ export async function registerRoutes(
     const currentUser = req.user as any;
     if (currentUser.role === "client") return res.status(403).json({ message: "Clients cannot create projects" });
     const project = await storage.createProject(req.body);
+    await storage.addProjectMember(project.id, currentUser.id);
     res.status(201).json(project);
   });
 
@@ -361,7 +362,11 @@ export async function registerRoutes(
     if (!Number.isInteger(projectId) || projectId <= 0) {
       return res.status(400).json({ message: "Invalid project id" });
     }
-    const membership = await storage.getProjectMembership(projectId, currentUser.id);
+    let membership = await storage.getProjectMembership(projectId, currentUser.id);
+    if (!membership && (currentUser.role === "admin" || currentUser.role === "manager")) {
+      await storage.addProjectMember(projectId, currentUser.id);
+      membership = await storage.getProjectMembership(projectId, currentUser.id);
+    }
     if (!membership) return res.status(403).json({ message: "Access denied" });
     const parsed = patchProjectSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -401,10 +406,25 @@ export async function registerRoutes(
     }
     const project = await storage.getProject(projectId);
     if (!project) return res.status(404).json({ message: "Project not found" });
-    for (const uid of [currentUser.id, peerUserId]) {
-      const m = await storage.getProjectMembership(projectId, uid);
-      if (!m) {
-        return res.status(403).json({ message: "Both users must be members of this project" });
+    let callerMembership = await storage.getProjectMembership(projectId, currentUser.id);
+    if (!callerMembership && (currentUser.role === "admin" || currentUser.role === "manager")) {
+      await storage.addProjectMember(projectId, currentUser.id);
+      callerMembership = await storage.getProjectMembership(projectId, currentUser.id);
+    }
+    if (!callerMembership) {
+      return res.status(403).json({ message: "You must be a member of this project to use direct messages" });
+    }
+    let peerMembership = await storage.getProjectMembership(projectId, peerUserId);
+    if (!peerMembership) {
+      if (currentUser.role === "admin" || currentUser.role === "manager") {
+        const peer = await storage.getUser(peerUserId);
+        if (!peer) return res.status(404).json({ message: "User not found" });
+        await storage.addProjectMember(projectId, peerUserId);
+        peerMembership = await storage.getProjectMembership(projectId, peerUserId);
+      } else {
+        return res.status(403).json({
+          message: "That person is not on this project yet. Ask an admin or manager to add them under Members & Access.",
+        });
       }
     }
     try {
@@ -431,7 +451,28 @@ export async function registerRoutes(
   app.post("/api/projects/:id/members", requireAuth, async (req, res) => {
     const currentUser = req.user as any;
     if (currentUser.role === "client") return res.status(403).json({ message: "Clients cannot add members" });
-    await storage.addProjectMember(Number(req.params.id), req.body.userId);
+    if (currentUser.role !== "admin" && currentUser.role !== "manager") {
+      return res.status(403).json({ message: "Only admins and managers can add members" });
+    }
+    const projectId = Number(req.params.id);
+    const userId = Number(req.body?.userId);
+    if (!Number.isInteger(projectId) || projectId <= 0) {
+      return res.status(400).json({ message: "Invalid project" });
+    }
+    if (!Number.isInteger(userId) || userId <= 0) {
+      return res.status(400).json({ message: "Invalid user id" });
+    }
+    let membership = await storage.getProjectMembership(projectId, currentUser.id);
+    if (!membership && currentUser.role === "admin") {
+      await storage.addProjectMember(projectId, currentUser.id);
+      membership = await storage.getProjectMembership(projectId, currentUser.id);
+    }
+    if (!membership) {
+      return res.status(403).json({ message: "You must be a member of this project to add people" });
+    }
+    const target = await storage.getUser(userId);
+    if (!target) return res.status(404).json({ message: "User not found" });
+    await storage.addProjectMember(projectId, userId);
     res.status(201).json({ message: "Member added" });
   });
 
@@ -440,7 +481,16 @@ export async function registerRoutes(
     const currentUser = req.user as any;
     const projectId = Number(req.params.id);
     const membership = await storage.getProjectMembership(projectId, currentUser.id);
-    if (!membership) return res.status(404).json({ message: "Not a member of this project" });
+    if (!membership) {
+      if (currentUser.role === "admin") {
+        return res.json({
+          role: currentUser.role,
+          clientShowTimecards: true,
+          clientTaskAccess: "full",
+        });
+      }
+      return res.status(404).json({ message: "Not a member of this project" });
+    }
     res.json({
       role: currentUser.role,
       clientShowTimecards: membership.clientShowTimecards ?? false,

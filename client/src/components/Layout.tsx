@@ -10,8 +10,6 @@ import { useAppData } from "@/hooks/useAppData";
 import { useAuth } from "@/hooks/useAuth";
 import { cn, getUserInitials } from "@/lib/utils";
 import { useState, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
-import type { User as BoardUser } from "@/lib/mockData";
 import { COMPANY_SETTINGS_TAB_EVENT } from "@/lib/companySettingsNav";
 import { Badge } from "@/components/ui/badge";
 import { CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
@@ -42,7 +40,7 @@ function settingsSidebarTabFromHash(): (typeof SETTINGS_SIDEBAR_TABS)[number] {
 }
 
 export function Sidebar({ currentView, currentChannelId, onViewChange, currentProject, onProjectChange, onAddProject, onAddChannel, currentUserRole, clientPermissions }: SidebarProps) {
-  const { users, projects, channels } = useAppData();
+  const { users, projects, channels, usersArray } = useAppData();
   const { user: authUser, logout } = useAuth();
   const sidebarInitials = getUserInitials(authUser?.name, authUser?.username);
   const sidebarAvatar = authUser?.avatar?.trim() || undefined;
@@ -70,27 +68,9 @@ export function Sidebar({ currentView, currentChannelId, onViewChange, currentPr
   const projectChannels = currentProject
     ? channels.filter((c) => c.projectId === currentProject.id && c.type !== "direct")
     : [];
-  const numericProjectId = currentProject ? Number(currentProject.id) : null;
-  const { data: projectMembersRaw = [] } = useQuery<any[]>({
-    queryKey: ["/api/projects", numericProjectId, "members"],
-    queryFn: async () => {
-      if (!numericProjectId) return [];
-      const res = await fetch(`/api/projects/${numericProjectId}/members`, { credentials: "include" });
-      if (!res.ok) return [];
-      return res.json();
-    },
-    enabled: !!numericProjectId && !isClient,
-  });
-  const dmEligibleMembers: BoardUser[] = projectMembersRaw
-    .filter((m) => String(m.id) !== String(authUser?.id))
-    .map((m) => ({
-      id: String(m.id),
-      name: m.name,
-      avatar: m.avatar || "",
-      role: m.role,
-      status: m.status || "offline",
-      email: m.email || "",
-    }));
+  const dmEligibleMembers = usersArray
+    .filter((u) => String(u.id) !== String(authUser?.id))
+    .sort((a, b) => a.name.localeCompare(b.name));
   const showTimecards = !isClient || (clientPermissions?.clientShowTimecards === true);
   const showTeam = !isClient;
   const showSettings = !isClient && currentUserRole === "admin";

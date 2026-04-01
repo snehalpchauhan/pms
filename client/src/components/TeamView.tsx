@@ -7,10 +7,9 @@ import { Mail, MoreHorizontal, Plus, Shield, User, Briefcase, Trash2, Clock } fr
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useState, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -33,10 +32,12 @@ interface MemberWithSettings {
 }
 
 export default function TeamView({ project, currentUserRole }: TeamViewProps) {
-    const { users } = useAppData();
+    const { usersArray } = useAppData();
     const queryClient = useQueryClient();
     const { toast } = useToast();
     const [isInviteOpen, setIsInviteOpen] = useState(false);
+    const [selectedUserId, setSelectedUserId] = useState<string>("");
+    const [addMemberLoading, setAddMemberLoading] = useState(false);
 
     const canManageTeam = currentUserRole === 'manager' || currentUserRole === 'admin';
 
@@ -51,6 +52,40 @@ export default function TeamView({ project, currentUserRole }: TeamViewProps) {
         return res.json();
       },
     });
+
+    const memberIdSet = useMemo(() => new Set(membersWithSettings.map((m) => String(m.id))), [membersWithSettings]);
+
+    const workspaceUsersNotOnProject = useMemo(
+      () =>
+        usersArray
+          .filter((u) => !memberIdSet.has(String(u.id)))
+          .sort((a, b) => a.name.localeCompare(b.name)),
+      [usersArray, memberIdSet],
+    );
+
+    const handleAddExistingMember = async () => {
+      if (!selectedUserId) {
+        toast({ title: "Select a user", variant: "destructive" });
+        return;
+      }
+      setAddMemberLoading(true);
+      try {
+        await apiRequest("POST", `/api/projects/${numericProjectId}/members`, {
+          userId: Number(selectedUserId),
+        });
+        queryClient.invalidateQueries({ queryKey: ["/api/projects", numericProjectId, "members-with-settings"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/projects", numericProjectId, "members"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+        toast({ title: "Member added to project" });
+        setSelectedUserId("");
+        setIsInviteOpen(false);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "Failed to add member";
+        toast({ title: "Could not add member", description: msg, variant: "destructive" });
+      } finally {
+        setAddMemberLoading(false);
+      }
+    };
 
     const getRoleBadge = (role: string) => {
         switch(role) {
@@ -181,39 +216,56 @@ export default function TeamView({ project, currentUserRole }: TeamViewProps) {
             )}
         </div>
 
-        {/* Invite Modal Mockup */}
-        <Dialog open={isInviteOpen} onOpenChange={setIsInviteOpen}>
-            <DialogContent className="sm:max-w-[425px]">
-                <DialogHeader>
-                    <DialogTitle>Invite Team Member</DialogTitle>
-                </DialogHeader>
-                <div className="grid gap-4 py-4">
-                    <div className="space-y-2">
-                        <Label htmlFor="name">Name</Label>
-                        <Input id="name" placeholder="John Doe" />
-                    </div>
-                    <div className="space-y-2">
-                        <Label htmlFor="email">Email</Label>
-                        <Input id="email" placeholder="john@example.com" />
-                    </div>
-                    <div className="space-y-2">
-                        <Label htmlFor="role">Role</Label>
-                        <Select defaultValue="employee">
-                            <SelectTrigger>
-                                <SelectValue placeholder="Select role" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="manager">Manager</SelectItem>
-                                <SelectItem value="employee">Employee</SelectItem>
-                                <SelectItem value="client">Client</SelectItem>
-                            </SelectContent>
-                        </Select>
-                    </div>
-                </div>
-                <DialogFooter>
-                    <Button onClick={() => setIsInviteOpen(false)}>Send Invitation</Button>
-                </DialogFooter>
-            </DialogContent>
+        <Dialog
+          open={isInviteOpen}
+          onOpenChange={(open) => {
+            setIsInviteOpen(open);
+            if (!open) setSelectedUserId("");
+          }}
+        >
+          <DialogContent className="sm:max-w-[425px]">
+            <DialogHeader>
+              <DialogTitle>Add team member</DialogTitle>
+            </DialogHeader>
+            <div className="grid gap-4 py-2">
+              <p className="text-sm text-muted-foreground">
+                Choose someone who already has an account in this workspace. Their role stays the same as in Company
+                Settings.
+              </p>
+              <div className="space-y-2">
+                <Label htmlFor="add-member-user">Workspace user</Label>
+                {workspaceUsersNotOnProject.length === 0 ? (
+                  <p className="text-sm text-muted-foreground py-2">Everyone is already on this project.</p>
+                ) : (
+                  <Select value={selectedUserId || undefined} onValueChange={setSelectedUserId}>
+                    <SelectTrigger id="add-member-user">
+                      <SelectValue placeholder="Select a user…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {workspaceUsersNotOnProject.map((u) => (
+                        <SelectItem key={u.id} value={u.id}>
+                          {u.name}
+                          {u.email ? ` (${u.email})` : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+            </div>
+            <DialogFooter className="gap-2 sm:gap-0">
+              <Button variant="outline" type="button" onClick={() => setIsInviteOpen(false)} disabled={addMemberLoading}>
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={() => void handleAddExistingMember()}
+                disabled={addMemberLoading || !selectedUserId || workspaceUsersNotOnProject.length === 0}
+              >
+                {addMemberLoading ? "Adding…" : "Add to project"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
         </Dialog>
     </div>
   );
