@@ -124,6 +124,7 @@ export function convertTask(t: any): Task {
     title: t.title,
     description: t.description || "",
     status: t.status,
+    boardOrder: typeof t.boardOrder === "number" ? t.boardOrder : 0,
     priority: t.priority,
     tags: t.tags || [],
     assignees: (t.assignees || []).map((a: any) => typeof a === 'object' ? String(a.id) : String(a)),

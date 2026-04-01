@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { eq, and, desc, inArray, gte, lte, sql } from "drizzle-orm";
+import { eq, and, asc, desc, inArray, gte, lte, sql } from "drizzle-orm";
 import {
   users, projects, projectMembers, tasks, taskAssignees,
   checklistItems, attachments, comments, channels, channelMembers, messages, timeEntries,
@@ -37,6 +37,7 @@ export interface IStorage {
   projectHasClientWithTimecards(projectId: number): Promise<boolean>;
 
   getTasksByProject(projectId: number): Promise<Task[]>;
+  getMaxBoardOrderForStatus(projectId: number, status: string): Promise<number>;
   getTask(id: number): Promise<Task | undefined>;
   createTask(task: InsertTask): Promise<Task>;
   updateTask(id: number, updates: Partial<InsertTask>): Promise<Task | undefined>;
@@ -230,7 +231,21 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getTasksByProject(projectId: number): Promise<Task[]> {
-    return db.select().from(tasks).where(eq(tasks.projectId, projectId));
+    return db
+      .select()
+      .from(tasks)
+      .where(eq(tasks.projectId, projectId))
+      .orderBy(asc(tasks.boardOrder), asc(tasks.id));
+  }
+
+  async getMaxBoardOrderForStatus(projectId: number, status: string): Promise<number> {
+    const [row] = await db
+      .select({
+        m: sql<number>`coalesce(max(${tasks.boardOrder}), -1)`,
+      })
+      .from(tasks)
+      .where(and(eq(tasks.projectId, projectId), eq(tasks.status, status)));
+    return Number(row?.m ?? -1);
   }
 
   async getTask(id: number): Promise<Task | undefined> {

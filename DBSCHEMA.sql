@@ -86,6 +86,7 @@ CREATE TABLE "tasks" (
 	"title" text NOT NULL,
 	"description" text DEFAULT '',
 	"status" text DEFAULT 'todo' NOT NULL,
+	"board_order" integer DEFAULT 0 NOT NULL,
 	"priority" text DEFAULT 'medium' NOT NULL,
 	"tags" text[] DEFAULT '{}',
 	"start_date" text,
@@ -94,6 +95,8 @@ CREATE TABLE "tasks" (
 	"cover_image" text,
 	"created_at" timestamp DEFAULT now()
 );
+-- If the DB predates board_order, run once:
+--   ALTER TABLE tasks ADD COLUMN IF NOT EXISTS board_order integer NOT NULL DEFAULT 0;
 CREATE TABLE "time_entries" (
 	"id" serial PRIMARY KEY,
 	"task_id" integer NOT NULL,
@@ -143,4 +146,4 @@ CREATE UNIQUE INDEX "task_assignees_task_id_user_id_pk" ON "task_assignees" ("ta
 CREATE UNIQUE INDEX "tasks_pkey" ON "tasks" ("id");
 CREATE UNIQUE INDEX "time_entries_pkey" ON "time_entries" ("id");
 CREATE UNIQUE INDEX "users_pkey" ON "users" ("id");
-CREATE UNIQUE INDEX "users_username_unique" ON "users" ("username");
+CREATE UNIQUE INDEX "users_username_unique" ON "users" ("username");.

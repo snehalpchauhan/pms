@@ -54,6 +54,8 @@ export interface Task {
   title: string;
   description: string;
   status: Status;
+  /** Order within the board column (same status). */
+  boardOrder?: number;
   priority: Priority;
   tags: string[];
   assignees: string[];

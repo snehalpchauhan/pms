@@ -13,7 +13,13 @@ import {
   PointerSensor,
   KeyboardSensor,
 } from "@dnd-kit/core";
-import { arrayMove, SortableContext, horizontalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
+import {
+  arrayMove,
+  SortableContext,
+  horizontalListSortingStrategy,
+  verticalListSortingStrategy,
+  useSortable,
+} from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Task, Status, Project } from "@/lib/mockData";
 import { TaskCard } from "./TaskCard";
@@ -21,7 +27,6 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { Plus, CheckCircle2, RotateCcw, GripVertical, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { isPast, isToday, isTomorrow, isThisWeek } from "date-fns";
 import type { ClientPermissions } from "@/App";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
@@ -169,6 +174,8 @@ interface ColumnProps {
   clientPermissions?: ClientPermissions;
   /** When true, column can be reordered via drag handle (same users who can add sections). */
   columnReorderEnabled: boolean;
+  /** When true, task cards in this column are not draggable. */
+  taskDragDisabled: boolean;
 }
 
 function Column({
@@ -181,6 +188,7 @@ function Column({
   isReviewColumn,
   clientPermissions,
   columnReorderEnabled,
+  taskDragDisabled,
 }: ColumnProps) {
   const droppableId = `${id}__drop`;
   const { setNodeRef: setDropRef } = useDroppable({
@@ -199,30 +207,10 @@ function Column({
   const isClient = clientPermissions?.role === "client";
   const showAddTask = !isClient || (clientPermissions?.clientTaskAccess === "contribute" || clientPermissions?.clientTaskAccess === "full");
 
-  const getGroup = (task: Task) => {
-    if (!task.dueDate) return 'Later';
-    const date = new Date(task.dueDate);
-    if (isPast(date) && !isToday(date)) return 'Overdue';
-    if (isToday(date)) return 'Today';
-    if (isTomorrow(date)) return 'This Week';
-    if (isThisWeek(date, { weekStartsOn: 1 })) return 'This Week';
-    return 'Later';
-  };
-
-  const groupedTasks: Record<string, Task[]> = {
-    'Overdue': [],
-    'Today': [],
-    'This Week': [],
-    'Later': []
-  };
-
-  tasks.forEach(task => {
-      const group = getGroup(task);
-      if (group === 'Overdue') groupedTasks['Overdue'].push(task);
-      else if (group === 'Today') groupedTasks['Today'].push(task);
-      else if (group === 'This Week') groupedTasks['This Week'].push(task);
-      else groupedTasks['Later'].push(task);
-  });
+  const sortedTasks = [...tasks].sort(
+    (a, b) => (a.boardOrder ?? 0) - (b.boardOrder ?? 0) || Number(a.id) - Number(b.id),
+  );
+  const taskSortableIds = sortedTasks.map((t) => t.id);
 
   return (
     <div
@@ -234,7 +222,7 @@ function Column({
       )}
     >
       <div className="p-4 pb-3 flex items-center justify-between border-b border-border/40">
-         <div className="flex items-center gap-1 min-w-0 flex-1">
+         <div className="flex items-center gap-2 min-w-0 flex-1">
             {columnReorderEnabled && (
               <button
                 type="button"
@@ -247,7 +235,7 @@ function Column({
               </button>
             )}
             <div className={cn("w-2.5 h-2.5 rounded-full ring-2 ring-offset-2 ring-offset-muted/30 shadow-sm shrink-0", color)} />
-            <h3 className="font-display font-semibold text-sm text-foreground tracking-tight truncate">{title}</h3>
+            <h3 className="font-display font-semibold text-sm text-foreground tracking-tight truncate pl-0.5">{title}</h3>
             <span className="ml-1 text-[10px] font-mono font-medium text-muted-foreground bg-background/50 border border-border px-1.5 py-0.5 rounded shadow-sm">
                 {tasks.length}
             </span>
@@ -261,40 +249,24 @@ function Column({
       
       <div className="flex-1 p-3 overflow-hidden">
         <ScrollArea className="h-full pr-3 -mr-3">
-            <div ref={setDropRef} className="min-h-[150px] pb-4 space-y-4">
-                {Object.entries(groupedTasks).map(([groupName, groupTasks]) => {
-                    if (groupTasks.length === 0) return null;
-                    return (
-                        <div key={groupName} className="space-y-2">
-                             <div className="flex items-center gap-2 px-1">
-                                <h4 className={cn(
-                                    "text-[10px] font-bold uppercase tracking-wider",
-                                    groupName === 'Overdue' ? "text-red-500" : 
-                                    groupName === 'Today' ? "text-orange-500" :
-                                    groupName === 'This Week' ? "text-blue-500" : "text-muted-foreground"
-                                )}>
-                                    {groupName}
-                                </h4>
-                                <div className="h-px flex-1 bg-border/50" />
-                            </div>
-                            <div className="space-y-3">
-                                {groupTasks.map((task) => (
-                                    <div key={task.id}>
-                                        <TaskCard task={task} onClick={onTaskClick} />
-                                        {isClient && (
-                                            <ClientTaskActions
-                                                task={task}
-                                                isReviewColumn={isReviewColumn}
-                                                clientTaskAccess={clientPermissions?.clientTaskAccess || "feedback"}
-                                                onActionDone={() => queryClient.invalidateQueries({ queryKey: ["/api/projects"] })}
-                                            />
-                                        )}
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    );
-                })}
+            <div ref={setDropRef} className="min-h-[150px] pb-4">
+                <SortableContext items={taskSortableIds} strategy={verticalListSortingStrategy}>
+                  <div className="space-y-3">
+                    {sortedTasks.map((task) => (
+                      <div key={task.id}>
+                        <TaskCard task={task} onClick={onTaskClick} disableDrag={taskDragDisabled} />
+                        {isClient && (
+                          <ClientTaskActions
+                            task={task}
+                            isReviewColumn={isReviewColumn}
+                            clientTaskAccess={clientPermissions?.clientTaskAccess || "feedback"}
+                            onActionDone={() => queryClient.invalidateQueries({ queryKey: ["/api/projects"] })}
+                          />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </SortableContext>
                 {tasks.length === 0 && (
                     <div className="text-center py-8 text-xs text-muted-foreground italic">
                         No tasks
@@ -421,49 +393,98 @@ export default function Board({ project, tasks, onTaskClick, onAddTask, clientPe
       return;
     }
 
-    const activeId = active.id;
-    const overId = over.id;
+    const activeIdStr = String(active.id);
+    const overIdStr = String(over.id);
 
-    if (activeId === overId) {
+    if (activeIdStr === overIdStr) {
       setActiveTask(null);
       setActiveColumnId(null);
       return;
     }
 
-    const newStatus = resolveStatusFromOverId(overId);
-    const taskIdNum = Number(activeId);
+    if (active.data.current?.type !== "task") {
+      setActiveTask(null);
+      setActiveColumnId(null);
+      return;
+    }
+
+    const taskIdNum = Number(activeIdStr);
     if (!Number.isInteger(taskIdNum) || taskIdNum <= 0) {
       setActiveTask(null);
       setActiveColumnId(null);
       return;
     }
 
-    const moved = localTasks.find((t) => String(t.id) === String(activeId));
-    const prevStatus = moved?.status;
+    const moved = localTasks.find((t) => String(t.id) === activeIdStr);
+    if (!moved) {
+      setActiveTask(null);
+      setActiveColumnId(null);
+      return;
+    }
 
-    if (newStatus && moved && newStatus !== prevStatus) {
-      setLocalTasks((prev) =>
-        prev.map((t) => {
-          if (String(t.id) === String(activeId)) {
-            return { ...t, status: newStatus as Status };
-          }
-          return t;
-        }),
-      );
-      try {
-        await apiRequest("PATCH", `/api/tasks/${taskIdNum}`, { status: newStatus });
-        await queryClient.invalidateQueries({ queryKey: ["/api/projects", Number(project.id), "tasks"] });
-      } catch {
-        setLocalTasks((prev) =>
-          prev.map((t) => {
-            if (String(t.id) === String(activeId) && prevStatus !== undefined) {
-              return { ...t, status: prevStatus as Status };
-            }
-            return t;
-          }),
-        );
-        toast({ title: "Could not move task", variant: "destructive" });
+    const overTask = localTasks.find((t) => String(t.id) === overIdStr);
+    const toStatus = overTask?.status ?? resolveStatusFromOverId(over.id);
+    if (!toStatus) {
+      setActiveTask(null);
+      setActiveColumnId(null);
+      return;
+    }
+
+    const fromStatus = moved.status;
+    const sortInColumn = (list: Task[]) =>
+      [...list].sort((a, b) => (a.boardOrder ?? 0) - (b.boardOrder ?? 0) || Number(a.id) - Number(b.id));
+
+    const withoutActiveInTarget = sortInColumn(
+      localTasks.filter((t) => t.status === toStatus && String(t.id) !== activeIdStr),
+    );
+
+    let insertIndex = withoutActiveInTarget.length;
+    if (overTask && overTask.status === toStatus && String(overTask.id) !== activeIdStr) {
+      const idx = withoutActiveInTarget.findIndex((t) => String(t.id) === String(overTask.id));
+      if (idx >= 0) insertIndex = idx;
+    }
+
+    const placed: Task = { ...moved, status: toStatus as Status };
+    const newTargetCol = [...withoutActiveInTarget.slice(0, insertIndex), placed, ...withoutActiveInTarget.slice(insertIndex)].map(
+      (t, i) => ({ ...t, boardOrder: i }),
+    );
+
+    let nextTasks: Task[];
+    if (fromStatus === toStatus) {
+      nextTasks = [...localTasks.filter((t) => t.status !== toStatus), ...newTargetCol];
+    } else {
+      const sourceRest = sortInColumn(
+        localTasks.filter((t) => t.status === fromStatus && String(t.id) !== activeIdStr),
+      ).map((t, i) => ({ ...t, boardOrder: i }));
+      const rest = localTasks.filter((t) => t.status !== fromStatus && t.status !== toStatus);
+      nextTasks = [...rest, ...sourceRest, ...newTargetCol];
+    }
+
+    const prevSnap = new Map(localTasks.map((t) => [String(t.id), t]));
+    const patches: { id: number; body: Record<string, unknown> }[] = [];
+    for (const t of nextTasks) {
+      const prev = prevSnap.get(String(t.id));
+      if (!prev || prev.boardOrder !== t.boardOrder || prev.status !== t.status) {
+        const body: Record<string, unknown> = { boardOrder: t.boardOrder };
+        if (prev && prev.status !== t.status) body.status = t.status;
+        patches.push({ id: Number(t.id), body });
       }
+    }
+
+    if (patches.length === 0) {
+      setActiveTask(null);
+      setActiveColumnId(null);
+      return;
+    }
+
+    const snapshot = localTasks;
+    setLocalTasks(nextTasks);
+    try {
+      await Promise.all(patches.map((p) => apiRequest("PATCH", `/api/tasks/${p.id}`, p.body)));
+      await queryClient.invalidateQueries({ queryKey: ["/api/projects", Number(project.id), "tasks"] });
+    } catch {
+      setLocalTasks(snapshot);
+      toast({ title: "Could not update task order", variant: "destructive" });
     }
 
     setActiveTask(null);
@@ -520,6 +541,7 @@ export default function Board({ project, tasks, onTaskClick, onAddTask, clientPe
                   isReviewColumn={col.id === reviewColumnId}
                   clientPermissions={clientPermissions}
                   columnReorderEnabled={canEditLayout}
+                  taskDragDisabled={!canEditLayout}
                 />
               ))}
 

@@ -690,6 +690,12 @@ export async function registerRoutes(
       // Tag client tasks
       taskData.tags = [...(taskData.tags || []), "[Client Request]"];
     }
+    const pid = Number(taskData.projectId);
+    const st = String(taskData.status ?? "todo");
+    if (Number.isInteger(pid) && pid > 0) {
+      const maxOrder = await storage.getMaxBoardOrderForStatus(pid, st);
+      taskData.boardOrder = maxOrder + 1;
+    }
     const task = await storage.createTask(taskData);
     if (assignees && assignees.length > 0) {
       await storage.setTaskAssignees(task.id, assignees);

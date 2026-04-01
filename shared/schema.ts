@@ -49,6 +49,8 @@ export const tasks = pgTable("tasks", {
   title: text("title").notNull(),
   description: text("description").default(""),
   status: text("status").notNull().default("todo"),
+  /** Order within a board column (same status); lower = higher on the board. */
+  boardOrder: integer("board_order").notNull().default(0),
   priority: text("priority").notNull().default("medium"),
   tags: text("tags").array().default(sql`'{}'::text[]`),
   startDate: text("start_date"),
