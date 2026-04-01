@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -6,12 +6,59 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { LogIn, Lock, Loader2 } from "lucide-react";
 
+const MICROSOFT_ERROR_MESSAGES: Record<string, string> = {
+  disabled: "Microsoft sign-in is turned off. Use username and password.",
+  not_configured: "Microsoft sign-in is not fully configured yet. Use username and password or contact an administrator.",
+  no_domains: "Allowed email domains are not set. An administrator must add domains in Company Settings.",
+  session_lost: "Sign-in session expired. Please try Microsoft sign-in again.",
+  oauth_failed: "Microsoft sign-in was cancelled or failed. Try again.",
+  no_email: "Microsoft did not return an email address for your account.",
+  domain_not_allowed: "Your Microsoft account is not from an allowed organization domain.",
+  no_account: "No workspace user matches this Microsoft email. Ask an administrator to add you with this email.",
+  wrong_role: "Microsoft sign-in here is only for employees and managers. Use username and password for other accounts.",
+};
+
+type LoginConfig = {
+  ms365Enabled: boolean;
+  showMicrosoftButton: boolean;
+};
+
 export default function LoginPage() {
   const { login } = useAuth();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [loginConfig, setLoginConfig] = useState<LoginConfig>({
+    ms365Enabled: false,
+    showMicrosoftButton: false,
+  });
+  const [configLoaded, setConfigLoaded] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/auth/login-config")
+      .then((r) => r.json())
+      .then((data: LoginConfig) => {
+        setLoginConfig({
+          ms365Enabled: Boolean(data.ms365Enabled),
+          showMicrosoftButton: Boolean(data.showMicrosoftButton),
+        });
+      })
+      .catch(() => {
+        setLoginConfig({ ms365Enabled: false, showMicrosoftButton: false });
+      })
+      .finally(() => setConfigLoaded(true));
+  }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get("microsoft_error");
+    if (!code) return;
+    setError(MICROSOFT_ERROR_MESSAGES[code] ?? "Microsoft sign-in failed.");
+    const url = new URL(window.location.href);
+    url.searchParams.delete("microsoft_error");
+    window.history.replaceState({}, "", url.pathname + url.search);
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -23,8 +70,15 @@ export default function LoginPage() {
     setIsLoading(true);
     try {
       await login(username, password);
-    } catch (err: any) {
-      setError(err.message || "Login failed. Please check your credentials.");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const body = msg.replace(/^\d+:\s*/, "");
+      try {
+        const parsed = JSON.parse(body) as { message?: string };
+        setError(parsed.message || msg);
+      } catch {
+        setError(msg || "Login failed. Please check your credentials.");
+      }
     } finally {
       setIsLoading(false);
     }
@@ -48,6 +102,38 @@ export default function LoginPage() {
         </CardHeader>
 
         <CardContent className="space-y-6 px-6 pb-8">
+          {configLoaded && loginConfig.showMicrosoftButton && (
+            <div className="space-y-3">
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full h-11 bg-white text-gray-900 border-gray-200 hover:bg-gray-100 font-medium"
+                onClick={() => {
+                  window.location.href = "/api/auth/microsoft";
+                }}
+              >
+                <svg className="w-5 h-5 mr-2" viewBox="0 0 21 21" aria-hidden>
+                  <rect x="1" y="1" width="9" height="9" fill="#f25022" />
+                  <rect x="1" y="11" width="9" height="9" fill="#00a4ef" />
+                  <rect x="11" y="1" width="9" height="9" fill="#7fba00" />
+                  <rect x="11" y="11" width="9" height="9" fill="#ffb900" />
+                </svg>
+                Sign in with Microsoft
+              </Button>
+              <p className="text-xs text-center text-gray-500">
+                Employees and managers use Microsoft when enabled. Clients (and local admin access) use the form below.
+              </p>
+              <div className="relative">
+                <div className="absolute inset-0 flex items-center">
+                  <span className="w-full border-t border-gray-700" />
+                </div>
+                <div className="relative flex justify-center text-xs uppercase">
+                  <span className="bg-gray-900/80 px-2 text-gray-500">Or continue with password</span>
+                </div>
+              </div>
+            </div>
+          )}
+
           <form onSubmit={handleSubmit} className="space-y-4">
             {error && (
               <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm" data-testid="text-login-error">

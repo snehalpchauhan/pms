@@ -21,7 +21,11 @@ CREATE TABLE "company_settings" (
 	"id" serial PRIMARY KEY,
 	"company_name" text DEFAULT '' NOT NULL,
 	"workspace_slug" text,
-	"logo_url" text
+	"logo_url" text,
+	"ms365_enabled" boolean DEFAULT false NOT NULL,
+	"ms365_tenant_id" text,
+	"ms365_client_id" text,
+	"ms365_allowed_domains" text
 );
 CREATE TABLE "channels" (
 	"id" serial PRIMARY KEY,

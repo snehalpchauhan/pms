@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { eq, and, desc, inArray, gte, lte } from "drizzle-orm";
+import { eq, and, desc, inArray, gte, lte, sql } from "drizzle-orm";
 import {
   users, projects, projectMembers, tasks, taskAssignees,
   checklistItems, attachments, comments, channels, channelMembers, messages, timeEntries,
@@ -70,8 +70,18 @@ export interface IStorage {
 
   getCompanySettings(): Promise<CompanySettings>;
   updateCompanySettings(
-    updates: Partial<{ companyName: string; workspaceSlug: string | null; logoUrl: string | null }>,
+    updates: Partial<{
+      companyName: string;
+      workspaceSlug: string | null;
+      logoUrl: string | null;
+      ms365Enabled: boolean;
+      ms365TenantId: string | null;
+      ms365ClientId: string | null;
+      ms365AllowedDomains: string | null;
+    }>,
   ): Promise<CompanySettings>;
+
+  getUserByEmailIgnoreCase(email: string): Promise<User | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -82,6 +92,17 @@ export class DatabaseStorage implements IStorage {
 
   async getUserByUsername(username: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.username, username));
+    return user;
+  }
+
+  async getUserByEmailIgnoreCase(email: string): Promise<User | undefined> {
+    const normalized = email.trim().toLowerCase();
+    if (!normalized) return undefined;
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(sql`lower(trim(${users.email})) = ${normalized}`)
+      .limit(1);
     return user;
   }
 
@@ -387,7 +408,15 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateCompanySettings(
-    updates: Partial<{ companyName: string; workspaceSlug: string | null; logoUrl: string | null }>,
+    updates: Partial<{
+      companyName: string;
+      workspaceSlug: string | null;
+      logoUrl: string | null;
+      ms365Enabled: boolean;
+      ms365TenantId: string | null;
+      ms365ClientId: string | null;
+      ms365AllowedDomains: string | null;
+    }>,
   ): Promise<CompanySettings> {
     const current = await this.getCompanySettings();
     const [updated] = await db

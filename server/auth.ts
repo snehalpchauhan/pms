@@ -6,6 +6,15 @@ import session from "express-session";
 import type { Express } from "express";
 import connectPg from "connect-pg-simple";
 import { pool } from "./db";
+import { ms365FullyConfigured } from "./microsoftAuth";
+
+declare module "express-session" {
+  interface SessionData {
+    msPkceVerifier?: string;
+    msOAuthState?: string;
+    msOAuthNonce?: string;
+  }
+}
 
 declare global {
   namespace Express {
@@ -83,11 +92,25 @@ export function setupAuth(app: Express) {
     passport.authenticate("local", (err: any, user: Express.User | false, info: { message: string }) => {
       if (err) return next(err);
       if (!user) return res.status(401).json({ message: info?.message || "Login failed" });
-      req.logIn(user, (err) => {
-        if (err) return next(err);
-        const { password, ...safeUser } = user;
-        return res.json(safeUser);
-      });
+
+      void (async () => {
+        try {
+          const settings = await storage.getCompanySettings();
+          if (ms365FullyConfigured(settings) && (user.role === "employee" || user.role === "manager")) {
+            return res.status(403).json({
+              message:
+                "Microsoft sign-in is required for employees and managers. Use the Sign in with Microsoft button.",
+            });
+          }
+          req.logIn(user, (loginErr) => {
+            if (loginErr) return next(loginErr);
+            const { password, ...safeUser } = user;
+            return res.json(safeUser);
+          });
+        } catch (e) {
+          next(e);
+        }
+      })();
     })(req, res, next);
   });
 

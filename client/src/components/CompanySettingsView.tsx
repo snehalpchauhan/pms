@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Switch } from "@/components/ui/switch";
 import { Building2, Upload, Plus, MoreHorizontal, Search, Trash2, UserCog } from "lucide-react";
 
 type UserRole = "admin" | "manager" | "employee" | "client";
@@ -34,6 +35,10 @@ type CompanySettingsDto = {
     companyName: string;
     workspaceSlug: string;
     logoUrl: string | null;
+    ms365Enabled: boolean;
+    ms365TenantId: string;
+    ms365ClientId: string;
+    ms365AllowedDomains: string;
 };
 
 export default function CompanySettingsView() {
@@ -70,12 +75,21 @@ export default function CompanySettingsView() {
     const [pendingLogoDataUrl, setPendingLogoDataUrl] = useState<string | null>(null);
     const [logoRemoved, setLogoRemoved] = useState(false);
 
+    const [ms365Enabled, setMs365Enabled] = useState(false);
+    const [ms365TenantId, setMs365TenantId] = useState("");
+    const [ms365ClientId, setMs365ClientId] = useState("");
+    const [ms365AllowedDomains, setMs365AllowedDomains] = useState("");
+
     useEffect(() => {
         if (!companyData) return;
         setCompanyName(companyData.companyName);
         setWorkspaceSlug(companyData.workspaceSlug);
         setPendingLogoDataUrl(null);
         setLogoRemoved(false);
+        setMs365Enabled(companyData.ms365Enabled ?? false);
+        setMs365TenantId(companyData.ms365TenantId ?? "");
+        setMs365ClientId(companyData.ms365ClientId ?? "");
+        setMs365AllowedDomains(companyData.ms365AllowedDomains ?? "");
     }, [companyData]);
 
     const displayLogoSrc =
@@ -87,6 +101,10 @@ export default function CompanySettingsView() {
             const body: Record<string, unknown> = {
                 companyName: companyName.trim(),
                 workspaceSlug: workspaceSlug.trim().toLowerCase().replace(/[^a-z0-9-]/g, ""),
+                ms365Enabled,
+                ms365TenantId: ms365TenantId.trim(),
+                ms365ClientId: ms365ClientId.trim(),
+                ms365AllowedDomains: ms365AllowedDomains.trim(),
             };
             if (pendingLogoDataUrl) body.logoDataUrl = pendingLogoDataUrl;
             else if (logoRemoved) body.logoDataUrl = null;
@@ -196,6 +214,11 @@ export default function CompanySettingsView() {
     const hostPrefix =
         typeof window !== "undefined" ? `${window.location.host}/` : "";
 
+    const msRedirectUri =
+        typeof window !== "undefined"
+            ? `${window.location.origin}/api/auth/microsoft/callback`
+            : "";
+
     return (
         <div className="h-full bg-background flex flex-col overflow-hidden animate-in fade-in duration-300">
             <div className="border-b border-border p-6 shrink-0 bg-background/80 backdrop-blur-md sticky top-0 z-10">
@@ -217,19 +240,19 @@ export default function CompanySettingsView() {
 
                         {/* General Tab */}
                         <TabsContent value="general" className="max-w-2xl space-y-8 mt-0">
+                            <div className="flex justify-end">
+                                <Button
+                                    type="button"
+                                    disabled={!isAdmin || companyLoading || saveCompanyMutation.isPending}
+                                    onClick={() => saveCompanyMutation.mutate()}
+                                >
+                                    {saveCompanyMutation.isPending ? "Saving…" : "Save changes"}
+                                </Button>
+                            </div>
                             <Card>
-                                <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-4 space-y-0">
-                                    <div>
-                                        <CardTitle>Company Profile</CardTitle>
-                                        <CardDescription>Update your company logo and details.</CardDescription>
-                                    </div>
-                                    <Button
-                                        type="button"
-                                        disabled={!isAdmin || companyLoading || saveCompanyMutation.isPending}
-                                        onClick={() => saveCompanyMutation.mutate()}
-                                    >
-                                        {saveCompanyMutation.isPending ? "Saving…" : "Save changes"}
-                                    </Button>
+                                <CardHeader>
+                                    <CardTitle>Company Profile</CardTitle>
+                                    <CardDescription>Update your company logo and details.</CardDescription>
                                 </CardHeader>
                                 <CardContent className="space-y-6">
                                     {!isAdmin && (
@@ -328,6 +351,85 @@ export default function CompanySettingsView() {
                                         </div>
                                         <p className="text-xs text-muted-foreground">
                                             Lowercase letters, numbers, and hyphens only. Display name for your workspace link.
+                                        </p>
+                                    </div>
+                                </CardContent>
+                            </Card>
+
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>Microsoft 365 sign-in</CardTitle>
+                                    <CardDescription>
+                                        Require employees and managers to sign in with Microsoft when enabled. Clients and
+                                        admins always use username and password. Set the client secret on the server in{" "}
+                                        <code className="text-xs bg-muted px-1 rounded">MS365_CLIENT_SECRET</code> (or{" "}
+                                        <code className="text-xs bg-muted px-1 rounded">AZURE_CLIENT_SECRET</code>).
+                                    </CardDescription>
+                                </CardHeader>
+                                <CardContent className="space-y-6">
+                                    {!isAdmin && (
+                                        <p className="text-sm text-muted-foreground border border-border/60 bg-muted/30 rounded-md px-3 py-2">
+                                            Only administrators can change Microsoft 365 settings.
+                                        </p>
+                                    )}
+                                    <div className="flex items-center justify-between gap-4 rounded-lg border border-border/60 px-4 py-3">
+                                        <div>
+                                            <Label htmlFor="ms365-enabled" className="text-base font-medium">
+                                                Enable Microsoft 365 for employees and managers
+                                            </Label>
+                                            <p className="text-sm text-muted-foreground mt-1">
+                                                When off, everyone signs in with username and password. When on, staff need a
+                                                configured secret and allowed domains below.
+                                            </p>
+                                        </div>
+                                        <Switch
+                                            id="ms365-enabled"
+                                            checked={ms365Enabled}
+                                            onCheckedChange={setMs365Enabled}
+                                            disabled={!isAdmin || companyLoading}
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label>Directory (tenant) ID</Label>
+                                        <Input
+                                            value={ms365TenantId}
+                                            onChange={(e) => setMs365TenantId(e.target.value)}
+                                            placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                                            disabled={!isAdmin || companyLoading}
+                                            className="font-mono text-sm"
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label>Application (client) ID</Label>
+                                        <Input
+                                            value={ms365ClientId}
+                                            onChange={(e) => setMs365ClientId(e.target.value)}
+                                            placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                                            disabled={!isAdmin || companyLoading}
+                                            className="font-mono text-sm"
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label>Allowed email domains</Label>
+                                        <Input
+                                            value={ms365AllowedDomains}
+                                            onChange={(e) => setMs365AllowedDomains(e.target.value)}
+                                            placeholder="vnnovate.com"
+                                            disabled={!isAdmin || companyLoading}
+                                        />
+                                        <p className="text-xs text-muted-foreground">
+                                            Comma-separated hostnames only the Microsoft account must match (e.g.{" "}
+                                            <span className="font-mono">vnnovate.com</span>). Users must already exist in User
+                                            Management with the same work email.
+                                        </p>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label>Redirect URI (register in Azure)</Label>
+                                        <Input readOnly value={msRedirectUri} className="font-mono text-xs bg-muted/50" />
+                                        <p className="text-xs text-muted-foreground">
+                                            In Entra ID → App registration → Authentication, add this Web redirect URI. Set{" "}
+                                            <code className="bg-muted px-1 rounded">PUBLIC_APP_URL</code> on the server to this
+                                            site&apos;s origin if redirects fail behind a proxy.
                                         </p>
                                     </div>
                                 </CardContent>

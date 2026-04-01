@@ -9,6 +9,10 @@ export const companySettings = pgTable("company_settings", {
   companyName: text("company_name").notNull().default(""),
   workspaceSlug: text("workspace_slug"),
   logoUrl: text("logo_url"),
+  ms365Enabled: boolean("ms365_enabled").notNull().default(false),
+  ms365TenantId: text("ms365_tenant_id"),
+  ms365ClientId: text("ms365_client_id"),
+  ms365AllowedDomains: text("ms365_allowed_domains"),
 });
 
 export const users = pgTable("users", {

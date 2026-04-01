@@ -5,6 +5,7 @@ import path from "path";
 import { z } from "zod";
 import { storage } from "./storage";
 import { setupAuth, requireAuth } from "./auth";
+import { registerMicrosoftAuth, clearMicrosoftOidcCache } from "./microsoftAuth";
 import { seedDatabase } from "./seed";
 
 const MAX_COMPANY_LOGO_BYTES = 2 * 1024 * 1024;
@@ -40,6 +41,7 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
   setupAuth(app);
+  registerMicrosoftAuth(app);
   await seedDatabase();
 
   const uploadsDir = path.join(process.cwd(), "uploads");
@@ -54,6 +56,17 @@ export async function registerRoutes(
       .regex(/^[a-z0-9-]*$/, "Slug: lowercase letters, numbers, and hyphens only")
       .optional(),
     logoDataUrl: z.union([z.string().min(1), z.null()]).optional(),
+    ms365Enabled: z.boolean().optional(),
+    ms365TenantId: z.string().max(200).optional(),
+    ms365ClientId: z.string().max(200).optional(),
+    ms365AllowedDomains: z
+      .string()
+      .max(500)
+      .regex(
+        /^[a-zA-Z0-9.,\s-]*$/,
+        "Allowed domains: comma-separated hostnames (e.g. vnnovate.com)",
+      )
+      .optional(),
   });
 
   app.get("/api/company-settings", requireAuth, async (_req, res) => {
@@ -62,6 +75,10 @@ export async function registerRoutes(
       companyName: row.companyName || "",
       workspaceSlug: row.workspaceSlug ?? "",
       logoUrl: row.logoUrl ?? null,
+      ms365Enabled: row.ms365Enabled ?? false,
+      ms365TenantId: row.ms365TenantId ?? "",
+      ms365ClientId: row.ms365ClientId ?? "",
+      ms365AllowedDomains: row.ms365AllowedDomains ?? "",
     });
   });
 
@@ -78,7 +95,11 @@ export async function registerRoutes(
     if (
       body.companyName === undefined &&
       body.workspaceSlug === undefined &&
-      body.logoDataUrl === undefined
+      body.logoDataUrl === undefined &&
+      body.ms365Enabled === undefined &&
+      body.ms365TenantId === undefined &&
+      body.ms365ClientId === undefined &&
+      body.ms365AllowedDomains === undefined
     ) {
       return res.status(400).json({ message: "No changes provided" });
     }
@@ -88,11 +109,26 @@ export async function registerRoutes(
       companyName?: string;
       workspaceSlug?: string | null;
       logoUrl?: string | null;
+      ms365Enabled?: boolean;
+      ms365TenantId?: string | null;
+      ms365ClientId?: string | null;
+      ms365AllowedDomains?: string | null;
     } = {};
 
     if (body.companyName !== undefined) updates.companyName = body.companyName;
     if (body.workspaceSlug !== undefined) {
       updates.workspaceSlug = body.workspaceSlug === "" ? null : body.workspaceSlug;
+    }
+    if (body.ms365Enabled !== undefined) updates.ms365Enabled = body.ms365Enabled;
+    if (body.ms365TenantId !== undefined) {
+      updates.ms365TenantId = body.ms365TenantId.trim() === "" ? null : body.ms365TenantId.trim();
+    }
+    if (body.ms365ClientId !== undefined) {
+      updates.ms365ClientId = body.ms365ClientId.trim() === "" ? null : body.ms365ClientId.trim();
+    }
+    if (body.ms365AllowedDomains !== undefined) {
+      updates.ms365AllowedDomains =
+        body.ms365AllowedDomains.trim() === "" ? null : body.ms365AllowedDomains.trim();
     }
     if (body.logoDataUrl !== undefined) {
       if (body.logoDataUrl === null) {
@@ -111,10 +147,21 @@ export async function registerRoutes(
     }
 
     const updated = await storage.updateCompanySettings(updates);
+    if (
+      body.ms365TenantId !== undefined ||
+      body.ms365ClientId !== undefined ||
+      body.ms365Enabled !== undefined
+    ) {
+      clearMicrosoftOidcCache();
+    }
     res.json({
       companyName: updated.companyName || "",
       workspaceSlug: updated.workspaceSlug ?? "",
       logoUrl: updated.logoUrl ?? null,
+      ms365Enabled: updated.ms365Enabled ?? false,
+      ms365TenantId: updated.ms365TenantId ?? "",
+      ms365ClientId: updated.ms365ClientId ?? "",
+      ms365AllowedDomains: updated.ms365AllowedDomains ?? "",
     });
   });
 
