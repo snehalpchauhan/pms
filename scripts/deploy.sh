@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 # Deploy Task-Board-Flow to a remote server over SSH.
 #
+# Typical one-shot update (from repo root):
+#   ./scripts/deploy.sh 1
+#
+# Steps (local): optional scripts/deploy.local.env (gitignored) loads DEPLOY_SSH_PASSWORD,
+#                then git push origin $DEPLOY_BRANCH, then SSH remote pull/build/restart.
+#
 # Run: ./scripts/deploy.sh
 #   You will be prompted to choose 1 (code), 2 (DB), or 3 (both).
 #
@@ -13,6 +19,10 @@
 #   DEPLOY_SERVICE       default: pms.service
 #   DEPLOY_SSH_KEY       optional path to private key (-i)
 #   DEPLOY_SSH_PASSWORD  optional; if set and sshpass is installed, uses password auth
+#   DEPLOY_SKIP_GIT_PUSH=1   skip git push (e.g. remote-only sync)
+#
+# Local credentials: copy scripts/deploy.local.env.example → scripts/deploy.local.env
+# (never commit deploy.local.env — it is in .gitignore.)
 #
 # Without a key or sshpass: SSH will prompt for a password (interactive).
 #
@@ -20,6 +30,16 @@
 # does not treat ")" in "fn()" as closing command substitution.
 
 set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+if [[ -f "$SCRIPT_DIR/deploy.local.env" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source "$SCRIPT_DIR/deploy.local.env"
+  set +a
+fi
 
 usage() {
   cat <<'USAGE'
@@ -38,6 +58,8 @@ Environment:
   DEPLOY_HOST, DEPLOY_PATH, DEPLOY_BRANCH, DEPLOY_SERVICE
   DEPLOY_SSH_KEY=/path/to/key     Use this identity file
   DEPLOY_SSH_PASSWORD=...         Use sshpass (brew install hudochenkov/sshpass/sshpass)
+  scripts/deploy.local.env        Gitignored file: export DEPLOY_SSH_PASSWORD='...'
+  DEPLOY_SKIP_GIT_PUSH=1          Skip git push before SSH
 USAGE
 }
 
@@ -111,6 +133,20 @@ ssh_cmd=(
 echo ""
 echo "==> Deploy mode: $MODE  |  $DEPLOY_HOST:$DEPLOY_PATH  (branch: $DEPLOY_BRANCH)"
 echo ""
+
+if [[ "${DEPLOY_SKIP_GIT_PUSH:-0}" != "1" ]]; then
+  echo "==> Git: push origin $DEPLOY_BRANCH (from $REPO_ROOT)"
+  cd "$REPO_ROOT"
+  if [[ ! -d .git ]]; then
+    echo "error: $REPO_ROOT is not a git repository" >&2
+    exit 1
+  fi
+  git push origin "$DEPLOY_BRANCH"
+  echo ""
+else
+  echo "==> Git: skipped (DEPLOY_SKIP_GIT_PUSH=1)"
+  echo ""
+fi
 
 # Pipe heredoc into ssh — avoids macOS Bash 3.2 breaking on ")" inside VAR=$(cat <<... )
 run_remote() {
