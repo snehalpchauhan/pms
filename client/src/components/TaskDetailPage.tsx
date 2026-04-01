@@ -186,9 +186,9 @@ function CommentItem({
                 accept="image/png,image/jpeg,image/jpg,image/webp,application/pdf,.png,.jpg,.jpeg,.webp,.pdf"
                 className="sr-only"
                 onChange={(e) => {
-                  const list = e.target.files;
+                  const list = Array.from(e.target.files ?? []);
                   e.target.value = "";
-                  if (list?.length) setReplyFiles((prev) => [...prev, ...Array.from(list)]);
+                  if (list.length) setReplyFiles((prev) => [...prev, ...list]);
                 }}
               />
               <div className="relative">
@@ -642,9 +642,9 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
   );
 
   const handleAttachmentUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
+    const files = Array.from(e.target.files ?? []);
     e.target.value = "";
-    if (!files?.length || !canEditTaskFields) return;
+    if (!files.length || !canEditTaskFields) return;
     if (!Number.isInteger(numericTaskId) || numericTaskId <= 0) {
       toast({ title: "Cannot upload", description: "This task is not available to upload to.", variant: "destructive" });
       return;
@@ -652,7 +652,7 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
     setUploadingAttachment(true);
     let uploaded = 0;
     try {
-      for (const file of Array.from(files)) {
+      for (const file of files) {
         if (file.size > 8 * 1024 * 1024) {
           toast({ title: "File too large", description: `${file.name} must be 8MB or less.`, variant: "destructive" });
           continue;
@@ -1365,9 +1365,9 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                                         accept="image/png,image/jpeg,image/jpg,image/webp,application/pdf,.png,.jpg,.jpeg,.webp,.pdf"
                                         className="sr-only"
                                         onChange={(e) => {
-                                            const list = e.target.files;
+                                            const list = Array.from(e.target.files ?? []);
                                             e.target.value = "";
-                                            if (list?.length) setComposerFiles((prev) => [...prev, ...Array.from(list)]);
+                                            if (list.length) setComposerFiles((prev) => [...prev, ...list]);
                                         }}
                                     />
                                     <div className="relative group">
