@@ -308,6 +308,7 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
 
   const invalidateTasks = () => {
     queryClient.invalidateQueries({ queryKey: ["/api/projects", numericProjectId, "tasks"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/tasks", String(task.id)] });
   };
 
   useEffect(() => {
@@ -315,6 +316,7 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
     setAttachments(task.attachments || []);
     setTags(task.tags?.length ? [...task.tags] : []);
     setStatus(task.status);
+    setAssignees(task.assignees?.length ? [...task.assignees] : []);
   }, [task.id]);
 
   const patchTask = async (updates: Record<string, unknown>) => {
@@ -621,9 +623,38 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
 
   const currentUserId = currentUser ? String(currentUser.id) : "";
 
+  const isSystemLogType = (c: { type?: string }) => String(c.type ?? "").toLowerCase() === "system";
+
+  const { data: liveTask } = useQuery({
+    queryKey: ["/api/tasks", task.id],
+    queryFn: async () => {
+      const res = await fetch(`/api/tasks/${task.id}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load task");
+      return res.json();
+    },
+    enabled: Number.isInteger(numericTaskId) && numericTaskId > 0,
+  });
+
+  useEffect(() => {
+    const list = liveTask?.comments as
+      | { id: number; authorId: number; content: string; createdAt?: string; parentId?: number | null; type?: string | null }[]
+      | undefined;
+    if (!list) return;
+    setComments(
+      list.map((c) => ({
+        id: String(c.id),
+        authorId: String(c.authorId),
+        content: c.content,
+        createdAt: c.createdAt || new Date().toISOString(),
+        parentId: c.parentId != null ? String(c.parentId) : undefined,
+        type: (c.type || "comment") as "comment" | "system",
+      })),
+    );
+  }, [liveTask]);
+
   const sortedUserComments = useMemo(
     () =>
-      [...comments.filter((c) => c.type !== "system")].sort((a, b) => {
+      [...comments.filter((c) => !isSystemLogType(c))].sort((a, b) => {
         const ta = new Date(a.createdAt).getTime();
         const tb = new Date(b.createdAt).getTime();
         return tb - ta;
@@ -633,7 +664,7 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
 
   const sortedSystemLogs = useMemo(
     () =>
-      [...comments.filter((c) => c.type === "system")].sort((a, b) => {
+      [...comments.filter((c) => isSystemLogType(c))].sort((a, b) => {
         const ta = new Date(a.createdAt).getTime();
         const tb = new Date(b.createdAt).getTime();
         return tb - ta;
@@ -710,12 +741,21 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
     }
   };
 
-  const toggleAssignee = (userId: string) => {
-      if (assignees.includes(userId)) {
-          setAssignees(assignees.filter(id => id !== userId));
-      } else {
-          setAssignees([...assignees, userId]);
-      }
+  const toggleAssignee = async (userId: string) => {
+    if (!canEditTaskFields || !Number.isInteger(numericTaskId) || numericTaskId <= 0) return;
+    const next = assignees.includes(userId)
+      ? assignees.filter((id) => id !== userId)
+      : [...assignees, userId];
+    const prev = [...assignees];
+    setAssignees(next);
+    const payload = next.map((id) => Number(id)).filter((n) => Number.isInteger(n) && n > 0);
+    try {
+      await apiRequest("PATCH", `/api/tasks/${numericTaskId}`, { assignees: payload });
+      invalidateTasks();
+    } catch {
+      setAssignees(prev);
+      toast({ title: "Could not update assignees", variant: "destructive" });
+    }
   };
   
   return (
@@ -910,7 +950,7 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                                             </Avatar>
                                             <span className="text-xs font-medium truncate max-w-[80px]">{user.name}</span>
                                             {(!isClient || isFullAccess) && (
-                                                <button onClick={() => toggleAssignee(id)} className="ml-1 text-muted-foreground hover:text-destructive">
+                                                <button type="button" onClick={() => void toggleAssignee(id)} className="ml-1 text-muted-foreground hover:text-destructive">
                                                     <X className="w-3 h-3" />
                                                 </button>
                                             )}
@@ -930,7 +970,8 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                                                 {Object.values(users).filter(u => !assignees.includes(u.id)).map(user => (
                                                     <button 
                                                         key={user.id}
-                                                        onClick={() => toggleAssignee(user.id)}
+                                                        type="button"
+                                                        onClick={() => void toggleAssignee(user.id)}
                                                         className="flex items-center gap-2 w-full px-2 py-1.5 hover:bg-muted rounded-md text-sm transition-colors"
                                                     >
                                                         <Avatar className="h-6 w-6">
@@ -1438,31 +1479,54 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                             </div>
                         </TabsContent>
 
-                        <TabsContent value="logs" className="space-y-4 mt-0 pt-2">
-                             <div className="relative pl-6 ml-3 space-y-6 border-l-2 border-border/40 pb-4">
+                        <TabsContent value="logs" className="mt-0 pt-2 space-y-3">
+                            <p className="text-xs text-muted-foreground px-1 leading-relaxed">
+                              Status changes and board moves are logged automatically so the team can see what changed.
+                            </p>
+                            {sortedSystemLogs.length === 0 ? (
+                              <div className="rounded-xl border border-dashed border-border/60 bg-muted/15 px-4 py-10 text-center">
+                                <History className="w-8 h-8 mx-auto text-muted-foreground/50 mb-3" />
+                                <p className="text-sm font-medium text-foreground">No system events yet</p>
+                                <p className="text-xs text-muted-foreground mt-1.5 max-w-xs mx-auto">
+                                  Drag a task to another column or change status from the task header — an entry will appear here.
+                                </p>
+                              </div>
+                            ) : (
+                              <div className="space-y-2">
                                 {sortedSystemLogs.map((log) => {
-                                    const author = users[log.authorId];
-                                    return (
-                                        <div key={log.id} className="relative">
-                                            <div className="absolute -left-[29px] top-1.5 bg-background rounded-full p-0.5 border border-border">
-                                                <div className="w-2 h-2 rounded-full bg-blue-500" />
-                                            </div>
-                                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                                                <Avatar className="h-5 w-5 border border-border/50">
-                                                    <AvatarImage src={author?.avatar} />
-                                                    <AvatarFallback>UA</AvatarFallback>
-                                                </Avatar>
-                                                <span className="font-medium text-foreground">{author?.name}</span>
-                                                <span>{log.content}</span>
-                                                <span className="opacity-50">• {log.createdAt}</span>
-                                            </div>
+                                  const author = users[log.authorId];
+                                  const timeLabel = (() => {
+                                    try {
+                                      const d = new Date(log.createdAt);
+                                      if (!isNaN(d.getTime())) return format(d, "MMM d, yyyy · h:mm a");
+                                    } catch {
+                                      /* ignore */
+                                    }
+                                    return String(log.createdAt);
+                                  })();
+                                  return (
+                                    <div
+                                      key={log.id}
+                                      className="flex gap-3 rounded-lg border border-border/50 bg-muted/20 px-3 py-3 shadow-sm"
+                                    >
+                                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+                                        <History className="w-4 h-4" />
+                                      </div>
+                                      <div className="min-w-0 flex-1 space-y-1">
+                                        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                                          <span className="text-sm font-semibold text-foreground">System</span>
+                                          <span className="text-xs text-muted-foreground">{timeLabel}</span>
                                         </div>
-                                    )
+                                        <p className="text-sm text-foreground/90 leading-snug">{log.content}</p>
+                                        {author?.name ? (
+                                          <p className="text-xs text-muted-foreground">Triggered by {author.name}</p>
+                                        ) : null}
+                                      </div>
+                                    </div>
+                                  );
                                 })}
-                                {sortedSystemLogs.length === 0 && (
-                                  <p className="text-xs text-muted-foreground pl-1">No system events recorded for this task.</p>
-                                )}
-                            </div>
+                              </div>
+                            )}
                         </TabsContent>
                      </Tabs>
                  </div>

@@ -434,25 +434,48 @@ export default function Board({ project, tasks, onTaskClick, onAddTask, clientPe
     const sortInColumn = (list: Task[]) =>
       [...list].sort((a, b) => (a.boardOrder ?? 0) - (b.boardOrder ?? 0) || Number(a.id) - Number(b.id));
 
-    const withoutActiveInTarget = sortInColumn(
-      localTasks.filter((t) => t.status === toStatus && String(t.id) !== activeIdStr),
-    );
-
-    let insertIndex = withoutActiveInTarget.length;
-    if (overTask && overTask.status === toStatus && String(overTask.id) !== activeIdStr) {
-      const idx = withoutActiveInTarget.findIndex((t) => String(t.id) === String(overTask.id));
-      if (idx >= 0) insertIndex = idx;
-    }
-
-    const placed: Task = { ...moved, status: toStatus as Status };
-    const newTargetCol = [...withoutActiveInTarget.slice(0, insertIndex), placed, ...withoutActiveInTarget.slice(insertIndex)].map(
-      (t, i) => ({ ...t, boardOrder: i }),
-    );
-
     let nextTasks: Task[];
+
     if (fromStatus === toStatus) {
+      const columnTasks = sortInColumn(localTasks.filter((t) => t.status === toStatus));
+      const ids = columnTasks.map((t) => String(t.id));
+      const oldIndex = ids.indexOf(activeIdStr);
+      if (oldIndex < 0) {
+        setActiveTask(null);
+        setActiveColumnId(null);
+        return;
+      }
+      let newIndex: number;
+      if (overTask && overTask.status === toStatus && String(overTask.id) !== activeIdStr) {
+        newIndex = ids.indexOf(String(overTask.id));
+      } else {
+        newIndex = ids.length - 1;
+      }
+      if (newIndex < 0) {
+        setActiveTask(null);
+        setActiveColumnId(null);
+        return;
+      }
+      const newIds = arrayMove(ids, oldIndex, newIndex);
+      const taskMap = new Map(columnTasks.map((t) => [String(t.id), t]));
+      const newTargetCol = newIds.map((id, i) => ({
+        ...taskMap.get(id)!,
+        boardOrder: i,
+      }));
       nextTasks = [...localTasks.filter((t) => t.status !== toStatus), ...newTargetCol];
     } else {
+      const withoutActiveInTarget = sortInColumn(
+        localTasks.filter((t) => t.status === toStatus && String(t.id) !== activeIdStr),
+      );
+      let insertIndex = withoutActiveInTarget.length;
+      if (overTask && overTask.status === toStatus && String(overTask.id) !== activeIdStr) {
+        const idx = withoutActiveInTarget.findIndex((t) => String(t.id) === String(overTask.id));
+        if (idx >= 0) insertIndex = idx;
+      }
+      const placed: Task = { ...moved, status: toStatus as Status };
+      const newTargetCol = [...withoutActiveInTarget.slice(0, insertIndex), placed, ...withoutActiveInTarget.slice(insertIndex)].map(
+        (t, i) => ({ ...t, boardOrder: i }),
+      );
       const sourceRest = sortInColumn(
         localTasks.filter((t) => t.status === fromStatus && String(t.id) !== activeIdStr),
       ).map((t, i) => ({ ...t, boardOrder: i }));
@@ -482,6 +505,7 @@ export default function Board({ project, tasks, onTaskClick, onAddTask, clientPe
     try {
       await Promise.all(patches.map((p) => apiRequest("PATCH", `/api/tasks/${p.id}`, p.body)));
       await queryClient.invalidateQueries({ queryKey: ["/api/projects", Number(project.id), "tasks"] });
+      await queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
     } catch {
       setLocalTasks(snapshot);
       toast({ title: "Could not update task order", variant: "destructive" });

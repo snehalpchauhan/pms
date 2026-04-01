@@ -706,9 +706,10 @@ export async function registerRoutes(
   app.patch("/api/tasks/:id", requireAuth, async (req, res) => {
     const currentUser = req.user as any;
     const { assignees, ...updates } = req.body;
+    const taskId = Number(req.params.id);
 
     if (currentUser.role === "client") {
-      const task = await storage.getTask(Number(req.params.id));
+      const task = await storage.getTask(taskId);
       if (!task) return res.status(404).json({ message: "Task not found" });
       const membership = await storage.getProjectMembership(task.projectId, currentUser.id);
       if (!membership || membership.clientTaskAccess !== "full") {
@@ -716,10 +717,23 @@ export async function registerRoutes(
       }
     }
 
-    const task = await storage.updateTask(Number(req.params.id), updates);
+    const before = await storage.getTask(taskId);
+    const task = await storage.updateTask(taskId, updates);
     if (!task) return res.status(404).json({ message: "Task not found" });
     if (assignees) {
       await storage.setTaskAssignees(task.id, assignees);
+    }
+    if (
+      before &&
+      typeof updates.status === "string" &&
+      updates.status !== before.status
+    ) {
+      await storage.createComment({
+        taskId: task.id,
+        authorId: currentUser.id,
+        content: `Task moved to a different column.`,
+        type: "system",
+      });
     }
     res.json(task);
   });
