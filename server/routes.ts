@@ -1,8 +1,10 @@
 import express, { type Express } from "express";
 import { createServer, type Server } from "http";
+import crypto from "node:crypto";
 import fs from "fs";
 import path from "path";
 import { z } from "zod";
+import { notifyChannelMessages } from "./realtime";
 import { storage } from "./storage";
 import { setupAuth, requireAuth } from "./auth";
 import { registerMicrosoftAuth, clearMicrosoftOidcCache, ms365ClientSecretFromEnv } from "./microsoftAuth";
@@ -62,6 +64,22 @@ function safeUnlinkUserAvatar(avatarUrl: string | null | undefined, uploadsDir: 
   } catch {
     /* ignore */
   }
+}
+
+const MAX_CHAT_UPLOAD_BYTES = 3 * 1024 * 1024;
+
+function persistChatUploadFromDataUrl(channelId: number, dataUrl: string, uploadsDir: string): string {
+  const trimmed = dataUrl.trim();
+  const m = /^data:(image\/(?:png|jpeg|jpg|webp)|application\/pdf);base64,([\s\S]+)$/i.exec(trimmed);
+  if (!m) throw new Error("Attachment must be PNG, JPEG, WebP, or PDF.");
+  const buf = Buffer.from(m[2]!.replace(/\s/g, ""), "base64");
+  if (buf.length > MAX_CHAT_UPLOAD_BYTES) throw new Error("Attachment must be 3MB or smaller.");
+  const mime = m[1]!.toLowerCase();
+  const ext =
+    mime.includes("jpeg") || mime.includes("jpg") ? "jpg" : mime === "image/webp" ? "webp" : mime.includes("pdf") ? "pdf" : "png";
+  const filename = `chat-${channelId}-${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}.${ext}`;
+  fs.writeFileSync(path.join(uploadsDir, filename), buf);
+  return `/uploads/${filename}`;
 }
 
 export async function registerRoutes(
@@ -942,7 +960,33 @@ export async function registerRoutes(
       authorId: currentUser.id,
       content,
     });
+    notifyChannelMessages(channelId);
     res.status(201).json(message);
+  });
+
+  const chatUploadSchema = z.object({
+    fileDataUrl: z.string().min(1),
+  });
+
+  app.post("/api/channels/:channelId/chat-upload", requireAuth, async (req, res) => {
+    const currentUser = req.user as any;
+    const channelId = Number(req.params.channelId);
+    if (!Number.isInteger(channelId) || channelId <= 0) {
+      return res.status(400).json({ message: "Invalid channel" });
+    }
+    const ok = await userCanAccessChannel(currentUser.id, channelId);
+    if (!ok) return res.status(403).json({ message: "Access denied" });
+    const parsed = chatUploadSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: parsed.error.issues[0]?.message || "Invalid body" });
+    }
+    try {
+      const url = persistChatUploadFromDataUrl(channelId, parsed.data.fileDataUrl, uploadsDir);
+      res.status(201).json({ url });
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Upload failed";
+      return res.status(400).json({ message });
+    }
   });
 
   // Time Entries
