@@ -27,7 +27,7 @@ import { useAppData } from "@/hooks/useAppData";
 import { useAuth } from "@/hooks/useAuth";
 import { apiRequest } from "@/lib/queryClient";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
-import { Calendar, Paperclip, Tag, User as UserIcon, CheckCircle2, MoreHorizontal, MessageSquare, Plus, X, Reply, Clock, History, AlertCircle, FileText, Activity, Repeat, CalendarCheck, ArrowRight, CheckSquare, Trash2, Download, Lock, RotateCcw } from "lucide-react";
+import { Calendar, Paperclip, Tag, User as UserIcon, CheckCircle2, MessageSquare, Plus, X, Reply, Clock, History, FileText, Activity, Repeat, CalendarCheck, ArrowRight, CheckSquare, Trash2, Download, Lock, RotateCcw } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { useState, useEffect, useMemo, useRef } from "react";
@@ -976,36 +976,27 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                      <span className="hidden sm:inline">Delete</span>
                    </Button>
                  )}
-                 {(!isClient || isFullAccess) && (
-                    <>
-                        <Button variant="outline" size="sm" className="hidden sm:flex">
-                            <AlertCircle className="w-4 h-4 mr-2" /> Report Issue
-                        </Button>
-                        <Button variant="ghost" size="icon">
-                            <MoreHorizontal className="w-5 h-5" />
-                        </Button>
-                        {isDoneStatusBadge ? (
-                          <span
-                            className="inline-flex items-center gap-1.5 h-9 px-3 rounded-md text-sm font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-900/35 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800/50"
-                            role="status"
-                            aria-label="Task completed"
-                          >
-                            <CheckCircle2 className="w-4 h-4 shrink-0" />
-                            Completed
-                          </span>
-                        ) : (
-                          <Button
-                            type="button"
-                            size="sm"
-                            className="bg-primary text-primary-foreground"
-                            onClick={() => void handleMarkComplete()}
-                            disabled={statusSaving}
-                          >
-                            Mark Complete
-                          </Button>
-                        )}
-                    </>
-                 )}
+                 {(!isClient || isFullAccess) &&
+                   (isDoneStatusBadge ? (
+                     <span
+                       className="inline-flex items-center gap-1.5 h-9 px-3 rounded-md text-sm font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-900/35 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800/50"
+                       role="status"
+                       aria-label="Task completed"
+                     >
+                       <CheckCircle2 className="w-4 h-4 shrink-0" />
+                       Completed
+                     </span>
+                   ) : (
+                     <Button
+                       type="button"
+                       size="sm"
+                       className="bg-primary text-primary-foreground"
+                       onClick={() => void handleMarkComplete()}
+                       disabled={statusSaving}
+                     >
+                       Mark Complete
+                     </Button>
+                   ))}
              </div>
          </div>
 
