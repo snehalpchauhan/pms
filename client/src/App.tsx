@@ -270,7 +270,11 @@ function AuthenticatedApp() {
               {currentView === "profile" && <UserProfileView />}
               {currentView === "messages" &&
                 (currentProject ? (
-                  <MessagesView project={currentProject} channelId={currentChannelId} />
+                  <MessagesView
+                    project={currentProject}
+                    channelId={currentChannelId}
+                    onChannelDeleted={() => setCurrentChannelId(undefined)}
+                  />
                 ) : (
                   <NoProjectWorkspaceMain
                     canCreateProject={canCreateProject}

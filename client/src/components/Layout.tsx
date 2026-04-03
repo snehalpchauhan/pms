@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Project } from "@/lib/mockData";
+import type { Channel, Project } from "@/lib/mockData";
 import { useAppData } from "@/hooks/useAppData";
 import { useAuth } from "@/hooks/useAuth";
 import { cn, getUserInitials } from "@/lib/utils";
@@ -30,6 +30,22 @@ interface SidebarProps {
 }
 
 const SETTINGS_SIDEBAR_TABS = ["general", "login", "users", "billing"] as const;
+
+function directChannelWithPeer(
+  channels: Channel[],
+  projectId: string,
+  myId: string | undefined,
+  peerId: string,
+): Channel | undefined {
+  if (!myId) return undefined;
+  return channels.find(
+    (c) =>
+      c.type === "direct" &&
+      c.projectId === projectId &&
+      c.members.includes(myId) &&
+      c.members.includes(peerId),
+  );
+}
 
 function settingsSidebarTabFromHash(): (typeof SETTINGS_SIDEBAR_TABS)[number] {
   if (typeof window === "undefined") return "general";
@@ -407,8 +423,17 @@ export function Sidebar({ currentView, currentChannelId, onViewChange, currentPr
                                                     )}
                                                     onClick={() => onViewChange("messages", channel.id)}
                                                 >
-                                                    {channel.type === 'private' ? <Lock className="w-3.5 h-3.5 mr-2 opacity-70" /> : <Hash className="w-3.5 h-3.5 mr-2 opacity-70" />}
-                                                    <span className="truncate">{channel.name}</span>
+                                                    {channel.type === 'private' ? <Lock className="w-3.5 h-3.5 mr-2 shrink-0 opacity-70" /> : <Hash className="w-3.5 h-3.5 mr-2 shrink-0 opacity-70" />}
+                                                    <span className="flex min-w-0 flex-1 items-center gap-2">
+                                                      <span className="truncate">{channel.name}</span>
+                                                      {(channel.unreadCount ?? 0) > 0 ? (
+                                                        <span
+                                                          className="h-2 w-2 shrink-0 rounded-full bg-primary"
+                                                          title={`${channel.unreadCount} unread`}
+                                                          aria-label={`${channel.unreadCount} unread messages`}
+                                                        />
+                                                      ) : null}
+                                                    </span>
                                                 </Button>
                                             )) : (
                                                 <p className="text-[10px] text-muted-foreground px-2 italic">No channels yet</p>
@@ -421,30 +446,50 @@ export function Sidebar({ currentView, currentChannelId, onViewChange, currentPr
                                             <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Direct Messages</h3>
                                         </div>
                                         <div className="space-y-0.5">
-                                            {dmEligibleMembers.map(user => (
+                                            {dmEligibleMembers.map((dmUser) => {
+                                                const dmCh =
+                                                  currentProject &&
+                                                  directChannelWithPeer(
+                                                    channels,
+                                                    currentProject.id,
+                                                    authUser?.id != null ? String(authUser.id) : undefined,
+                                                    dmUser.id,
+                                                  );
+                                                const dmUnread = dmCh?.unreadCount ?? 0;
+                                                return (
                                                 <Button
-                                                    key={user.id}
-                                                    variant={currentView === "messages" && currentChannelId === `dm-${user.id}` ? "secondary" : "ghost"} 
+                                                    key={dmUser.id}
+                                                    variant={currentView === "messages" && currentChannelId === `dm-${dmUser.id}` ? "secondary" : "ghost"} 
                                                     className={cn(
                                                         "w-full justify-start h-8 font-normal text-muted-foreground hover:text-foreground px-2", 
-                                                        currentView === "messages" && currentChannelId === `dm-${user.id}` && "bg-background shadow-sm text-primary font-medium"
+                                                        currentView === "messages" && currentChannelId === `dm-${dmUser.id}` && "bg-background shadow-sm text-primary font-medium"
                                                     )}
-                                                    onClick={() => onViewChange("messages", `dm-${user.id}`)}
+                                                    onClick={() => onViewChange("messages", `dm-${dmUser.id}`)}
                                                 >
-                                                    <div className="relative mr-2">
+                                                    <div className="relative mr-2 shrink-0">
                                                         <Avatar className="h-4 w-4">
-                                                            <AvatarImage src={user.avatar} />
-                                                            <AvatarFallback>{user.name[0]}</AvatarFallback>
+                                                            <AvatarImage src={dmUser.avatar} />
+                                                            <AvatarFallback>{dmUser.name[0]}</AvatarFallback>
                                                         </Avatar>
                                                         <span className={cn(
                                                             "absolute -bottom-0.5 -right-0.5 w-1.5 h-1.5 rounded-full border border-background",
-                                                            user.status === 'online' ? "bg-green-500" : 
-                                                            user.status === 'busy' ? "bg-red-500" : "bg-slate-400"
+                                                            dmUser.status === 'online' ? "bg-green-500" : 
+                                                            dmUser.status === 'busy' ? "bg-red-500" : "bg-slate-400"
                                                         )} />
                                                     </div>
-                                                    <span className="truncate">{user.name}</span>
+                                                    <span className="flex min-w-0 flex-1 items-center gap-2">
+                                                      <span className="truncate">{dmUser.name}</span>
+                                                      {dmUnread > 0 ? (
+                                                        <span
+                                                          className="h-2 w-2 shrink-0 rounded-full bg-primary"
+                                                          title={`${dmUnread} unread`}
+                                                          aria-label={`${dmUnread} unread direct messages`}
+                                                        />
+                                                      ) : null}
+                                                    </span>
                                                 </Button>
-                                            ))}
+                                                );
+                                            })}
                                         </div>
                                     </div>
                                 </>

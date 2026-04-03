@@ -1292,7 +1292,8 @@ export async function registerRoutes(
           channel.type === "public" && channel.projectId != null
             ? (projectMemberCountMap.get(channel.projectId) ?? 0)
             : memberUsers.length;
-        return { ...channel, members: memberUsers, memberCountDisplay };
+        const unreadCount = await storage.getChannelUnreadCountForUser(channel.id, currentUser.id);
+        return { ...channel, members: memberUsers, memberCountDisplay, unreadCount };
       }),
     );
     res.json(channelsWithMembers);
@@ -1316,7 +1317,12 @@ export async function registerRoutes(
     const myMembership = await storage.getProjectMembership(projectId, currentUser.id);
     if (!myMembership) return res.status(403).json({ message: "You are not a member of this project" });
 
-    const channel = await storage.createChannel({ name, type, projectId });
+    const channel = await storage.createChannel({
+      name,
+      type,
+      projectId,
+      createdByUserId: currentUser.id,
+    });
 
     if (type === "private") {
       await storage.addChannelMember(channel.id, currentUser.id);
@@ -1366,6 +1372,10 @@ export async function registerRoutes(
     return u?.role === "admin" || u?.role === "manager";
   }
 
+  function isChannelCreator(channel: { createdByUserId: number | null }, userId: number): boolean {
+    return channel.createdByUserId != null && Number(channel.createdByUserId) === Number(userId);
+  }
+
   const patchChannelBodySchema = z.object({
     name: z.string().min(1).max(200),
   });
@@ -1387,8 +1397,9 @@ export async function registerRoutes(
     }
     const canAccess = await userCanAccessChannel(currentUser.id, channelId);
     if (!canAccess) return res.status(403).json({ message: "Access denied" });
-    if (!userCanManageChannels(req)) {
-      return res.status(403).json({ message: "Only admins and managers can edit channels" });
+    const canEdit = userCanManageChannels(req) || isChannelCreator(channel, currentUser.id);
+    if (!canEdit) {
+      return res.status(403).json({ message: "Only the channel creator or an admin/manager can edit this channel" });
     }
 
     const parsed = patchChannelBodySchema.safeParse(req.body);
@@ -1403,6 +1414,41 @@ export async function registerRoutes(
 
     const updated = await storage.updateChannel(channelId, { name });
     res.json(updated);
+  });
+
+  app.post("/api/channels/:channelId/read", requireAuth, async (req, res) => {
+    const currentUser = req.user as any;
+    const channelId = Number(req.params.channelId);
+    if (!Number.isInteger(channelId) || channelId <= 0) {
+      return res.status(400).json({ message: "Invalid channel" });
+    }
+    const ok = await userCanAccessChannel(currentUser.id, channelId);
+    if (!ok) return res.status(403).json({ message: "Access denied" });
+    await storage.markChannelReadForUser(channelId, currentUser.id);
+    res.json({ ok: true });
+  });
+
+  app.delete("/api/channels/:channelId", requireAuth, async (req, res) => {
+    const currentUser = req.user as any;
+    const channelId = Number(req.params.channelId);
+    if (!Number.isInteger(channelId) || channelId <= 0) {
+      return res.status(400).json({ message: "Invalid channel" });
+    }
+    const channel = await storage.getChannel(channelId);
+    if (!channel) return res.status(404).json({ message: "Channel not found" });
+    if (channel.type === "direct") {
+      return res.status(400).json({ message: "Direct message threads cannot be deleted" });
+    }
+    const canAccess = await userCanAccessChannel(currentUser.id, channelId);
+    if (!canAccess) return res.status(403).json({ message: "Access denied" });
+    const canDelete = userCanManageChannels(req) || isChannelCreator(channel, currentUser.id);
+    if (!canDelete) {
+      return res.status(403).json({
+        message: "Only the channel creator or an admin/manager can delete this channel",
+      });
+    }
+    await storage.deleteChannel(channelId);
+    res.status(204).end();
   });
 
   app.patch("/api/channels/:channelId/members", requireAuth, async (req, res) => {
@@ -1421,8 +1467,11 @@ export async function registerRoutes(
     }
     const canAccess = await userCanAccessChannel(currentUser.id, channelId);
     if (!canAccess) return res.status(403).json({ message: "Access denied" });
-    if (!userCanManageChannels(req)) {
-      return res.status(403).json({ message: "Only admins and managers can edit channel members" });
+    const canEditMembers = userCanManageChannels(req) || isChannelCreator(channel, currentUser.id);
+    if (!canEditMembers) {
+      return res.status(403).json({
+        message: "Only the channel creator or an admin/manager can edit channel members",
+      });
     }
 
     const parsed = patchChannelMembersBodySchema.safeParse(req.body);

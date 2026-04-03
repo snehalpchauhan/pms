@@ -103,6 +103,10 @@ export interface Channel {
     projectId?: string;
     /** Public: all project members; private/direct: channel member count. From API for headers. */
     memberCountDisplay?: number;
+    /** Messages from others after last read; from GET /api/channels. */
+    unreadCount?: number;
+    /** Server user id of creator; may delete or edit (with role rules). */
+    createdByUserId?: string | null;
 }
 
 export const USERS: Record<string, User> = {

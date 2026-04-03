@@ -34,7 +34,14 @@ CREATE TABLE "channels" (
 	"id" serial PRIMARY KEY,
 	"name" text NOT NULL,
 	"type" text DEFAULT 'public' NOT NULL,
-	"project_id" integer
+	"project_id" integer,
+	"created_by_user_id" integer
+);
+CREATE TABLE "channel_user_read_state" (
+	"channel_id" integer NOT NULL,
+	"user_id" integer NOT NULL,
+	"last_read_at" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "channel_user_read_state_channel_id_user_id_pk" PRIMARY KEY("channel_id","user_id")
 );
 CREATE TABLE "checklist_items" (
 	"id" serial PRIMARY KEY,
@@ -125,6 +132,9 @@ ALTER TABLE "attachments" ADD CONSTRAINT "attachments_task_id_tasks_id_fk" FOREI
 ALTER TABLE "channel_members" ADD CONSTRAINT "channel_members_channel_id_channels_id_fk" FOREIGN KEY ("channel_id") REFERENCES "channels"("id") ON DELETE CASCADE;
 ALTER TABLE "channel_members" ADD CONSTRAINT "channel_members_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE;
 ALTER TABLE "channels" ADD CONSTRAINT "channels_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "projects"("id") ON DELETE CASCADE;
+ALTER TABLE "channels" ADD CONSTRAINT "channels_created_by_user_id_users_id_fk" FOREIGN KEY ("created_by_user_id") REFERENCES "users"("id");
+ALTER TABLE "channel_user_read_state" ADD CONSTRAINT "channel_user_read_state_channel_id_channels_id_fk" FOREIGN KEY ("channel_id") REFERENCES "channels"("id") ON DELETE CASCADE;
+ALTER TABLE "channel_user_read_state" ADD CONSTRAINT "channel_user_read_state_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE;
 ALTER TABLE "checklist_items" ADD CONSTRAINT "checklist_items_task_id_tasks_id_fk" FOREIGN KEY ("task_id") REFERENCES "tasks"("id") ON DELETE CASCADE;
 ALTER TABLE "comments" ADD CONSTRAINT "comments_author_id_users_id_fk" FOREIGN KEY ("author_id") REFERENCES "users"("id");
 ALTER TABLE "comments" ADD CONSTRAINT "comments_task_id_tasks_id_fk" FOREIGN KEY ("task_id") REFERENCES "tasks"("id") ON DELETE CASCADE;
@@ -141,6 +151,7 @@ ALTER TABLE "time_entries" ADD CONSTRAINT "time_entries_user_id_users_id_fk" FOR
 CREATE UNIQUE INDEX "attachments_pkey" ON "attachments" ("id");
 CREATE UNIQUE INDEX "channel_members_channel_id_user_id_pk" ON "channel_members" ("channel_id","user_id");
 CREATE UNIQUE INDEX "channels_pkey" ON "channels" ("id");
+CREATE UNIQUE INDEX "channel_user_read_state_channel_id_user_id_pk" ON "channel_user_read_state" ("channel_id","user_id");
 CREATE UNIQUE INDEX "checklist_items_pkey" ON "checklist_items" ("id");
 CREATE UNIQUE INDEX "comments_pkey" ON "comments" ("id");
 CREATE UNIQUE INDEX "messages_pkey" ON "messages" ("id");
@@ -156,3 +167,6 @@ CREATE UNIQUE INDEX "users_username_unique" ON "users" ("username");
 -- If company_settings predates task routing columns, run once:
 --   ALTER TABLE company_settings ADD COLUMN IF NOT EXISTS task_mark_complete_status text DEFAULT 'done' NOT NULL;
 --   ALTER TABLE company_settings ADD COLUMN IF NOT EXISTS task_client_reopen_status text DEFAULT 'in-progress' NOT NULL;
+-- If channels predates created_by_user_id or channel_user_read_state is missing, run db:push or:
+--   ALTER TABLE channels ADD COLUMN IF NOT EXISTS created_by_user_id integer REFERENCES users(id);
+--   CREATE TABLE IF NOT EXISTS channel_user_read_state ( ... );

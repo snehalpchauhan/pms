@@ -1,8 +1,8 @@
 import { db } from "./db";
-import { eq, and, asc, desc, inArray, gte, lte, sql } from "drizzle-orm";
+import { eq, and, asc, desc, inArray, gte, lte, sql, ne, gt } from "drizzle-orm";
 import {
   users, projects, projectMembers, tasks, taskAssignees,
-  checklistItems, attachments, comments, channels, channelMembers, messages, timeEntries,
+  checklistItems, attachments, comments, channels, channelMembers, channelUserReadState, messages, timeEntries,
   companySettings,
   type User, type InsertUser, type Project, type InsertProject,
   type Task, type InsertTask, type ChecklistItem, type Attachment,
@@ -68,6 +68,9 @@ export interface IStorage {
   updateChannel(id: number, updates: Partial<{ name: string }>): Promise<Channel | undefined>;
   replaceChannelMembers(channelId: number, userIds: number[]): Promise<void>;
   getOrCreateDirectChannel(projectId: number, userId1: number, userId2: number): Promise<Channel>;
+  deleteChannel(id: number): Promise<void>;
+  markChannelReadForUser(channelId: number, userId: number): Promise<void>;
+  getChannelUnreadCountForUser(channelId: number, userId: number): Promise<number>;
 
   getMessages(channelId: number): Promise<Message[]>;
   createMessage(message: InsertMessage): Promise<Message>;
@@ -379,6 +382,39 @@ export class DatabaseStorage implements IStorage {
     await this.addChannelMember(created.id, userId1);
     await this.addChannelMember(created.id, userId2);
     return created;
+  }
+
+  async deleteChannel(id: number): Promise<void> {
+    await db.delete(channels).where(eq(channels.id, id));
+  }
+
+  async markChannelReadForUser(channelId: number, userId: number): Promise<void> {
+    const readAt = new Date();
+    await db
+      .insert(channelUserReadState)
+      .values({ channelId, userId, lastReadAt: readAt })
+      .onConflictDoUpdate({
+        target: [channelUserReadState.channelId, channelUserReadState.userId],
+        set: { lastReadAt: readAt },
+      });
+  }
+
+  async getChannelUnreadCountForUser(channelId: number, userId: number): Promise<number> {
+    const [st] = await db
+      .select()
+      .from(channelUserReadState)
+      .where(and(eq(channelUserReadState.channelId, channelId), eq(channelUserReadState.userId, userId)))
+      .limit(1);
+
+    const threshold: Date = st?.lastReadAt ?? new Date(0);
+
+    const [cnt] = await db
+      .select({ c: sql<number>`count(*)::int` })
+      .from(messages)
+      .where(
+        and(eq(messages.channelId, channelId), ne(messages.authorId, userId), gt(messages.createdAt, threshold)),
+      );
+    return Number(cnt?.c ?? 0);
   }
 
   async getChannelMembers(channelId: number): Promise<User[]> {

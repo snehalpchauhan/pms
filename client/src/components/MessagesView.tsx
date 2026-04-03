@@ -16,6 +16,8 @@ import { EditChannelModal } from "@/components/EditChannelModal";
 interface MessagesViewProps {
   project: Project;
   channelId?: string;
+  /** Called after the current channel is deleted so the parent can clear selection. */
+  onChannelDeleted?: () => void;
 }
 
 function formatMessageTime(iso: string | undefined): string {
@@ -25,7 +27,7 @@ function formatMessageTime(iso: string | undefined): string {
   return d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
-export default function MessagesView({ project, channelId }: MessagesViewProps) {
+export default function MessagesView({ project, channelId, onChannelDeleted }: MessagesViewProps) {
   const { users, channels } = useAppData();
   const { user } = useAuth();
   const queryClient = useQueryClient();
@@ -34,6 +36,12 @@ export default function MessagesView({ project, channelId }: MessagesViewProps) 
   const canManageChannel = user?.role === "admin" || user?.role === "manager";
   const activeChannelId = channelId || channels.find((c) => c.projectId === project.id && c.type !== "direct")?.id;
   const activeChannel = channels.find((c) => c.id === activeChannelId);
+  const isChannelOwner =
+    activeChannel != null &&
+    user != null &&
+    activeChannel.createdByUserId != null &&
+    String(activeChannel.createdByUserId) === String(user.id);
+  const canEditChannel = canManageChannel || isChannelOwner;
 
   const isDM = Boolean(activeChannelId?.startsWith("dm-"));
   const dmPeerIdStr = isDM && activeChannelId ? activeChannelId.replace(/^dm-/, "") : "";
@@ -75,6 +83,18 @@ export default function MessagesView({ project, channelId }: MessagesViewProps) 
 
   useEffect(() => {
     if (numericChannelId == null || Number.isNaN(numericChannelId)) return;
+    void (async () => {
+      try {
+        await apiRequest("POST", `/api/channels/${numericChannelId}/read`, {});
+        void queryClient.invalidateQueries({ queryKey: ["/api/channels"] });
+      } catch {
+        /* ignore */
+      }
+    })();
+  }, [numericChannelId, queryClient]);
+
+  useEffect(() => {
+    if (numericChannelId == null || Number.isNaN(numericChannelId)) return;
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
     const ws = new WebSocket(`${proto}//${window.location.host}/api/ws/chat`);
     ws.onopen = () => {
@@ -85,6 +105,7 @@ export default function MessagesView({ project, channelId }: MessagesViewProps) 
         const data = JSON.parse(String(ev.data)) as { type?: string; channelId?: number };
         if (data.type === "channel_messages" && data.channelId === numericChannelId) {
           void queryClient.refetchQueries({ queryKey: ["/api/channels", numericChannelId, "messages"] });
+          void queryClient.invalidateQueries({ queryKey: ["/api/channels"] });
         }
       } catch {
         /* ignore */
@@ -185,7 +206,7 @@ export default function MessagesView({ project, channelId }: MessagesViewProps) 
               )}
               <h3 className="font-semibold text-foreground">{activeChannel?.name}</h3>
               <div className="h-4 w-px bg-border mx-2" />
-              {canManageChannel ? (
+              {canEditChannel ? (
                 <button
                   type="button"
                   className="text-xs text-muted-foreground hover:text-foreground underline-offset-4 hover:underline text-left"
@@ -193,15 +214,15 @@ export default function MessagesView({ project, channelId }: MessagesViewProps) 
                   title="Edit channel name and members"
                 >
                   {activeChannel?.type === "public"
-                    ? (activeChannel.memberCountDisplay ?? activeChannel.members.length)
-                    : activeChannel.members.length}{" "}
+                    ? (activeChannel?.memberCountDisplay ?? activeChannel?.members.length ?? 0)
+                    : activeChannel?.members.length ?? 0}{" "}
                   members
                 </button>
               ) : (
                 <span className="text-xs text-muted-foreground">
                   {activeChannel?.type === "public"
-                    ? (activeChannel.memberCountDisplay ?? activeChannel.members.length)
-                    : activeChannel.members.length}{" "}
+                    ? (activeChannel?.memberCountDisplay ?? activeChannel?.members.length ?? 0)
+                    : activeChannel?.members.length ?? 0}{" "}
                   members
                 </span>
               )}
@@ -329,12 +350,15 @@ export default function MessagesView({ project, channelId }: MessagesViewProps) 
         </div>
       </div>
 
-      {canManageChannel && !isDM && activeChannel ? (
+      {canEditChannel && !isDM && activeChannel ? (
         <EditChannelModal
           open={editChannelOpen}
           onOpenChange={setEditChannelOpen}
           projectId={project.id}
           channel={activeChannel}
+          onDeleted={() => {
+            onChannelDeleted?.();
+          }}
         />
       ) : null}
     </div>

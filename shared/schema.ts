@@ -103,12 +103,29 @@ export const channels = pgTable("channels", {
   name: text("name").notNull(),
   type: text("type").notNull().default("public"),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }),
+  /** User who created the channel; may delete it (and admins/managers). */
+  createdByUserId: integer("created_by_user_id").references(() => users.id),
 });
 
 export const channelMembers = pgTable("channel_members", {
   channelId: integer("channel_id").notNull().references(() => channels.id, { onDelete: "cascade" }),
   userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
 }, (t) => [primaryKey({ columns: [t.channelId, t.userId] })]);
+
+/** Per-user read cursor for a channel (public, private, or direct). */
+export const channelUserReadState = pgTable(
+  "channel_user_read_state",
+  {
+    channelId: integer("channel_id")
+      .notNull()
+      .references(() => channels.id, { onDelete: "cascade" }),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    lastReadAt: timestamp("last_read_at").notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.channelId, t.userId] })],
+);
 
 export const messages = pgTable("messages", {
   id: serial("id").primaryKey(),

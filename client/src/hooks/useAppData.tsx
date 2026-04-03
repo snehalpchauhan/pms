@@ -46,6 +46,13 @@ function convertChannel(c: any): Channel {
     members: (c.members || []).map((m: any) => String(m.id)),
     projectId: c.projectId ? String(c.projectId) : undefined,
     memberCountDisplay: typeof c.memberCountDisplay === "number" ? c.memberCountDisplay : undefined,
+    unreadCount: typeof c.unreadCount === "number" ? c.unreadCount : undefined,
+    createdByUserId:
+      c.createdByUserId != null && c.createdByUserId !== ""
+        ? String(c.createdByUserId)
+        : c.createdByUserId === null
+          ? null
+          : undefined,
   };
 }
 
@@ -63,6 +70,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const { data: rawChannels, isLoading: channelsLoading, refetch: refetchChannels } = useQuery<any[]>({
     queryKey: ["/api/channels"],
     queryFn: getQueryFn({ on401: "throw" }),
+    refetchInterval: 12_000,
   });
 
   const usersArray = (rawUsers || []).map(convertUser);

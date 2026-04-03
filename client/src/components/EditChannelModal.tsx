@@ -39,15 +39,17 @@ export type EditChannelModalProps = {
   onOpenChange: (open: boolean) => void;
   projectId: string;
   channel: Channel | null;
+  onDeleted?: () => void;
 };
 
-export function EditChannelModal({ open, onOpenChange, projectId, channel }: EditChannelModalProps) {
+export function EditChannelModal({ open, onOpenChange, projectId, channel, onDeleted }: EditChannelModalProps) {
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [name, setName] = useState("");
   const [selectedMemberIds, setSelectedMemberIds] = useState<Set<number>>(new Set());
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const numericProjectId = Number(projectId);
   const channelNumericId = channel ? Number(channel.id) : NaN;
@@ -125,6 +127,34 @@ export function EditChannelModal({ open, onOpenChange, projectId, channel }: Edi
       });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const canDeleteChannel =
+    user?.id != null &&
+    channel != null &&
+    (user.role === "admin" ||
+      user.role === "manager" ||
+      (channel.createdByUserId != null && String(channel.createdByUserId) === String(user.id)));
+
+  const handleDelete = async () => {
+    if (!channel || !Number.isInteger(channelNumericId)) return;
+    if (!window.confirm(`Delete #${channel.name}? This cannot be undone.`)) return;
+    setDeleting(true);
+    try {
+      await apiRequest("DELETE", `/api/channels/${channelNumericId}`);
+      await queryClient.invalidateQueries({ queryKey: ["/api/channels"] });
+      toast({ title: "Channel deleted" });
+      onOpenChange(false);
+      onDeleted?.();
+    } catch (e) {
+      toast({
+        title: "Could not delete channel",
+        description: e instanceof Error ? e.message : "Try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -210,13 +240,28 @@ export function EditChannelModal({ open, onOpenChange, projectId, channel }: Edi
           )}
         </div>
 
-        <DialogFooter>
-          <Button variant="outline" type="button" onClick={() => onOpenChange(false)} disabled={saving}>
-            Cancel
-          </Button>
-          <Button type="button" onClick={() => void handleSave()} disabled={saving || !name.trim()}>
-            {saving ? "Saving…" : "Save changes"}
-          </Button>
+        <DialogFooter className="flex-col gap-3 sm:flex-row sm:justify-between sm:space-x-0">
+          <div className="flex w-full sm:w-auto">
+            {canDeleteChannel ? (
+              <Button
+                variant="destructive"
+                type="button"
+                className="w-full sm:w-auto"
+                onClick={() => void handleDelete()}
+                disabled={saving || deleting}
+              >
+                {deleting ? "Deleting…" : "Delete channel"}
+              </Button>
+            ) : null}
+          </div>
+          <div className="flex w-full gap-2 sm:w-auto sm:justify-end">
+            <Button variant="outline" type="button" onClick={() => onOpenChange(false)} disabled={saving || deleting}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={() => void handleSave()} disabled={saving || deleting || !name.trim()}>
+              {saving ? "Saving…" : "Save changes"}
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>
