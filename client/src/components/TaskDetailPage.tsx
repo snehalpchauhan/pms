@@ -398,16 +398,18 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
     invalidateTasks();
   };
 
-  const handleStatusChange = async (next: string) => {
-    if (String(next) === String(status) || !Number.isInteger(numericTaskId) || numericTaskId <= 0) return;
+  const handleStatusChange = async (next: string): Promise<boolean> => {
+    if (String(next) === String(status) || !Number.isInteger(numericTaskId) || numericTaskId <= 0) return false;
     const prev = status;
     setStatus(next);
     setStatusSaving(true);
     try {
       await patchTask({ status: next });
+      return true;
     } catch {
       setStatus(prev);
       toast({ title: "Could not update status", variant: "destructive" });
+      return false;
     } finally {
       setStatusSaving(false);
     }
@@ -583,7 +585,7 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
   const isInProgressStatusBadge = !isDoneStatusBadge && !isReviewStatusBadge && !isTodoLikeBadge;
   const isReviewStatus = reviewColumnId ? task.status === reviewColumnId : task.status === "review";
 
-  const handleMarkComplete = () => {
+  const handleMarkComplete = async () => {
     const targetId = String(resolvedMarkCompleteColumnId);
     if (!targetId) {
       toast({ title: "No columns configured", description: "Add board columns to this project first.", variant: "destructive" });
@@ -596,7 +598,11 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
       });
       return;
     }
-    void handleStatusChange(targetId);
+    const ok = await handleStatusChange(targetId);
+    if (ok) {
+      toast({ title: `Marked complete: "${task.title}"` });
+      onClose();
+    }
   };
 
   const persistTimelineDate = async (field: "startDate" | "dueDate", date: Date | undefined) => {
@@ -954,7 +960,7 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                             type="button"
                             size="sm"
                             className="bg-primary text-primary-foreground"
-                            onClick={handleMarkComplete}
+                            onClick={() => void handleMarkComplete()}
                             disabled={statusSaving}
                         >
                             Mark Complete
