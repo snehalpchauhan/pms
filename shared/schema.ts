@@ -15,6 +15,10 @@ export const companySettings = pgTable("company_settings", {
   /** Optional; env MS365_CLIENT_SECRET overrides when set. */
   ms365ClientSecret: text("ms365_client_secret"),
   ms365AllowedDomains: text("ms365_allowed_domains"),
+  /** Fixed workflow id: column tasks move to when staff marks complete (default done). */
+  taskMarkCompleteStatus: text("task_mark_complete_status").notNull().default("done"),
+  /** Fixed workflow id: column tasks move to when a client requests revision / reopens (default in-progress). */
+  taskClientReopenStatus: text("task_client_reopen_status").notNull().default("in-progress"),
 });
 
 export const users = pgTable("users", {

@@ -9,6 +9,12 @@ import { storage } from "./storage";
 import { setupAuth, requireAuth } from "./auth";
 import { registerMicrosoftAuth, clearMicrosoftOidcCache, ms365ClientSecretFromEnv } from "./microsoftAuth";
 import { seedDatabase } from "./seed";
+import {
+  DEFAULT_TASK_CLIENT_REOPEN_STATUS,
+  DEFAULT_TASK_MARK_COMPLETE_STATUS,
+  parseWorkflowColumnId,
+  resolveWorkflowStatusForProject,
+} from "@shared/workflowColumns";
 
 const MAX_COMPANY_LOGO_BYTES = 2 * 1024 * 1024;
 
@@ -160,6 +166,8 @@ export async function registerRoutes(
     }
   });
 
+  const workflowTaskStatusSchema = z.enum(["todo", "in-progress", "review", "done"]);
+
   const companyPatchSchema = z.object({
     companyName: z.string().min(1, "Company name is required").max(200).optional(),
     workspaceSlug: z
@@ -181,6 +189,8 @@ export async function registerRoutes(
       .optional(),
     /** Omit to leave unchanged; empty string ignored; null clears stored secret */
     ms365ClientSecret: z.union([z.string().max(4096), z.null()]).optional(),
+    taskMarkCompleteStatus: workflowTaskStatusSchema.optional(),
+    taskClientReopenStatus: workflowTaskStatusSchema.optional(),
   });
 
   app.get("/api/company-settings", requireAuth, async (_req, res) => {
@@ -195,6 +205,10 @@ export async function registerRoutes(
       ms365AllowedDomains: row.ms365AllowedDomains ?? "",
       ms365ClientSecretConfigured: Boolean(row.ms365ClientSecret?.trim()),
       ms365ClientSecretFromEnv: ms365ClientSecretFromEnv(),
+      taskMarkCompleteStatus:
+        parseWorkflowColumnId(row.taskMarkCompleteStatus) ?? DEFAULT_TASK_MARK_COMPLETE_STATUS,
+      taskClientReopenStatus:
+        parseWorkflowColumnId(row.taskClientReopenStatus) ?? DEFAULT_TASK_CLIENT_REOPEN_STATUS,
     });
   });
 
@@ -216,7 +230,9 @@ export async function registerRoutes(
       body.ms365TenantId === undefined &&
       body.ms365ClientId === undefined &&
       body.ms365AllowedDomains === undefined &&
-      body.ms365ClientSecret === undefined
+      body.ms365ClientSecret === undefined &&
+      body.taskMarkCompleteStatus === undefined &&
+      body.taskClientReopenStatus === undefined
     ) {
       return res.status(400).json({ message: "No changes provided" });
     }
@@ -231,6 +247,8 @@ export async function registerRoutes(
       ms365ClientId?: string | null;
       ms365ClientSecret?: string | null;
       ms365AllowedDomains?: string | null;
+      taskMarkCompleteStatus?: string;
+      taskClientReopenStatus?: string;
     } = {};
 
     if (body.companyName !== undefined) updates.companyName = body.companyName;
@@ -270,6 +288,12 @@ export async function registerRoutes(
         }
       }
     }
+    if (body.taskMarkCompleteStatus !== undefined) {
+      updates.taskMarkCompleteStatus = body.taskMarkCompleteStatus;
+    }
+    if (body.taskClientReopenStatus !== undefined) {
+      updates.taskClientReopenStatus = body.taskClientReopenStatus;
+    }
 
     const updated = await storage.updateCompanySettings(updates);
     if (
@@ -290,6 +314,10 @@ export async function registerRoutes(
       ms365AllowedDomains: updated.ms365AllowedDomains ?? "",
       ms365ClientSecretConfigured: Boolean(updated.ms365ClientSecret?.trim()),
       ms365ClientSecretFromEnv: ms365ClientSecretFromEnv(),
+      taskMarkCompleteStatus:
+        parseWorkflowColumnId(updated.taskMarkCompleteStatus) ?? DEFAULT_TASK_MARK_COMPLETE_STATUS,
+      taskClientReopenStatus:
+        parseWorkflowColumnId(updated.taskClientReopenStatus) ?? DEFAULT_TASK_CLIENT_REOPEN_STATUS,
     });
   });
 
@@ -813,9 +841,12 @@ export async function registerRoutes(
       return res.status(400).json({ message: "Task is not in the review column" });
     }
 
-    const doneColumn = columns.find((c: any) => c.id === "done") || columns[columns.length - 1];
+    const companyRow = await storage.getCompanySettings();
+    const markWf =
+      parseWorkflowColumnId(companyRow.taskMarkCompleteStatus) ?? DEFAULT_TASK_MARK_COMPLETE_STATUS;
+    const nextStatus = resolveWorkflowStatusForProject(columns, markWf, "markComplete");
 
-    await storage.updateTask(task.id, { status: doneColumn?.id || "done" });
+    await storage.updateTask(task.id, { status: nextStatus });
 
     // Post auto-comment
     await storage.createComment({
@@ -855,10 +886,12 @@ export async function registerRoutes(
       return res.status(400).json({ message: "Task is not in the review column" });
     }
 
-    // Move to in-progress column
-    const inProgressColumn = columns.find((c: any) => c.id === "in-progress") || columns[1] || columns[0];
+    const companyRow = await storage.getCompanySettings();
+    const reopenWf =
+      parseWorkflowColumnId(companyRow.taskClientReopenStatus) ?? DEFAULT_TASK_CLIENT_REOPEN_STATUS;
+    const nextStatus = resolveWorkflowStatusForProject(columns, reopenWf, "clientReopen");
 
-    await storage.updateTask(task.id, { status: inProgressColumn?.id || "in-progress" });
+    await storage.updateTask(task.id, { status: nextStatus });
 
     // Post auto-comment
     await storage.createComment({

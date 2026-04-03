@@ -41,6 +41,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import type { ClientPermissions } from "@/App";
+import {
+  DEFAULT_TASK_MARK_COMPLETE_STATUS,
+  parseWorkflowColumnId,
+  resolveWorkflowStatusForProject,
+} from "@shared/workflowColumns";
 
 const TASK_ATTACHMENT_MIMES = new Set([
   "image/png",
@@ -359,6 +364,18 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
     queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
   };
 
+  const { data: companyWorkflowSettings } = useQuery({
+    queryKey: ["/api/company-settings"],
+    queryFn: async () => {
+      const res = await fetch("/api/company-settings", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load company settings");
+      return res.json() as {
+        taskMarkCompleteStatus?: string;
+        taskClientReopenStatus?: string;
+      };
+    },
+  });
+
   useEffect(() => {
     setComments(task.comments || []);
     setAttachments(task.attachments || []);
@@ -539,6 +556,14 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
     { id: "done", title: "Done" },
   ];
   const boardColumnsForStatus = projectColumns.length > 0 ? projectColumns : fallbackBoardColumns;
+  const markCompleteWorkflow =
+    parseWorkflowColumnId(companyWorkflowSettings?.taskMarkCompleteStatus) ??
+    DEFAULT_TASK_MARK_COMPLETE_STATUS;
+  const resolvedMarkCompleteColumnId = resolveWorkflowStatusForProject(
+    boardColumnsForStatus,
+    markCompleteWorkflow,
+    "markComplete",
+  );
   const statusStr = String(status);
   const statusColumnIds = new Set(boardColumnsForStatus.map((c: { id: string }) => String(c.id)));
   const statusNotOnBoard = Boolean(statusStr && !statusColumnIds.has(statusStr));
@@ -549,8 +574,7 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
     return s ? s.charAt(0).toUpperCase() + s.slice(1).replace(/-/g, " ") : "";
   };
   const statusColIdx = boardColumnsForStatus.findIndex((c: { id: string }) => String(c.id) === statusStr);
-  const isDoneStatusBadge =
-    boardColumnsForStatus.length > 0 && statusColIdx === boardColumnsForStatus.length - 1;
+  const isDoneStatusBadge = String(statusStr) === String(resolvedMarkCompleteColumnId);
   const reviewColumnId = projectColumns.length >= 2
     ? projectColumns[projectColumns.length - 2]?.id
     : projectColumns[projectColumns.length - 1]?.id;
@@ -560,17 +584,19 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
   const isReviewStatus = reviewColumnId ? task.status === reviewColumnId : task.status === "review";
 
   const handleMarkComplete = () => {
-    const last = boardColumnsForStatus[boardColumnsForStatus.length - 1];
-    if (!last?.id) {
+    const targetId = String(resolvedMarkCompleteColumnId);
+    if (!targetId) {
       toast({ title: "No columns configured", description: "Add board columns to this project first.", variant: "destructive" });
       return;
     }
-    const doneId = String(last.id);
-    if (String(status) === doneId) {
-      toast({ title: "Already complete", description: `This task is already in ${last.title || "the last column"}.` });
+    if (String(status) === targetId) {
+      toast({
+        title: "Already complete",
+        description: `This task is already in ${statusTitleFor(targetId)}.`,
+      });
       return;
     }
-    void handleStatusChange(doneId);
+    void handleStatusChange(targetId);
   };
 
   const persistTimelineDate = async (field: "startDate" | "dueDate", date: Date | undefined) => {

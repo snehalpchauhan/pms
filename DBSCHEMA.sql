@@ -26,7 +26,9 @@ CREATE TABLE "company_settings" (
 	"ms365_tenant_id" text,
 	"ms365_client_id" text,
 	"ms365_client_secret" text,
-	"ms365_allowed_domains" text
+	"ms365_allowed_domains" text,
+	"task_mark_complete_status" text DEFAULT 'done' NOT NULL,
+	"task_client_reopen_status" text DEFAULT 'in-progress' NOT NULL
 );
 CREATE TABLE "channels" (
 	"id" serial PRIMARY KEY,
@@ -150,4 +152,7 @@ CREATE UNIQUE INDEX "task_assignees_task_id_user_id_pk" ON "task_assignees" ("ta
 CREATE UNIQUE INDEX "tasks_pkey" ON "tasks" ("id");
 CREATE UNIQUE INDEX "time_entries_pkey" ON "time_entries" ("id");
 CREATE UNIQUE INDEX "users_pkey" ON "users" ("id");
-CREATE UNIQUE INDEX "users_username_unique" ON "users" ("username");.
+CREATE UNIQUE INDEX "users_username_unique" ON "users" ("username");
+-- If company_settings predates task routing columns, run once:
+--   ALTER TABLE company_settings ADD COLUMN IF NOT EXISTS task_mark_complete_status text DEFAULT 'done' NOT NULL;
+--   ALTER TABLE company_settings ADD COLUMN IF NOT EXISTS task_client_reopen_status text DEFAULT 'in-progress' NOT NULL;

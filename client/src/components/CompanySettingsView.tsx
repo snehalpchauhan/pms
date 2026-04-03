@@ -18,7 +18,13 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Building2, Upload, Plus, MoreHorizontal, Search, Trash2, UserCog, LogIn } from "lucide-react";
+import { Building2, Upload, Plus, MoreHorizontal, Search, Trash2, UserCog, LogIn, Kanban } from "lucide-react";
+import {
+    WORKFLOW_COLUMN_PRESETS,
+    DEFAULT_TASK_CLIENT_REOPEN_STATUS,
+    DEFAULT_TASK_MARK_COMPLETE_STATUS,
+    type WorkflowColumnId,
+} from "@shared/workflowColumns";
 
 type UserRole = "admin" | "manager" | "employee" | "client";
 
@@ -52,6 +58,8 @@ type CompanySettingsDto = {
     ms365AllowedDomains: string;
     ms365ClientSecretConfigured: boolean;
     ms365ClientSecretFromEnv: boolean;
+    taskMarkCompleteStatus: WorkflowColumnId;
+    taskClientReopenStatus: WorkflowColumnId;
 };
 
 export default function CompanySettingsView() {
@@ -95,6 +103,11 @@ export default function CompanySettingsView() {
     const [ms365ClientSecretDraft, setMs365ClientSecretDraft] = useState("");
     const [removeStoredMs365Secret, setRemoveStoredMs365Secret] = useState(false);
 
+    const [taskMarkCompleteStatus, setTaskMarkCompleteStatus] =
+        useState<WorkflowColumnId>(DEFAULT_TASK_MARK_COMPLETE_STATUS);
+    const [taskClientReopenStatus, setTaskClientReopenStatus] =
+        useState<WorkflowColumnId>(DEFAULT_TASK_CLIENT_REOPEN_STATUS);
+
     const [activeSettingsTab, setActiveSettingsTab] = useState<SettingsTab>(settingsTabFromHash);
 
     const syncSettingsTabToUrl = useCallback((v: SettingsTab) => {
@@ -135,6 +148,8 @@ export default function CompanySettingsView() {
         setMs365TenantId(companyData.ms365TenantId ?? "");
         setMs365ClientId(companyData.ms365ClientId ?? "");
         setMs365AllowedDomains(companyData.ms365AllowedDomains ?? "");
+        setTaskMarkCompleteStatus(companyData.taskMarkCompleteStatus ?? DEFAULT_TASK_MARK_COMPLETE_STATUS);
+        setTaskClientReopenStatus(companyData.taskClientReopenStatus ?? DEFAULT_TASK_CLIENT_REOPEN_STATUS);
     }, [companyData]);
 
     const displayLogoSrc =
@@ -150,6 +165,8 @@ export default function CompanySettingsView() {
                 ms365TenantId: ms365TenantId.trim(),
                 ms365ClientId: ms365ClientId.trim(),
                 ms365AllowedDomains: ms365AllowedDomains.trim(),
+                taskMarkCompleteStatus,
+                taskClientReopenStatus,
             };
             if (removeStoredMs365Secret) {
                 body.ms365ClientSecret = null;
@@ -407,6 +424,74 @@ export default function CompanySettingsView() {
                                         </div>
                                         <p className="text-xs text-muted-foreground">
                                             Lowercase letters, numbers, and hyphens only. Display name for your workspace link.
+                                        </p>
+                                    </div>
+                                </CardContent>
+                            </Card>
+
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle className="flex items-center gap-2">
+                                        <Kanban className="w-5 h-5 text-muted-foreground" />
+                                        Task workflow
+                                    </CardTitle>
+                                    <CardDescription>
+                                        Choose where tasks move using the <strong>standard</strong> board columns only (To
+                                        Do, In Progress, Review, Done). Custom columns you add per project are not listed
+                                        here so routing stays valid if those columns are removed. The app matches these
+                                        settings to each project&apos;s board by column id when possible.
+                                    </CardDescription>
+                                </CardHeader>
+                                <CardContent className="space-y-6">
+                                    {!isAdmin && (
+                                        <p className="text-sm text-muted-foreground rounded-md border border-border/60 bg-muted/30 px-3 py-2">
+                                            Only administrators can edit task workflow settings.
+                                        </p>
+                                    )}
+                                    <div className="space-y-2">
+                                        <Label>When staff marks a task complete</Label>
+                                        <Select
+                                            value={taskMarkCompleteStatus}
+                                            onValueChange={(v) => setTaskMarkCompleteStatus(v as WorkflowColumnId)}
+                                            disabled={!isAdmin || companyLoading}
+                                        >
+                                            <SelectTrigger className="max-w-md">
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {WORKFLOW_COLUMN_PRESETS.map((col) => (
+                                                    <SelectItem key={col.id} value={col.id}>
+                                                        {col.title}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                        <p className="text-xs text-muted-foreground">
+                                            Default: <strong>Done</strong>. Tasks move to this standard column (or the
+                                            closest match on the project board).
+                                        </p>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label>When a customer requests revision / reopens from review</Label>
+                                        <Select
+                                            value={taskClientReopenStatus}
+                                            onValueChange={(v) => setTaskClientReopenStatus(v as WorkflowColumnId)}
+                                            disabled={!isAdmin || companyLoading}
+                                        >
+                                            <SelectTrigger className="max-w-md">
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {WORKFLOW_COLUMN_PRESETS.map((col) => (
+                                                    <SelectItem key={col.id} value={col.id}>
+                                                        {col.title}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                        <p className="text-xs text-muted-foreground">
+                                            Default: <strong>In Progress</strong>. Applies when a client uses Request
+                                            revision from the review column.
                                         </p>
                                     </div>
                                 </CardContent>

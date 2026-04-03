@@ -90,6 +90,8 @@ export interface IStorage {
       ms365ClientId: string | null;
       ms365ClientSecret: string | null;
       ms365AllowedDomains: string | null;
+      taskMarkCompleteStatus: string;
+      taskClientReopenStatus: string;
     }>,
   ): Promise<CompanySettings>;
 
@@ -505,6 +507,8 @@ export class DatabaseStorage implements IStorage {
       ms365ClientId: string | null;
       ms365ClientSecret: string | null;
       ms365AllowedDomains: string | null;
+      taskMarkCompleteStatus: string;
+      taskClientReopenStatus: string;
     }>,
   ): Promise<CompanySettings> {
     const current = await this.getCompanySettings();

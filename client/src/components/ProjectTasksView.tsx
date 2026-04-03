@@ -11,6 +11,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { TaskDetailPage } from "./TaskDetailPage";
 import { isPast, isToday } from "date-fns";
 import type { ClientPermissions } from "@/App";
+import { useQuery } from "@tanstack/react-query";
+import {
+    DEFAULT_TASK_MARK_COMPLETE_STATUS,
+    parseWorkflowColumnId,
+    resolveWorkflowStatusForProject,
+} from "@shared/workflowColumns";
 
 interface ProjectTasksViewProps {
     project: Project;
@@ -42,11 +48,38 @@ export default function ProjectTasksView({ project, tasks, clientPermissions }: 
 
     const isClient = user?.role === "client";
 
+    const { data: companyWorkflowSettings } = useQuery({
+        queryKey: ["/api/company-settings"],
+        queryFn: async () => {
+            const res = await fetch("/api/company-settings", { credentials: "include" });
+            if (!res.ok) throw new Error("Failed to load company settings");
+            return res.json() as { taskMarkCompleteStatus?: string };
+        },
+    });
+
+    const boardColsForComplete =
+        project.columns?.length > 0
+            ? project.columns
+            : [
+                  { id: "todo", title: "To Do" },
+                  { id: "in-progress", title: "In Progress" },
+                  { id: "review", title: "Review" },
+                  { id: "done", title: "Done" },
+              ];
+    const markCompleteWorkflow =
+        parseWorkflowColumnId(companyWorkflowSettings?.taskMarkCompleteStatus) ??
+        DEFAULT_TASK_MARK_COMPLETE_STATUS;
+    const resolvedCompleteColumnId = resolveWorkflowStatusForProject(
+        boardColsForComplete,
+        markCompleteWorkflow,
+        "markComplete",
+    );
+
     const filteredTasks = tasks.filter(t => {
         if (filter === "mine") return t.assignees.includes(currentUserId);
         if (filter === "overdue") {
             if (!t.dueDate) return false;
-            const isDone = t.status === project.columns[project.columns.length - 1].id;
+            const isDone = String(t.status) === String(resolvedCompleteColumnId);
             return isPast(new Date(t.dueDate)) && !isToday(new Date(t.dueDate)) && !isDone;
         }
         return true;
