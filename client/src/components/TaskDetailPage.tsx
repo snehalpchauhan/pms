@@ -781,6 +781,32 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
       | { id: number; authorId: number; content: string; createdAt?: string; parentId?: number | null; type?: string | null }[]
       | undefined;
     if (!list) return;
+
+    const rawAtt = (liveTask?.attachments || []) as {
+      id: number | string;
+      name: string;
+      type?: string;
+      url?: string;
+      commentId?: number | null;
+    }[];
+    const attachmentsByCommentId = new Map<
+      number,
+      { id: string; name: string; type: "image" | "file"; url?: string; size?: string }[]
+    >();
+    for (const a of rawAtt) {
+      const cid = a.commentId != null ? Number(a.commentId) : null;
+      if (cid == null || !Number.isInteger(cid)) continue;
+      const row = {
+        id: String(a.id),
+        name: a.name,
+        type: (a.type === "image" ? "image" : "file") as "image" | "file",
+        url: a.url,
+      };
+      const prev = attachmentsByCommentId.get(cid) || [];
+      prev.push(row);
+      attachmentsByCommentId.set(cid, prev);
+    }
+
     setComments(
       list.map((c) => ({
         id: String(c.id),
@@ -789,6 +815,7 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
         createdAt: c.createdAt || new Date().toISOString(),
         parentId: c.parentId != null ? String(c.parentId) : undefined,
         type: (c.type || "comment") as "comment" | "system",
+        attachments: attachmentsByCommentId.get(Number(c.id)) || [],
       })),
     );
   }, [liveTask]);
@@ -803,9 +830,10 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
     [comments],
   );
 
-  const sortedSystemLogs = useMemo(
+  /** System events + all discussion comments/replies, newest first (Activity tab). */
+  const chronologicalActivityLog = useMemo(
     () =>
-      [...comments.filter((c) => isSystemLogType(c))].sort((a, b) => {
+      [...comments].sort((a, b) => {
         const ta = new Date(a.createdAt).getTime();
         const tb = new Date(b.createdAt).getTime();
         return tb - ta;
@@ -1537,7 +1565,7 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                <ScrollArea className="h-[min(52vh,480px)] lg:flex-1 lg:h-full lg:min-h-0">
                  <div className="p-4 lg:p-5 pb-20">
 
-                     {/* Tabs: comments, time, system log — right column on large screens */}
+                     {/* Tabs: comments, time, activity — right column on large screens */}
                      <Tabs defaultValue="comments" className="w-full">
                         <div className="flex flex-col gap-2 border-b border-border/50 pb-3 mb-6">
                             <TabsList className="bg-transparent h-auto min-h-10 p-0 gap-4 sm:gap-6 flex flex-wrap justify-start w-full">
@@ -1564,7 +1592,7 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                                         className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-0 pb-2 font-medium text-muted-foreground data-[state=active]:text-foreground transition-all shrink-0"
                                     >
                                         <Activity className="w-4 h-4 mr-2" />
-                                        System Logs
+                                        Activity
                                     </TabsTrigger>
                                 )}
                             </TabsList>
@@ -1785,47 +1813,108 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
 
                         <TabsContent value="logs" className="mt-0 pt-2 space-y-3">
                             <p className="text-xs text-muted-foreground px-1 leading-relaxed">
-                              Column moves, dates, assignees, priority, tags, checklist changes, and other edits are logged
-                              here with who triggered them.
+                              Full activity timeline: comments, replies, and automated events (moves, dates, assignees,
+                              checklist, time, and more).
                             </p>
-                            {sortedSystemLogs.length === 0 ? (
+                            {chronologicalActivityLog.length === 0 ? (
                               <div className="rounded-xl border border-dashed border-border/60 bg-muted/15 px-4 py-10 text-center">
                                 <History className="w-8 h-8 mx-auto text-muted-foreground/50 mb-3" />
-                                <p className="text-sm font-medium text-foreground">No system events yet</p>
+                                <p className="text-sm font-medium text-foreground">No activity yet</p>
                                 <p className="text-xs text-muted-foreground mt-1.5 max-w-xs mx-auto">
-                                  Change status, due or start dates, assignees, or the checklist — entries will show up
-                                  here.
+                                  Post a comment or change the task — everything will appear here in time order.
                                 </p>
                               </div>
                             ) : (
                               <div className="space-y-2">
-                                {sortedSystemLogs.map((log) => {
-                                  const author = users[log.authorId];
+                                {chronologicalActivityLog.map((entry) => {
                                   const timeLabel = (() => {
                                     try {
-                                      const d = new Date(log.createdAt);
+                                      const d = new Date(entry.createdAt);
                                       if (!isNaN(d.getTime())) return format(d, "MMM d, yyyy · h:mm a");
                                     } catch {
                                       /* ignore */
                                     }
-                                    return String(log.createdAt);
+                                    return String(entry.createdAt);
                                   })();
+
+                                  if (isSystemLogType(entry)) {
+                                    const actor = users[entry.authorId];
+                                    return (
+                                      <div
+                                        key={entry.id}
+                                        className="flex gap-3 rounded-lg border border-border/50 bg-muted/20 px-3 py-3 shadow-sm"
+                                      >
+                                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+                                          <History className="w-4 h-4" />
+                                        </div>
+                                        <div className="min-w-0 flex-1 space-y-1">
+                                          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                                            <span className="text-sm font-semibold text-foreground">System</span>
+                                            <span className="text-xs text-muted-foreground">{timeLabel}</span>
+                                          </div>
+                                          <p className="text-sm text-foreground/90 leading-snug">{entry.content}</p>
+                                          {actor?.name ? (
+                                            <p className="text-xs text-muted-foreground">Triggered by {actor.name}</p>
+                                          ) : null}
+                                        </div>
+                                      </div>
+                                    );
+                                  }
+
+                                  const author = users[entry.authorId];
+                                  const parent = entry.parentId
+                                    ? comments.find((c) => c.id === entry.parentId)
+                                    : undefined;
+                                  const parentAuthor = parent ? users[parent.authorId]?.name : null;
+                                  const attachments = (entry as { attachments?: { id: string; name: string; url?: string }[] })
+                                    .attachments;
+
                                   return (
                                     <div
-                                      key={log.id}
-                                      className="flex gap-3 rounded-lg border border-border/50 bg-muted/20 px-3 py-3 shadow-sm"
+                                      key={entry.id}
+                                      className="flex gap-3 rounded-lg border border-border/50 bg-background px-3 py-3 shadow-sm"
                                     >
-                                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-                                        <History className="w-4 h-4" />
-                                      </div>
+                                      <Avatar className="h-10 w-10 shrink-0">
+                                        <AvatarImage src={author?.avatar} />
+                                        <AvatarFallback className="text-xs">
+                                          {author?.name?.[0] || "?"}
+                                        </AvatarFallback>
+                                      </Avatar>
                                       <div className="min-w-0 flex-1 space-y-1">
                                         <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                                          <span className="text-sm font-semibold text-foreground">System</span>
+                                          <span className="text-sm font-semibold text-foreground">
+                                            {author?.name || "Unknown user"}
+                                          </span>
+                                          {entry.parentId ? (
+                                            <Badge variant="secondary" className="text-[10px] font-normal px-1.5 py-0">
+                                              Reply
+                                              {parentAuthor ? ` to ${parentAuthor}` : ""}
+                                            </Badge>
+                                          ) : (
+                                            <Badge variant="outline" className="text-[10px] font-normal px-1.5 py-0">
+                                              Comment
+                                            </Badge>
+                                          )}
                                           <span className="text-xs text-muted-foreground">{timeLabel}</span>
                                         </div>
-                                        <p className="text-sm text-foreground/90 leading-snug">{log.content}</p>
-                                        {author?.name ? (
-                                          <p className="text-xs text-muted-foreground">Triggered by {author.name}</p>
+                                        <p className="text-sm text-foreground/90 leading-snug whitespace-pre-wrap">
+                                          {entry.content}
+                                        </p>
+                                        {attachments && attachments.length > 0 ? (
+                                          <div className="flex flex-wrap gap-2 pt-1">
+                                            {attachments.map((att) => (
+                                              <a
+                                                key={att.id}
+                                                href={att.url || "#"}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="inline-flex items-center gap-1 rounded-md border border-border/60 bg-muted/30 px-2 py-1 text-xs text-foreground hover:bg-muted/50"
+                                              >
+                                                <Paperclip className="w-3 h-3 text-muted-foreground shrink-0" />
+                                                <span className="truncate max-w-[160px]">{att.name}</span>
+                                              </a>
+                                            ))}
+                                          </div>
                                         ) : null}
                                       </div>
                                     </div>
