@@ -75,6 +75,22 @@ function coerceTaskPriority(p: string | undefined): string {
   return p === "low" || p === "medium" || p === "high" ? p : "medium";
 }
 
+/** Parse task date strings as local calendar dates (avoids UTC yyyy-MM-dd shifting). */
+function parseTaskDateStr(s: string | undefined): Date | undefined {
+  if (!s || !String(s).trim()) return undefined;
+  const str = String(s).trim();
+  const ymd = /^(\d{4})-(\d{2})-(\d{2})$/.exec(str);
+  if (ymd) {
+    const y = Number(ymd[1]);
+    const mo = Number(ymd[2]) - 1;
+    const d = Number(ymd[3]);
+    const dt = new Date(y, mo, d);
+    return isNaN(dt.getTime()) ? undefined : dt;
+  }
+  const dt = new Date(str);
+  return isNaN(dt.getTime()) ? undefined : dt;
+}
+
 function CommentItem({
   comment,
   allComments,
@@ -316,6 +332,11 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
   const [revisionReason, setRevisionReason] = useState("");
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [startDateVal, setStartDateVal] = useState<Date | undefined>(() => parseTaskDateStr(task.startDate));
+  const [dueDateVal, setDueDateVal] = useState<Date | undefined>(() => parseTaskDateStr(task.dueDate));
+  const [startDatePopoverOpen, setStartDatePopoverOpen] = useState(false);
+  const [dueDatePopoverOpen, setDueDatePopoverOpen] = useState(false);
+  const [timelineSaving, setTimelineSaving] = useState(false);
 
   const isClient = currentUser?.role === "client";
   const isFullAccess = isClient && clientPermissions?.clientTaskAccess === "full";
@@ -347,6 +368,11 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
   }, [task.id]);
 
   useEffect(() => {
+    setStartDateVal(parseTaskDateStr(task.startDate));
+    setDueDateVal(parseTaskDateStr(task.dueDate));
+  }, [task.id, task.startDate, task.dueDate]);
+
+  useEffect(() => {
     setPriority(coerceTaskPriority(task.priority));
   }, [task.id, task.priority]);
 
@@ -356,7 +382,7 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
   };
 
   const handleStatusChange = async (next: string) => {
-    if (next === status || !Number.isInteger(numericTaskId) || numericTaskId <= 0) return;
+    if (String(next) === String(status) || !Number.isInteger(numericTaskId) || numericTaskId <= 0) return;
     const prev = status;
     setStatus(next);
     setStatusSaving(true);
@@ -535,7 +561,37 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
 
   const handleMarkComplete = () => {
     const last = boardColumnsForStatus[boardColumnsForStatus.length - 1];
-    if (last) void handleStatusChange(String(last.id));
+    if (!last?.id) {
+      toast({ title: "No columns configured", description: "Add board columns to this project first.", variant: "destructive" });
+      return;
+    }
+    const doneId = String(last.id);
+    if (String(status) === doneId) {
+      toast({ title: "Already complete", description: `This task is already in ${last.title || "the last column"}.` });
+      return;
+    }
+    void handleStatusChange(doneId);
+  };
+
+  const persistTimelineDate = async (field: "startDate" | "dueDate", date: Date | undefined) => {
+    if (!canEditTaskFields || !Number.isInteger(numericTaskId) || numericTaskId <= 0) return;
+    const isStart = field === "startDate";
+    const prevStart = startDateVal;
+    const prevDue = dueDateVal;
+    if (isStart) setStartDateVal(date);
+    else setDueDateVal(date);
+    setTimelineSaving(true);
+    try {
+      await patchTask({ [field]: date ? format(date, "yyyy-MM-dd") : null });
+      if (isStart) setStartDatePopoverOpen(false);
+      else setDueDatePopoverOpen(false);
+    } catch {
+      if (isStart) setStartDateVal(prevStart);
+      else setDueDateVal(prevDue);
+      toast({ title: `Could not update ${isStart ? "start" : "due"} date`, variant: "destructive" });
+    } finally {
+      setTimelineSaving(false);
+    }
   };
 
   // "full" clients are treated as employees, so only feedback/contribute get approve/revision
@@ -1142,10 +1198,49 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                         <div className="space-y-2 md:col-span-2">
                              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Timeline</div>
                              <div className="flex items-center gap-2 flex-wrap">
-                                 {task.startDate ? (
+                                 {(!isClient || isFullAccess) ? (
+                                   <Popover open={startDatePopoverOpen} onOpenChange={setStartDatePopoverOpen}>
+                                     <PopoverTrigger asChild>
+                                       <Button
+                                         type="button"
+                                         variant="outline"
+                                         disabled={timelineSaving}
+                                         className={cn(
+                                           "h-[30px] px-3 bg-background border-border/50 shadow-sm text-xs font-medium",
+                                           !startDateVal && "text-muted-foreground border-dashed",
+                                         )}
+                                       >
+                                         <CalendarCheck className="mr-2 h-3.5 w-3.5 text-muted-foreground" />
+                                         {startDateVal ? format(startDateVal, "MMM d") : <span>Start</span>}
+                                       </Button>
+                                     </PopoverTrigger>
+                                     <PopoverContent className="w-auto p-0" align="start">
+                                       <CalendarComponent
+                                         mode="single"
+                                         selected={startDateVal}
+                                         onSelect={(d) => void persistTimelineDate("startDate", d)}
+                                         initialFocus
+                                       />
+                                       {startDateVal && (
+                                         <div className="border-t border-border p-2">
+                                           <Button
+                                             type="button"
+                                             variant="ghost"
+                                             size="sm"
+                                             className="w-full h-8 text-xs"
+                                             disabled={timelineSaving}
+                                             onClick={() => void persistTimelineDate("startDate", undefined)}
+                                           >
+                                             Clear start date
+                                           </Button>
+                                         </div>
+                                       )}
+                                     </PopoverContent>
+                                   </Popover>
+                                 ) : task.startDate ? (
                                      <div className="flex items-center gap-2 bg-background border border-border/50 px-3 py-1.5 rounded-md shadow-sm text-xs font-medium">
                                         <CalendarCheck className="w-3.5 h-3.5 text-muted-foreground" />
-                                        <span>{format(new Date(task.startDate), "MMM d")}</span>
+                                        <span>{format(parseTaskDateStr(task.startDate) || new Date(task.startDate), "MMM d")}</span>
                                      </div>
                                  ) : (
                                     <div className="flex items-center gap-2 bg-background border border-dashed border-border/50 px-3 py-1.5 rounded-md text-xs text-muted-foreground opacity-70">
@@ -1157,21 +1252,40 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                                  <ArrowRight className="w-3 h-3 text-muted-foreground/50" />
 
                                  {(!isClient || isFullAccess) ? (
-                                     <Popover>
+                                     <Popover open={dueDatePopoverOpen} onOpenChange={setDueDatePopoverOpen}>
                                         <PopoverTrigger asChild>
-                                            <Button variant="outline" className={cn("h-[30px] px-3 bg-background border-border/50 shadow-sm text-xs font-medium", !task.dueDate && "text-muted-foreground border-dashed")}>
+                                            <Button type="button" variant="outline" disabled={timelineSaving} className={cn("h-[30px] px-3 bg-background border-border/50 shadow-sm text-xs font-medium", !dueDateVal && "text-muted-foreground border-dashed")}>
                                                 <Calendar className="mr-2 h-3.5 w-3.5 text-muted-foreground" />
-                                                {task.dueDate ? format(new Date(task.dueDate), "MMM d") : <span>Due Date</span>}
+                                                {dueDateVal ? format(dueDateVal, "MMM d") : <span>Due Date</span>}
                                             </Button>
                                         </PopoverTrigger>
-                                        <PopoverContent className="w-auto p-0">
-                                            <CalendarComponent mode="single" initialFocus />
+                                        <PopoverContent className="w-auto p-0" align="start">
+                                            <CalendarComponent
+                                              mode="single"
+                                              selected={dueDateVal}
+                                              onSelect={(d) => void persistTimelineDate("dueDate", d)}
+                                              initialFocus
+                                            />
+                                            {dueDateVal && (
+                                              <div className="border-t border-border p-2">
+                                                <Button
+                                                  type="button"
+                                                  variant="ghost"
+                                                  size="sm"
+                                                  className="w-full h-8 text-xs"
+                                                  disabled={timelineSaving}
+                                                  onClick={() => void persistTimelineDate("dueDate", undefined)}
+                                                >
+                                                  Clear due date
+                                                </Button>
+                                              </div>
+                                            )}
                                         </PopoverContent>
                                     </Popover>
                                  ) : (
                                      <div className="flex items-center gap-2 bg-background border border-border/50 px-3 py-1.5 rounded-md shadow-sm text-xs font-medium">
                                          <Calendar className="w-3.5 h-3.5 text-muted-foreground" />
-                                         <span>{task.dueDate ? format(new Date(task.dueDate), "MMM d") : "No due date"}</span>
+                                         <span>{dueDateVal ? format(dueDateVal, "MMM d") : "No due date"}</span>
                                      </div>
                                  )}
                              </div>

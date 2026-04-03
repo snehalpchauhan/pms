@@ -6,7 +6,7 @@ import TaskListView from "./TaskListView";
 import CalendarView from "./CalendarView";
 import { FolderKanban, ListTodo, Filter, Calendar } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { TaskDetailPage } from "./TaskDetailPage";
 import { isPast, isToday } from "date-fns";
@@ -23,6 +23,22 @@ export default function ProjectTasksView({ project, tasks, clientPermissions }: 
     const currentUserId = user ? String(user.id) : "";
     const [filter, setFilter] = useState("all");
     const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+
+    useEffect(() => {
+        if (!selectedTask) return;
+        const fresh = tasks.find((t) => t.id === selectedTask.id);
+        if (!fresh) return;
+        const same =
+            fresh.status === selectedTask.status &&
+            fresh.dueDate === selectedTask.dueDate &&
+            fresh.startDate === selectedTask.startDate &&
+            fresh.priority === selectedTask.priority &&
+            fresh.boardOrder === selectedTask.boardOrder &&
+            JSON.stringify(fresh.tags ?? []) === JSON.stringify(selectedTask.tags ?? []) &&
+            JSON.stringify(fresh.assignees ?? []) === JSON.stringify(selectedTask.assignees ?? []);
+        if (same) return;
+        setSelectedTask(fresh);
+    }, [tasks, selectedTask]);
 
     const isClient = user?.role === "client";
 
