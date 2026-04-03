@@ -956,15 +956,26 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                         <Button variant="ghost" size="icon">
                             <MoreHorizontal className="w-5 h-5" />
                         </Button>
-                        <Button
+                        {isDoneStatusBadge ? (
+                          <span
+                            className="inline-flex items-center gap-1.5 h-9 px-3 rounded-md text-sm font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-900/35 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800/50"
+                            role="status"
+                            aria-label="Task completed"
+                          >
+                            <CheckCircle2 className="w-4 h-4 shrink-0" />
+                            Completed
+                          </span>
+                        ) : (
+                          <Button
                             type="button"
                             size="sm"
                             className="bg-primary text-primary-foreground"
                             onClick={() => void handleMarkComplete()}
                             disabled={statusSaving}
-                        >
+                          >
                             Mark Complete
-                        </Button>
+                          </Button>
+                        )}
                     </>
                  )}
              </div>
