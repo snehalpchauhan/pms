@@ -1785,14 +1785,16 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
 
                         <TabsContent value="logs" className="mt-0 pt-2 space-y-3">
                             <p className="text-xs text-muted-foreground px-1 leading-relaxed">
-                              Status changes and board moves are logged automatically so the team can see what changed.
+                              Column moves, dates, assignees, priority, tags, checklist changes, and other edits are logged
+                              here with who triggered them.
                             </p>
                             {sortedSystemLogs.length === 0 ? (
                               <div className="rounded-xl border border-dashed border-border/60 bg-muted/15 px-4 py-10 text-center">
                                 <History className="w-8 h-8 mx-auto text-muted-foreground/50 mb-3" />
                                 <p className="text-sm font-medium text-foreground">No system events yet</p>
                                 <p className="text-xs text-muted-foreground mt-1.5 max-w-xs mx-auto">
-                                  Drag a task to another column or change status from the task header — an entry will appear here.
+                                  Change status, due or start dates, assignees, or the checklist — entries will show up
+                                  here.
                                 </p>
                               </div>
                             ) : (

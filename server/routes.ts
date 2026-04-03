@@ -72,6 +72,41 @@ function safeUnlinkUserAvatar(avatarUrl: string | null | undefined, uploadsDir: 
   }
 }
 
+type BoardColumn = { id?: string; title?: string };
+
+function boardColumnTitle(columns: BoardColumn[], statusId: string | null | undefined): string {
+  if (statusId == null || statusId === "") return "None";
+  const col = columns.find((c) => String(c?.id) === String(statusId));
+  if (col?.title && String(col.title).trim()) return String(col.title);
+  return String(statusId);
+}
+
+function formatTaskDateForLog(v: unknown): string {
+  if (v == null || v === "") return "none";
+  const s = String(v).trim();
+  const ymd = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (ymd) {
+    const mo = Number(ymd[2]);
+    const d = Number(ymd[3]);
+    const y = ymd[1];
+    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    return `${monthNames[mo - 1] ?? ymd[2]} ${d}, ${y}`;
+  }
+  try {
+    const dt = new Date(s);
+    if (!isNaN(dt.getTime())) {
+      return dt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+    }
+  } catch {
+    /* ignore */
+  }
+  return s;
+}
+
+function sortedTagList(tags: string[] | null | undefined): string[] {
+  return [...(tags || [])].map((t) => String(t)).sort((a, b) => a.localeCompare(b));
+}
+
 const MAX_CHAT_UPLOAD_BYTES = 3 * 1024 * 1024;
 const MAX_TASK_ATTACHMENT_BYTES = 8 * 1024 * 1024;
 
@@ -789,6 +824,12 @@ export async function registerRoutes(
     const before = await storage.getTask(taskId);
     if (!before) return res.status(404).json({ message: "Task not found" });
 
+    const project = await storage.getProject(before.projectId);
+    const boardCols: BoardColumn[] = Array.isArray(project?.columns) ? (project!.columns as BoardColumn[]) : [];
+
+    const trackAssignees = Array.isArray(assignees);
+    const assigneesBeforeUsers = trackAssignees ? await storage.getTaskAssignees(before.id) : [];
+
     let task = before;
     if (Object.keys(updates).length > 0) {
       const updated = await storage.updateTask(taskId, updates);
@@ -796,24 +837,110 @@ export async function registerRoutes(
       task = updated;
     }
 
-    if (Array.isArray(assignees)) {
+    if (trackAssignees) {
       const ids = assignees
         .map((id: unknown) => Number(id))
         .filter((n: number) => Number.isInteger(n) && n > 0);
       await storage.setTaskAssignees(task.id, ids);
     }
-    if (
-      before &&
-      typeof updates.status === "string" &&
-      updates.status !== before.status
-    ) {
-      await storage.createComment({
+
+    const appendSystemLog = (content: string) =>
+      storage.createComment({
         taskId: task.id,
         authorId: currentUser.id,
-        content: `Task moved to a different column.`,
+        content,
         type: "system",
       });
+
+    const statusChanged =
+      typeof updates.status === "string" && String(updates.status) !== String(before.status);
+
+    if (statusChanged) {
+      const fromT = boardColumnTitle(boardCols, before.status);
+      const toT = boardColumnTitle(boardCols, updates.status);
+      await appendSystemLog(`Moved to ${toT} (from ${fromT}).`);
     }
+
+    if ("dueDate" in updates) {
+      const prev = before.dueDate ?? null;
+      const next = task.dueDate ?? null;
+      if (String(prev ?? "") !== String(next ?? "")) {
+        const p = formatTaskDateForLog(prev);
+        const n = formatTaskDateForLog(next);
+        if (!prev || String(prev).trim() === "") await appendSystemLog(`Due date set to ${n}.`);
+        else if (!next || String(next).trim() === "") await appendSystemLog(`Due date cleared (was ${p}).`);
+        else await appendSystemLog(`Due date changed from ${p} to ${n}.`);
+      }
+    }
+
+    if ("startDate" in updates) {
+      const prev = before.startDate ?? null;
+      const next = task.startDate ?? null;
+      if (String(prev ?? "") !== String(next ?? "")) {
+        const p = formatTaskDateForLog(prev);
+        const n = formatTaskDateForLog(next);
+        if (!prev || String(prev).trim() === "") await appendSystemLog(`Start date set to ${n}.`);
+        else if (!next || String(next).trim() === "") await appendSystemLog(`Start date cleared (was ${p}).`);
+        else await appendSystemLog(`Start date changed from ${p} to ${n}.`);
+      }
+    }
+
+    if ("priority" in updates && String(before.priority ?? "") !== String(task.priority ?? "")) {
+      await appendSystemLog(`Priority changed from ${before.priority} to ${task.priority}.`);
+    }
+
+    if ("title" in updates && String(before.title ?? "") !== String(task.title ?? "")) {
+      await appendSystemLog(`Title updated.`);
+    }
+
+    if ("description" in updates && String(before.description ?? "") !== String(task.description ?? "")) {
+      await appendSystemLog(`Description updated.`);
+    }
+
+    if ("tags" in updates) {
+      const bt = sortedTagList(before.tags as string[]);
+      const at = sortedTagList(task.tags as string[]);
+      if (JSON.stringify(bt) !== JSON.stringify(at)) {
+        const list = at.length ? at.join(", ") : "(none)";
+        await appendSystemLog(`Tags updated: ${list}.`);
+      }
+    }
+
+    if ("recurrence" in updates) {
+      const b = JSON.stringify(before.recurrence ?? null);
+      const a = JSON.stringify(task.recurrence ?? null);
+      if (b !== a) await appendSystemLog(`Recurrence updated.`);
+    }
+
+    if ("coverImage" in updates && String(before.coverImage ?? "") !== String(task.coverImage ?? "")) {
+      await appendSystemLog(`Cover image updated.`);
+    }
+
+    if (
+      "boardOrder" in updates &&
+      Number(updates.boardOrder) !== Number(before.boardOrder) &&
+      !statusChanged
+    ) {
+      await appendSystemLog(`Reordered within ${boardColumnTitle(boardCols, task.status)}.`);
+    }
+
+    if (trackAssignees) {
+      const assigneesAfterUsers = await storage.getTaskAssignees(task.id);
+      const namesBefore = assigneesBeforeUsers
+        .map((u) => u.name)
+        .sort((a, b) => a.localeCompare(b))
+        .join(", ");
+      const namesAfter = assigneesAfterUsers
+        .map((u) => u.name)
+        .sort((a, b) => a.localeCompare(b))
+        .join(", ");
+      if (namesBefore !== namesAfter) {
+        const afterLabel = namesAfter || "none";
+        const beforeLabel = namesBefore || "none";
+        await appendSystemLog(`Assignees updated: ${afterLabel} (was: ${beforeLabel}).`);
+      }
+    }
+
     res.json(task);
   });
 
@@ -846,9 +973,17 @@ export async function registerRoutes(
       parseWorkflowColumnId(companyRow.taskMarkCompleteStatus) ?? DEFAULT_TASK_MARK_COMPLETE_STATUS;
     const nextStatus = resolveWorkflowStatusForProject(columns, markWf, "markComplete");
 
+    const fromT = boardColumnTitle(columns as BoardColumn[], task.status);
+    const toT = boardColumnTitle(columns as BoardColumn[], nextStatus);
     await storage.updateTask(task.id, { status: nextStatus });
 
-    // Post auto-comment
+    await storage.createComment({
+      taskId: task.id,
+      authorId: currentUser.id,
+      content: `Moved to ${toT} (from ${fromT}).`,
+      type: "system",
+    });
+
     await storage.createComment({
       taskId: task.id,
       authorId: currentUser.id,
@@ -891,9 +1026,17 @@ export async function registerRoutes(
       parseWorkflowColumnId(companyRow.taskClientReopenStatus) ?? DEFAULT_TASK_CLIENT_REOPEN_STATUS;
     const nextStatus = resolveWorkflowStatusForProject(columns, reopenWf, "clientReopen");
 
+    const fromT = boardColumnTitle(columns as BoardColumn[], task.status);
+    const toT = boardColumnTitle(columns as BoardColumn[], nextStatus);
     await storage.updateTask(task.id, { status: nextStatus });
 
-    // Post auto-comment
+    await storage.createComment({
+      taskId: task.id,
+      authorId: currentUser.id,
+      content: `Moved to ${toT} (from ${fromT}).`,
+      type: "system",
+    });
+
     await storage.createComment({
       taskId: task.id,
       authorId: currentUser.id,
@@ -920,30 +1063,57 @@ export async function registerRoutes(
       if (!ok) return res.status(403).json({ message: "Not authorized" });
     }
     const item = await storage.createChecklistItem(Number(req.params.taskId), req.body.text);
+    const snippet =
+      item.text.length > 80 ? `${item.text.slice(0, 77)}...` : item.text;
+    await storage.createComment({
+      taskId: item.taskId,
+      authorId: currentUser.id,
+      content: `Checklist item added: ${snippet}`,
+      type: "system",
+    });
     res.status(201).json(item);
   });
 
   app.patch("/api/checklist/:id", requireAuth, async (req, res) => {
     const currentUser = req.user as any;
+    const item = await storage.getChecklistItem(Number(req.params.id));
+    if (!item) return res.status(404).json({ message: "Not found" });
     if (currentUser.role === "client") {
-      const item = await storage.getChecklistItem(Number(req.params.id));
-      if (!item) return res.status(404).json({ message: "Not found" });
       const ok = await clientHasFullAccess(currentUser.id, item.taskId);
       if (!ok) return res.status(403).json({ message: "Not authorized" });
     }
+    const prevCompleted = item.completed;
     await storage.updateChecklistItem(Number(req.params.id), req.body.completed);
+    if (Boolean(req.body.completed) !== Boolean(prevCompleted)) {
+      const snippet = item.text.length > 80 ? `${item.text.slice(0, 77)}...` : item.text;
+      await storage.createComment({
+        taskId: item.taskId,
+        authorId: currentUser.id,
+        content: req.body.completed
+          ? `Checklist item completed: ${snippet}`
+          : `Checklist item unchecked: ${snippet}`,
+        type: "system",
+      });
+    }
     res.json({ message: "Updated" });
   });
 
   app.delete("/api/checklist/:id", requireAuth, async (req, res) => {
     const currentUser = req.user as any;
+    const item = await storage.getChecklistItem(Number(req.params.id));
+    if (!item) return res.status(404).json({ message: "Not found" });
     if (currentUser.role === "client") {
-      const item = await storage.getChecklistItem(Number(req.params.id));
-      if (!item) return res.status(404).json({ message: "Not found" });
       const ok = await clientHasFullAccess(currentUser.id, item.taskId);
       if (!ok) return res.status(403).json({ message: "Not authorized" });
     }
+    const snippet = item.text.length > 80 ? `${item.text.slice(0, 77)}...` : item.text;
     await storage.deleteChecklistItem(Number(req.params.id));
+    await storage.createComment({
+      taskId: item.taskId,
+      authorId: currentUser.id,
+      content: `Checklist item removed: ${snippet}`,
+      type: "system",
+    });
     res.json({ message: "Deleted" });
   });
 
@@ -991,6 +1161,14 @@ export async function registerRoutes(
           url,
           size: sizeLabel,
         });
+        if (resolvedCommentId == null) {
+          await storage.createComment({
+            taskId,
+            authorId: currentUser.id,
+            content: `Attachment added: ${safeName}`,
+            type: "system",
+          });
+        }
         return res.status(201).json(attachment);
       } catch (e: unknown) {
         const message = e instanceof Error ? e.message : "Upload failed";
@@ -1006,20 +1184,42 @@ export async function registerRoutes(
       url: req.body?.url,
       size: req.body?.size,
     });
+    await storage.createComment({
+      taskId,
+      authorId: currentUser.id,
+      content: `Attachment added: ${attachment.name}`,
+      type: "system",
+    });
     res.status(201).json(attachment);
   });
 
   app.delete("/api/attachments/:id", requireAuth, async (req, res) => {
     const currentUser = req.user as any;
-    // Clients without full access cannot delete attachments
+    const attId = Number(req.params.id);
+    const attachment = await storage.getAttachment(attId);
+    if (!attachment) return res.status(404).json({ message: "Not found" });
+
     if (currentUser.role === "client") {
-      const attachment = await storage.getAttachment(Number(req.params.id));
-      if (!attachment) return res.status(404).json({ message: "Not found" });
       if (!attachment.taskId) return res.status(403).json({ message: "Not authorized" });
       const ok = await clientHasFullAccess(currentUser.id, attachment.taskId);
       if (!ok) return res.status(403).json({ message: "Not authorized" });
     }
-    await storage.deleteAttachment(Number(req.params.id));
+
+    const taskIdForLog = attachment.taskId;
+    const attName = attachment.name;
+    const isTaskLevel = attachment.commentId == null;
+
+    await storage.deleteAttachment(attId);
+
+    if (taskIdForLog && isTaskLevel) {
+      await storage.createComment({
+        taskId: taskIdForLog,
+        authorId: currentUser.id,
+        content: `Attachment removed: ${attName}`,
+        type: "system",
+      });
+    }
+
     res.json({ message: "Deleted" });
   });
 
@@ -1318,6 +1518,18 @@ export async function registerRoutes(
       taskId, userId, hours: String(hours), description: description || null, logDate,
       clientVisible: clientVisible !== undefined ? clientVisible : true,
     });
+    const hrs = String(hours);
+    const dateLabel = formatTaskDateForLog(logDate);
+    const descRaw = description != null ? String(description).trim() : "";
+    const descShort = descRaw.length > 80 ? `${descRaw.slice(0, 77)}...` : descRaw;
+    await storage.createComment({
+      taskId,
+      authorId: currentUser.id,
+      content: descShort
+        ? `Time logged: ${hrs}h on ${dateLabel} — ${descShort}`
+        : `Time logged: ${hrs}h on ${dateLabel}.`,
+      type: "system",
+    });
     res.status(201).json(entry);
   });
 
@@ -1357,7 +1569,16 @@ export async function registerRoutes(
       const canDelete = entry.userId === currentUser.id || currentUser.role === "admin" || currentUser.role === "manager";
       if (!canDelete) return res.status(403).json({ message: "Not authorized to delete this entry" });
     }
+    const taskIdLog = entry.taskId;
+    const hoursLog = String(entry.hours);
+    const logDateLabel = formatTaskDateForLog(entry.logDate);
     await storage.deleteTimeEntry(Number(req.params.id));
+    await storage.createComment({
+      taskId: taskIdLog,
+      authorId: currentUser.id,
+      content: `Time entry removed: ${hoursLog}h on ${logDateLabel}.`,
+      type: "system",
+    });
     res.json({ message: "Deleted" });
   });
 
@@ -1413,9 +1634,22 @@ export async function registerRoutes(
     if (!taskId || !hours || !logDate) return res.status(400).json({ message: "taskId, hours and logDate are required" });
     const task = await storage.getTask(Number(taskId));
     if (!task) return res.status(404).json({ message: "Task not found" });
+    const tid = Number(taskId);
     const entry = await storage.createTimeEntry({
-      taskId: Number(taskId), userId, hours: String(hours), description: description || null, logDate,
+      taskId: tid, userId, hours: String(hours), description: description || null, logDate,
       clientVisible: clientVisible !== undefined ? clientVisible : true,
+    });
+    const hrs = String(hours);
+    const dateLabel = formatTaskDateForLog(logDate);
+    const descRaw = description != null ? String(description).trim() : "";
+    const descShort = descRaw.length > 80 ? `${descRaw.slice(0, 77)}...` : descRaw;
+    await storage.createComment({
+      taskId: tid,
+      authorId: currentUser.id,
+      content: descShort
+        ? `Time logged: ${hrs}h on ${dateLabel} — ${descShort}`
+        : `Time logged: ${hrs}h on ${dateLabel}.`,
+      type: "system",
     });
     res.status(201).json(entry);
   });
