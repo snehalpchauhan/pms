@@ -165,6 +165,21 @@ function persistChatUploadFromDataUrl(channelId: number, dataUrl: string, upload
   return `/uploads/${filename}`;
 }
 
+/** Inline images / PDFs for new-task description (same types as task attachments; 8MB cap). */
+function persistProjectTaskDescriptionUploadFromDataUrl(projectId: number, dataUrl: string, uploadsDir: string): string {
+  const trimmed = dataUrl.trim();
+  const m = /^data:(image\/(?:png|jpeg|jpg|webp)|application\/pdf);base64,([\s\S]+)$/i.exec(trimmed);
+  if (!m) throw new Error("File must be PNG, JPEG, WebP, or PDF.");
+  const buf = Buffer.from(m[2]!.replace(/\s/g, ""), "base64");
+  if (buf.length > MAX_TASK_ATTACHMENT_BYTES) throw new Error("File must be 8MB or smaller.");
+  const mime = m[1]!.toLowerCase();
+  const ext =
+    mime.includes("jpeg") || mime.includes("jpg") ? "jpg" : mime === "image/webp" ? "webp" : mime.includes("pdf") ? "pdf" : "png";
+  const filename = `taskdesc-${projectId}-${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}.${ext}`;
+  fs.writeFileSync(path.join(uploadsDir, filename), buf);
+  return `/uploads/${filename}`;
+}
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -1767,6 +1782,33 @@ export async function registerRoutes(
     }
     try {
       const url = persistChatUploadFromDataUrl(channelId, parsed.data.fileDataUrl, uploadsDir);
+      res.status(201).json({ url });
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Upload failed";
+      return res.status(400).json({ message });
+    }
+  });
+
+  app.post("/api/projects/:id/task-description-upload", requireAuth, async (req, res) => {
+    const currentUser = req.user as any;
+    const projectId = Number(req.params.id);
+    if (!Number.isInteger(projectId) || projectId <= 0) {
+      return res.status(400).json({ message: "Invalid project" });
+    }
+    const project = await storage.getProject(projectId);
+    if (!project) return res.status(404).json({ message: "Project not found" });
+    let membership = await storage.getProjectMembership(projectId, currentUser.id);
+    if (!membership && currentUser.role === "admin") {
+      await storage.addProjectMember(projectId, currentUser.id);
+      membership = await storage.getProjectMembership(projectId, currentUser.id);
+    }
+    if (!membership) return res.status(403).json({ message: "Access denied" });
+    const parsed = chatUploadSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: parsed.error.issues[0]?.message || "Invalid body" });
+    }
+    try {
+      const url = persistProjectTaskDescriptionUploadFromDataUrl(projectId, parsed.data.fileDataUrl, uploadsDir);
       res.status(201).json({ url });
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : "Upload failed";
