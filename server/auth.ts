@@ -27,8 +27,16 @@ declare global {
       avatar: string | null;
       status: string | null;
       email: string | null;
+      lastSeenAt?: Date | null;
     }
   }
+}
+
+export function requireAuth(req: any, res: any, next: any) {
+  if (!req.isAuthenticated()) {
+    return res.status(401).json({ message: "Not authenticated" });
+  }
+  next();
 }
 
 export function setupAuth(app: Express) {
@@ -102,9 +110,15 @@ export function setupAuth(app: Express) {
                 "Microsoft sign-in is required for employees and managers. Use the Sign in with Microsoft button.",
             });
           }
-          req.logIn(user, (loginErr) => {
+          req.logIn(user, async (loginErr) => {
             if (loginErr) return next(loginErr);
-            const { password, ...safeUser } = user;
+            try {
+              await storage.updateUser(user.id, { status: "online", lastSeenAt: new Date() });
+            } catch {
+              /* non-fatal */
+            }
+            const fresh = (await storage.getUser(user.id)) ?? user;
+            const { password, ...safeUser } = fresh;
             return res.json(safeUser);
           });
         } catch (e) {
@@ -115,10 +129,28 @@ export function setupAuth(app: Express) {
   });
 
   app.post("/api/auth/logout", (req, res) => {
-    req.logout((err) => {
+    const uid = req.user?.id as number | undefined;
+    req.logout(async (err) => {
       if (err) return res.status(500).json({ message: "Logout failed" });
+      if (uid != null) {
+        try {
+          await storage.updateUser(uid, { status: "offline", lastSeenAt: null });
+        } catch {
+          /* non-fatal */
+        }
+      }
       res.json({ message: "Logged out" });
     });
+  });
+
+  app.post("/api/auth/presence", requireAuth, async (req, res) => {
+    const u = req.user as Express.User;
+    try {
+      await storage.updateUser(u.id, { lastSeenAt: new Date(), status: "online" });
+    } catch {
+      return res.status(500).json({ message: "Presence update failed" });
+    }
+    res.json({ ok: true });
   });
 
   app.get("/api/auth/me", (req, res) => {
@@ -128,11 +160,4 @@ export function setupAuth(app: Express) {
     const { password, ...safeUser } = req.user;
     return res.json(safeUser);
   });
-}
-
-export function requireAuth(req: any, res: any, next: any) {
-  if (!req.isAuthenticated()) {
-    return res.status(401).json({ message: "Not authenticated" });
-  }
-  next();
 }

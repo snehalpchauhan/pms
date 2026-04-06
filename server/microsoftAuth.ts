@@ -288,8 +288,13 @@ export function registerMicrosoftAuth(app: Express) {
         return res.redirect(302, loginErrorRedirect(req, "wrong_role"));
       }
 
-      req.login(user, (err) => {
+      req.login(user, async (err) => {
         if (err) return next(err);
+        try {
+          await storage.updateUser(user.id, { status: "online", lastSeenAt: new Date() });
+        } catch {
+          /* non-fatal */
+        }
         res.redirect(302, `${getPublicAppUrl(req)}/`);
       });
     } catch (err) {

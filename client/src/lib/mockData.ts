@@ -87,6 +87,8 @@ export interface Project {
     columns: Column[];
     description?: string;
     members?: string[];
+    /** Server user id of project owner (creator); board sections only they + admins may change. */
+    ownerId?: string;
 }
 
 export interface Message {

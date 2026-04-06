@@ -13,6 +13,7 @@ export async function seedDatabase() {
     name: "Administrator",
     role: "admin",
     status: "online",
+    lastSeenAt: new Date(),
     email: "admin@vnnovate.com",
   });
 

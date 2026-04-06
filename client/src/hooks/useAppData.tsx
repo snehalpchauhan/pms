@@ -3,6 +3,23 @@ import { useQuery } from "@tanstack/react-query";
 import { getQueryFn } from "@/lib/queryClient";
 import type { User, Project, Channel, Task } from "@/lib/mockData";
 
+/** Show as online only while lastSeenAt is within this window (matches client heartbeat). */
+const PRESENCE_TTL_MS = 90_000;
+
+export function effectivePresenceStatus(
+  raw: string | undefined,
+  lastSeenAt: string | Date | null | undefined,
+): NonNullable<User["status"]> {
+  const last =
+    lastSeenAt != null && lastSeenAt !== ""
+      ? new Date(lastSeenAt).getTime()
+      : 0;
+  const recent = last > 0 && Date.now() - last < PRESENCE_TTL_MS;
+  if (!recent) return "offline";
+  if (raw === "busy") return "busy";
+  return "online";
+}
+
 interface AppDataContextType {
   users: Record<string, User>;
   usersArray: User[];
@@ -22,7 +39,7 @@ function convertUser(u: any): User {
     name: u.name,
     avatar: u.avatar || "",
     role: u.role,
-    status: u.status || "offline",
+    status: effectivePresenceStatus(u.status, u.lastSeenAt),
     email: u.email || "",
     username: u.username ?? "",
   };
@@ -36,6 +53,7 @@ function convertProject(p: any): Project {
     description: p.description,
     columns: (p.columns as any[]) || [],
     members: [],
+    ownerId: p.ownerId != null ? String(p.ownerId) : undefined,
   };
 }
 

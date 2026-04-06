@@ -1,4 +1,4 @@
-import { createContext, useContext, ReactNode } from "react";
+import { createContext, useContext, ReactNode, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest, getQueryFn } from "@/lib/queryClient";
 
@@ -10,6 +10,7 @@ type User = {
   avatar: string | null;
   status: string | null;
   email: string | null;
+  lastSeenAt?: string | null;
 };
 
 type AuthContextType = {
@@ -56,6 +57,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = async () => {
     await logoutMutation.mutateAsync();
   };
+
+  useEffect(() => {
+    if (!user) return;
+    const ping = () => {
+      void (async () => {
+        try {
+          await apiRequest("POST", "/api/auth/presence");
+          await queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+        } catch {
+          /* ignore */
+        }
+      })();
+    };
+    ping();
+    const t = window.setInterval(ping, 45_000);
+    const onVis = () => {
+      if (document.visibilityState === "visible") ping();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      window.clearInterval(t);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [user?.id]);
 
   return (
     <AuthContext.Provider value={{ user: user ?? null, isLoading, login, logout }}>

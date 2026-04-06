@@ -415,7 +415,7 @@ export async function registerRoutes(
       password = p;
     }
 
-    const created = await storage.createUser({ name, email, username, password, role, status: "online" });
+    const created = await storage.createUser({ name, email, username, password, role, status: "offline" });
     const { password: _pw, ...safe } = created;
     res.status(201).json(safe);
   });
@@ -526,23 +526,45 @@ export async function registerRoutes(
     res.json(project);
   });
 
-  app.post("/api/projects", requireAuth, async (req, res) => {
-    const currentUser = req.user as any;
-    if (currentUser.role === "client") return res.status(403).json({ message: "Clients cannot create projects" });
-    const project = await storage.createProject(req.body);
-    await storage.addProjectMember(project.id, currentUser.id);
-    res.status(201).json(project);
-  });
-
   const projectColumnSchema = z.object({
     id: z.string().min(1).max(80),
     title: z.string().min(1).max(120),
     color: z.string().min(1).max(80),
   });
 
+  const createProjectSchema = z.object({
+    name: z.string().min(1).max(200),
+    color: z.string().min(1).max(80).optional(),
+    description: z.string().max(10_000).nullable().optional(),
+    columns: z.array(projectColumnSchema).min(1).max(24).optional(),
+  });
+
   const patchProjectSchema = z.object({
     columns: z.array(projectColumnSchema).min(1).max(24).optional(),
     name: z.string().min(1).max(200).optional(),
+  });
+
+  const defaultProjectColumns = [
+    { id: "todo", title: "To Do", color: "bg-slate-500" },
+    { id: "in-progress", title: "In Progress", color: "bg-blue-500" },
+    { id: "review", title: "Review", color: "bg-orange-500" },
+    { id: "done", title: "Done", color: "bg-emerald-500" },
+  ] as const;
+
+  app.post("/api/projects", requireAuth, async (req, res) => {
+    const currentUser = req.user as any;
+    if (currentUser.role === "client") return res.status(403).json({ message: "Clients cannot create projects" });
+    const parsed = createProjectSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: parsed.error.issues[0].message });
+    const project = await storage.createProject({
+      name: parsed.data.name,
+      color: parsed.data.color ?? "bg-blue-500",
+      description: parsed.data.description ?? null,
+      columns: parsed.data.columns ?? [...defaultProjectColumns],
+      ownerId: currentUser.id,
+    });
+    await storage.addProjectMember(project.id, currentUser.id);
+    res.status(201).json(project);
   });
 
   app.patch("/api/projects/:id", requireAuth, async (req, res) => {
@@ -567,6 +589,18 @@ export async function registerRoutes(
     if (parsed.data.name !== undefined) {
       if (currentUser.role !== "admin" && currentUser.role !== "manager") {
         return res.status(403).json({ message: "Only admins and managers can rename a project" });
+      }
+    }
+    const projectRecord = await storage.getProject(projectId);
+    if (!projectRecord) return res.status(404).json({ message: "Project not found" });
+    if (parsed.data.columns !== undefined) {
+      const isAdmin = currentUser.role === "admin";
+      const isOwner =
+        projectRecord.ownerId != null && Number(projectRecord.ownerId) === Number(currentUser.id);
+      if (!isAdmin && !isOwner) {
+        return res.status(403).json({
+          message: "Only the project owner or an administrator can change board sections",
+        });
       }
     }
     const updates: { name?: string; columns?: unknown } = {};

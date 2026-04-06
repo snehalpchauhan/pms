@@ -25,7 +25,7 @@ import { Task, Status, Project } from "@/lib/mockData";
 import { TaskCard } from "./TaskCard";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
-import { Plus, CheckCircle2, RotateCcw, GripVertical, Loader2 } from "lucide-react";
+import { Plus, CheckCircle2, RotateCcw, GripVertical, Loader2, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { ClientPermissions } from "@/App";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -35,6 +35,23 @@ import { Input } from "@/components/ui/input";
 import { apiRequest } from "@/lib/queryClient";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 const dropAnimation: DropAnimation = {
   sideEffects: defaultDropAnimationSideEffects({
@@ -172,10 +189,14 @@ interface ColumnProps {
   onAddTask: (status: string) => void;
   isReviewColumn: boolean;
   clientPermissions?: ClientPermissions;
-  /** When true, column can be reordered via drag handle (same users who can add sections). */
+  /** When true, column can be reordered via drag handle (project owner or admin only). */
   columnReorderEnabled: boolean;
   /** When true, task cards in this column are not draggable. */
   taskDragDisabled: boolean;
+  /** Rename / delete section (project owner or admin only). */
+  canManageSections: boolean;
+  onRenameSection?: (columnId: string) => void;
+  onDeleteSection?: (columnId: string) => void;
 }
 
 function Column({
@@ -189,6 +210,9 @@ function Column({
   clientPermissions,
   columnReorderEnabled,
   taskDragDisabled,
+  canManageSections,
+  onRenameSection,
+  onDeleteSection,
 }: ColumnProps) {
   const droppableId = `${id}__drop`;
   const { setNodeRef: setDropRef } = useDroppable({
@@ -239,6 +263,34 @@ function Column({
             <span className="ml-1 text-[10px] font-mono font-medium text-muted-foreground bg-background/50 border border-border px-1.5 py-0.5 rounded shadow-sm">
                 {tasks.length}
             </span>
+            {canManageSections && onRenameSection && onDeleteSection && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 shrink-0 text-muted-foreground"
+                    aria-label="Section actions"
+                  >
+                    <MoreHorizontal className="w-4 h-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => onRenameSection(id)}>
+                    <Pencil className="w-4 h-4 mr-2" />
+                    Rename section
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className="text-destructive focus:text-destructive"
+                    onClick={() => onDeleteSection(id)}
+                  >
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    Remove section
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
          </div>
          {showAddTask && (
              <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-foreground -mr-1" onClick={() => onAddTask(id)}>
@@ -295,13 +347,22 @@ export default function Board({ project, tasks, onTaskClick, onAddTask, clientPe
   const [addSectionOpen, setAddSectionOpen] = useState(false);
   const [newSectionTitle, setNewSectionTitle] = useState("");
   const [sectionSaving, setSectionSaving] = useState(false);
+  const [renameSectionId, setRenameSectionId] = useState<string | null>(null);
+  const [renameSectionTitle, setRenameSectionTitle] = useState("");
+  const [deleteSectionId, setDeleteSectionId] = useState<string | null>(null);
+  const [sectionMutating, setSectionMutating] = useState(false);
 
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { user } = useAuth();
 
   const isClient = clientPermissions?.role === "client";
   const isFullAccess = isClient && clientPermissions?.clientTaskAccess === "full";
-  const canEditLayout = !isClient || isFullAccess;
+  const canDragTasks = !isClient || isFullAccess;
+  const canManageSections =
+    !isClient &&
+    (user?.role === "admin" ||
+      (project.ownerId != null && String(project.ownerId) === String(user?.id)));
 
   useEffect(() => {
     setLocalTasks(tasks);
@@ -325,7 +386,7 @@ export default function Board({ project, tasks, onTaskClick, onAddTask, clientPe
   );
 
   const handleDragStart = (event: DragStartEvent) => {
-    if (isClient && !isFullAccess) return;
+    if (!canDragTasks) return;
     if (event.active.data.current?.type === "column") {
       setActiveColumnId(String(event.active.id));
       setActiveTask(null);
@@ -352,7 +413,7 @@ export default function Board({ project, tasks, onTaskClick, onAddTask, clientPe
   };
 
   const handleDragEnd = async (event: DragEndEvent) => {
-    if (isClient && !isFullAccess) return;
+    if (!canDragTasks) return;
     const { active, over } = event;
 
     if (!over) {
@@ -518,6 +579,76 @@ export default function Board({ project, tasks, onTaskClick, onAddTask, clientPe
   const reviewColumnId =
     orderedColumns.length >= 2 ? orderedColumns[orderedColumns.length - 2]!.id : null;
 
+  const openRenameSection = (columnId: string) => {
+    const col = project.columns.find((c) => c.id === columnId);
+    if (!col) return;
+    setRenameSectionId(columnId);
+    setRenameSectionTitle(col.title);
+  };
+
+  const handleRenameSectionSave = async () => {
+    if (!renameSectionId) return;
+    const title = renameSectionTitle.trim();
+    if (!title) {
+      toast({ title: "Enter a section name", variant: "destructive" });
+      return;
+    }
+    const nextCols = project.columns.map((c) => (c.id === renameSectionId ? { ...c, title } : c));
+    setSectionMutating(true);
+    try {
+      await apiRequest("PATCH", `/api/projects/${project.id}`, { columns: nextCols });
+      await queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      setRenameSectionId(null);
+      toast({ title: "Section renamed" });
+    } catch {
+      toast({ title: "Could not rename section", variant: "destructive" });
+    } finally {
+      setSectionMutating(false);
+    }
+  };
+
+  const handleDeleteSectionConfirm = async () => {
+    if (!deleteSectionId) return;
+    if (project.columns.length <= 1) {
+      toast({ title: "Cannot remove the last section", variant: "destructive" });
+      setDeleteSectionId(null);
+      return;
+    }
+    const fallbackId = project.columns.find((c) => c.id !== deleteSectionId)?.id;
+    if (!fallbackId) {
+      setDeleteSectionId(null);
+      return;
+    }
+    const toMove = localTasks.filter((t) => t.status === deleteSectionId);
+    const fallbackTasks = localTasks.filter((t) => t.status === fallbackId);
+    const baseOrder = fallbackTasks.length;
+    const nextCols = project.columns.filter((c) => c.id !== deleteSectionId);
+    setSectionMutating(true);
+    const snapTasks = localTasks;
+    try {
+      await Promise.all(
+        toMove.map((t, i) =>
+          apiRequest("PATCH", `/api/tasks/${t.id}`, { status: fallbackId, boardOrder: baseOrder + i }),
+        ),
+      );
+      await apiRequest("PATCH", `/api/projects/${project.id}`, { columns: nextCols });
+      await queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      await queryClient.invalidateQueries({ queryKey: ["/api/projects", Number(project.id), "tasks"] });
+      setLocalTasks((prev) => {
+        const rest = prev.filter((t) => t.status !== deleteSectionId);
+        const placed = toMove.map((t, i) => ({ ...t, status: fallbackId as Status, boardOrder: baseOrder + i }));
+        return [...rest, ...placed];
+      });
+      setDeleteSectionId(null);
+      toast({ title: "Section removed" });
+    } catch {
+      setLocalTasks(snapTasks);
+      toast({ title: "Could not remove section", variant: "destructive" });
+    } finally {
+      setSectionMutating(false);
+    }
+  };
+
   const handleAddSection = async () => {
     const title = newSectionTitle.trim();
     if (!title) {
@@ -564,12 +695,15 @@ export default function Board({ project, tasks, onTaskClick, onAddTask, clientPe
                   onAddTask={onAddTask || (() => {})}
                   isReviewColumn={col.id === reviewColumnId}
                   clientPermissions={clientPermissions}
-                  columnReorderEnabled={canEditLayout}
-                  taskDragDisabled={!canEditLayout}
+                  columnReorderEnabled={canManageSections}
+                  taskDragDisabled={!canDragTasks}
+                  canManageSections={canManageSections}
+                  onRenameSection={openRenameSection}
+                  onDeleteSection={(id) => setDeleteSectionId(id)}
                 />
               ))}
 
-              {canEditLayout && (
+              {canManageSections && (
                 <button
                   type="button"
                   className="min-w-[320px] max-w-[320px] h-[100px] border-2 border-dashed border-border/50 rounded-xl flex items-center justify-center hover:bg-muted/10 transition-colors cursor-pointer group text-left"
@@ -626,6 +760,66 @@ export default function Board({ project, tasks, onTaskClick, onAddTask, clientPe
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <Dialog
+        open={renameSectionId != null}
+        onOpenChange={(open) => {
+          if (!open) setRenameSectionId(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Rename section</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label htmlFor="rename-section">Section name</Label>
+            <Input
+              id="rename-section"
+              value={renameSectionTitle}
+              onChange={(e) => setRenameSectionTitle(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void handleRenameSectionSave();
+              }}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" type="button" onClick={() => setRenameSectionId(null)} disabled={sectionMutating}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void handleRenameSectionSave()}
+              disabled={sectionMutating || !renameSectionTitle.trim()}
+            >
+              {sectionMutating ? <Loader2 className="w-4 h-4 animate-spin" /> : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={deleteSectionId != null} onOpenChange={(open) => !open && setDeleteSectionId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove this section?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tasks in this section will be moved to another column. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={sectionMutating}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={sectionMutating}
+              onClick={(e) => {
+                e.preventDefault();
+                void handleDeleteSectionConfirm();
+              }}
+            >
+              {sectionMutating ? "Removing…" : "Remove section"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

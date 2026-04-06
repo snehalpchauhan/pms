@@ -28,7 +28,9 @@ export const users = pgTable("users", {
   name: text("name").notNull(),
   role: text("role").notNull().default("employee"),
   avatar: text("avatar"),
-  status: text("status").default("online"),
+  /** Last explicit presence ping / login; UI treats as online while recent. */
+  lastSeenAt: timestamp("last_seen_at"),
+  status: text("status").default("offline"),
   email: text("email"),
 });
 
@@ -38,6 +40,8 @@ export const projects = pgTable("projects", {
   color: text("color").notNull().default("bg-blue-500"),
   description: text("description"),
   columns: jsonb("columns").notNull().default(sql`'[]'::jsonb`),
+  /** Creator / owner; only this user (and admins) may add, rename, remove, or reorder board sections. */
+  ownerId: integer("owner_id").references(() => users.id),
 });
 
 export const projectMembers = pgTable("project_members", {
