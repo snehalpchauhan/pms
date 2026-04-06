@@ -34,7 +34,7 @@ interface TeamViewProps {
 }
 
 interface MemberWithSettings {
-  id: string;
+  id: string | number;
   name: string;
   role: string;
   email?: string;
@@ -43,6 +43,8 @@ interface MemberWithSettings {
   lastSeenAt?: string | Date | null;
   clientShowTimecards?: boolean;
   clientTaskAccess?: string;
+  /** Set by GET /api/projects/:id/members when this user is the project creator (owner). */
+  isProjectOwner?: boolean;
 }
 
 export default function TeamView({ project, currentUserRole }: TeamViewProps) {
@@ -55,12 +57,6 @@ export default function TeamView({ project, currentUserRole }: TeamViewProps) {
     const [addMemberLoading, setAddMemberLoading] = useState(false);
     const [memberToRemove, setMemberToRemove] = useState<MemberWithSettings | null>(null);
     const [removeLoading, setRemoveLoading] = useState(false);
-
-    const isProjectOwnerUser =
-      project.ownerId != null && String(project.ownerId) === String(authUser?.id);
-    const canManageClientSettings = currentUserRole === "manager" || currentUserRole === "admin";
-    const canInviteRemoveMembers =
-      currentUserRole === "manager" || currentUserRole === "admin" || isProjectOwnerUser;
 
     const numericProjectId = Number(project.id);
 
@@ -76,20 +72,43 @@ export default function TeamView({ project, currentUserRole }: TeamViewProps) {
 
     const memberIdSet = useMemo(() => new Set(membersWithSettings.map((m) => String(m.id))), [membersWithSettings]);
 
-    const sortedMembers = useMemo(() => {
-      const oid = project.ownerId;
-      if (oid == null || String(oid).trim() === "") return membersWithSettings;
-      return [...membersWithSettings].sort((a, b) => {
-        const aOwn = String(a.id) === String(oid) ? 0 : 1;
-        const bOwn = String(b.id) === String(oid) ? 0 : 1;
-        return aOwn - bOwn;
-      });
+    /** Prefer server flag on each member; fall back to project.ownerId from app data. */
+    const resolvedOwnerIdStr = useMemo(() => {
+      const fromMember = membersWithSettings.find((m) => m.isProjectOwner === true);
+      if (fromMember != null) return String(fromMember.id);
+      if (project.ownerId != null && String(project.ownerId).trim() !== "") {
+        return String(project.ownerId);
+      }
+      return null;
     }, [membersWithSettings, project.ownerId]);
 
+    const isProjectOwnerUser =
+      (project.ownerId != null && String(project.ownerId) === String(authUser?.id)) ||
+      (resolvedOwnerIdStr != null && String(authUser?.id) === resolvedOwnerIdStr);
+    const canManageClientSettings = currentUserRole === "manager" || currentUserRole === "admin";
+    const canInviteRemoveMembers =
+      currentUserRole === "manager" || currentUserRole === "admin" || isProjectOwnerUser;
+
+    const sortedMembers = useMemo(() => {
+      return [...membersWithSettings].sort((a, b) => {
+        const aOwn = a.isProjectOwner === true || (resolvedOwnerIdStr != null && String(a.id) === resolvedOwnerIdStr) ? 0 : 1;
+        const bOwn = b.isProjectOwner === true || (resolvedOwnerIdStr != null && String(b.id) === resolvedOwnerIdStr) ? 0 : 1;
+        return aOwn - bOwn;
+      });
+    }, [membersWithSettings, resolvedOwnerIdStr]);
+
     const ownerUser = useMemo(() => {
-      if (project.ownerId == null) return undefined;
-      return usersArray.find((u) => String(u.id) === String(project.ownerId));
-    }, [usersArray, project.ownerId]);
+      const ownerMember = membersWithSettings.find((m) => m.isProjectOwner === true);
+      if (ownerMember) {
+        return {
+          id: String(ownerMember.id),
+          name: ownerMember.name,
+          email: ownerMember.email,
+        };
+      }
+      if (resolvedOwnerIdStr == null) return undefined;
+      return usersArray.find((u) => String(u.id) === resolvedOwnerIdStr);
+    }, [usersArray, membersWithSettings, resolvedOwnerIdStr]);
 
     const handleConfirmRemoveMember = async () => {
       if (!memberToRemove) return;
@@ -214,7 +233,7 @@ export default function TeamView({ project, currentUserRole }: TeamViewProps) {
             )}
         </div>
 
-        {project.ownerId != null && String(project.ownerId).trim() !== "" && (
+        {resolvedOwnerIdStr != null && (
           <div className="rounded-xl border border-primary/25 bg-primary/5 px-4 py-3 flex flex-wrap items-center gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary">
               <Crown className="h-5 w-5" aria-hidden />
@@ -231,7 +250,7 @@ export default function TeamView({ project, currentUserRole }: TeamViewProps) {
                     ) : null}
                   </>
                 ) : (
-                  <span className="text-foreground"> (user #{project.ownerId})</span>
+                  <span className="text-foreground"> (user #{resolvedOwnerIdStr})</span>
                 )}
               </p>
             </div>
@@ -241,7 +260,9 @@ export default function TeamView({ project, currentUserRole }: TeamViewProps) {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {sortedMembers.map(user => {
                 const presence = effectivePresenceStatus(user.status, user.lastSeenAt);
-                const isOwnerMember = project.ownerId != null && String(user.id) === String(project.ownerId);
+                const isOwnerMember =
+                  user.isProjectOwner === true ||
+                  (resolvedOwnerIdStr != null && String(user.id) === resolvedOwnerIdStr);
                 const canRemoveThisMember =
                   canInviteRemoveMembers &&
                   !isOwnerMember;

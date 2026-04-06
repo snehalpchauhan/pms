@@ -757,8 +757,15 @@ export async function registerRoutes(
       const membership = await storage.getProjectMembership(projectId, currentUser.id);
       if (!membership) return res.status(403).json({ message: "Access denied" });
     }
+    const projectRow = await storage.getProject(projectId);
+    const ownerId = projectRow?.ownerId ?? null;
     const members = await storage.getProjectMembersWithSettings(projectId);
-    res.json(members.map(({ password, ...u }) => u));
+    res.json(
+      members.map(({ password, ...u }) => ({
+        ...u,
+        isProjectOwner: ownerId != null && Number(u.id) === Number(ownerId),
+      })),
+    );
   });
 
   app.post("/api/projects/:id/members", requireAuth, async (req, res) => {
