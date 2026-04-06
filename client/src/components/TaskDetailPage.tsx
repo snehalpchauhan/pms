@@ -47,6 +47,12 @@ import {
   parseWorkflowColumnId,
   resolveWorkflowStatusForProject,
 } from "@shared/workflowColumns";
+import {
+  WORK_CATEGORIES,
+  buildStoredTimeDescription,
+  parseStoredTimeDescription,
+  countWordsInText,
+} from "@shared/timeLogDescription";
 import { formatChatMarkdown } from "@/lib/chatMarkdown";
 
 const TASK_ATTACHMENT_MIMES = new Set([
@@ -77,6 +83,32 @@ async function readFileAsDataUrl(file: File): Promise<string> {
 }
 
 type CommentPayload = { fileName: string; dataUrl: string };
+
+function TimeEntryDescription({ description }: { description: string | null | undefined }) {
+  const { categoryLabel, note } = parseStoredTimeDescription(description);
+  if (categoryLabel) {
+    return (
+      <div className="mt-0.5 space-y-1.5">
+        <Badge
+          variant="outline"
+          className="w-fit text-[10px] font-medium border-primary/30 bg-primary/5 text-primary"
+        >
+          {categoryLabel}
+        </Badge>
+        {note ? (
+          <div className="text-sm text-foreground/80 whitespace-pre-wrap">{note}</div>
+        ) : (
+          <span className="text-xs text-muted-foreground italic">No work description text</span>
+        )}
+      </div>
+    );
+  }
+  const fallback = note || (description != null ? String(description).trim() : "");
+  if (fallback) {
+    return <div className="text-sm text-foreground/80 mt-0.5 whitespace-pre-wrap">{fallback}</div>;
+  }
+  return <span className="text-muted-foreground italic text-xs">No note</span>;
+}
 
 function coerceTaskPriority(p: string | undefined): string {
   return p === "low" || p === "medium" || p === "high" ? p : "medium";
@@ -474,6 +506,7 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
   const [prioritySaving, setPrioritySaving] = useState(false);
   const [timeHours, setTimeHours] = useState("");
   const [timeDate, setTimeDate] = useState(format(new Date(), "yyyy-MM-dd"));
+  const [timeLogCategory, setTimeLogCategory] = useState("");
   const [timeDescription, setTimeDescription] = useState("");
   const [timeLogging, setTimeLogging] = useState(false);
   const [timeClientVisible, setTimeClientVisible] = useState(true);
@@ -517,9 +550,17 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
       return res.json() as {
         taskMarkCompleteStatus?: string;
         taskClientReopenStatus?: string;
+        timeLogMinDescriptionWords?: number;
       };
     },
   });
+
+  const timeLogMinWords =
+    companyWorkflowSettings?.timeLogMinDescriptionWords == null
+      ? 10
+      : Number(companyWorkflowSettings.timeLogMinDescriptionWords);
+  const timeDescriptionWordCount = countWordsInText(timeDescription);
+  const timeDescriptionMeetsMin = timeLogMinWords <= 0 || timeDescriptionWordCount >= timeLogMinWords;
 
   const { data: projectMembers = [], isLoading: projectMembersLoading } = useQuery<
     { id: number; name: string; avatar?: string | null }[]
@@ -870,21 +911,47 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
 
   const handleLogTime = async () => {
     if (!timeHours || isNaN(Number(timeHours)) || Number(timeHours) <= 0) return;
+    if (!timeLogCategory) {
+      toast({ title: "Select a work type", variant: "destructive" });
+      return;
+    }
+    if (timeLogMinWords > 0 && !timeDescriptionMeetsMin) {
+      toast({
+        title: "Work description too short",
+        description: `Enter at least ${timeLogMinWords} words (work type does not count). Admins can change this under Company Settings.`,
+        variant: "destructive",
+      });
+      return;
+    }
+    const storedDescription = buildStoredTimeDescription(timeLogCategory, timeDescription);
     setTimeLogging(true);
     try {
       await apiRequest("POST", `/api/tasks/${numericTaskId}/time-entries`, {
         hours: Number(timeHours),
-        description: timeDescription || null,
+        description: storedDescription,
         logDate: timeDate,
         clientVisible: clientTimecardsEnabled ? timeClientVisible : false,
       });
       setTimeHours("");
+      setTimeLogCategory("");
       setTimeDescription("");
       setTimeClientVisible(true);
       refetchTimeEntries();
       invalidateTasks();
-    } catch (e) {
-      console.error("Failed to log time:", e);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      let detail: string | undefined;
+      try {
+        const parsed = JSON.parse(msg.replace(/^\d+:\s*/, ""));
+        if (typeof parsed?.message === "string") detail = parsed.message;
+      } catch {
+        /* ignore */
+      }
+      toast({
+        title: "Could not log time",
+        description: detail || msg,
+        variant: "destructive",
+      });
     } finally {
       setTimeLogging(false);
     }
@@ -1883,9 +1950,9 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                             {(!isClient || isFullAccess) && (
                                 <div className="bg-background border border-border/50 rounded-xl p-4 space-y-3 shadow-sm">
                                     <h4 className="text-sm font-semibold text-foreground">Log Time</h4>
-                                    <div className="flex gap-3 flex-wrap">
-                                        <div className="flex-1 min-w-[100px]">
-                                            <label className="text-xs text-muted-foreground mb-1 block">Hours</label>
+                                    <div className="grid gap-3 sm:grid-cols-2">
+                                        <div className="space-y-1">
+                                            <Label className="text-xs text-muted-foreground">Hours</Label>
                                             <Input
                                                 type="number"
                                                 min="0.25"
@@ -1897,8 +1964,8 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                                                 data-testid="input-time-hours"
                                             />
                                         </div>
-                                        <div className="flex-1 min-w-[130px]">
-                                            <label className="text-xs text-muted-foreground mb-1 block">Date</label>
+                                        <div className="space-y-1">
+                                            <Label className="text-xs text-muted-foreground">Date</Label>
                                             <Input
                                                 type="date"
                                                 value={timeDate}
@@ -1907,27 +1974,66 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                                                 data-testid="input-time-date"
                                             />
                                         </div>
-                                        <div className="flex-[2] min-w-[150px]">
-                                            <label className="text-xs text-muted-foreground mb-1 block">Note (optional)</label>
-                                            <Input
-                                                placeholder="What did you work on?"
-                                                value={timeDescription}
-                                                onChange={e => setTimeDescription(e.target.value)}
-                                                className="h-9 text-sm"
-                                                data-testid="input-time-description"
-                                            />
-                                        </div>
-                                        <div className="flex items-end">
-                                            <Button
-                                                size="sm"
-                                                className="h-9 px-4"
-                                                onClick={handleLogTime}
-                                                disabled={timeLogging || !timeHours}
-                                                data-testid="button-log-time"
+                                    </div>
+                                    <div className="space-y-1">
+                                        <Label className="text-xs text-muted-foreground">
+                                            Work type <span className="text-destructive">*</span>
+                                        </Label>
+                                        <Select value={timeLogCategory} onValueChange={setTimeLogCategory}>
+                                            <SelectTrigger className="h-9 text-sm" data-testid="select-time-work-type">
+                                                <SelectValue placeholder="Same categories as Timecards…" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {WORK_CATEGORIES.map((c) => (
+                                                    <SelectItem key={c.value} value={c.value}>
+                                                        {c.label}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    <div className="space-y-1">
+                                        <Label className="text-xs text-muted-foreground">
+                                            Work description
+                                            {timeLogMinWords > 0 ? (
+                                                <span className="text-destructive"> *</span>
+                                            ) : (
+                                                <span className="text-muted-foreground/80 font-normal"> (optional)</span>
+                                            )}
+                                        </Label>
+                                        <Textarea
+                                            placeholder="What did you work on? Use multiple lines if needed."
+                                            value={timeDescription}
+                                            onChange={(e) => setTimeDescription(e.target.value)}
+                                            className="min-h-[100px] text-sm resize-y"
+                                            data-testid="input-time-description"
+                                        />
+                                        {timeLogMinWords > 0 ? (
+                                            <p
+                                                className={cn(
+                                                    "text-[11px] text-muted-foreground",
+                                                    !timeDescriptionMeetsMin && timeDescription.trim() && "text-amber-700 dark:text-amber-300",
+                                                )}
                                             >
-                                                Log Time
-                                            </Button>
-                                        </div>
+                                                {timeDescriptionWordCount} / {timeLogMinWords} words minimum (work type label is not counted).
+                                            </p>
+                                        ) : null}
+                                    </div>
+                                    <div className="flex justify-end">
+                                        <Button
+                                            size="sm"
+                                            className="h-9 px-4"
+                                            onClick={() => void handleLogTime()}
+                                            disabled={
+                                                timeLogging ||
+                                                !timeHours ||
+                                                !timeLogCategory ||
+                                                !timeDescriptionMeetsMin
+                                            }
+                                            data-testid="button-log-time"
+                                        >
+                                            Log Time
+                                        </Button>
                                     </div>
                                     {showClientShareOption && (
                                         <div className={cn("flex items-center gap-2 pt-1", !clientTimecardsEnabled && "opacity-50")}>
@@ -1972,7 +2078,7 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                                                         </span>
                                                     )}
                                                 </div>
-                                                <div className="text-sm text-foreground/80 mt-0.5">{entry.description || <span className="text-muted-foreground italic text-xs">No note</span>}</div>
+                                                <TimeEntryDescription description={entry.description} />
                                             </div>
                                             {canDelete && (
                                                 <Button

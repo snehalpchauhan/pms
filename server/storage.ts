@@ -604,6 +604,7 @@ export class DatabaseStorage implements IStorage {
       ms365AllowedDomains: string | null;
       taskMarkCompleteStatus: string;
       taskClientReopenStatus: string;
+      timeLogMinDescriptionWords: number;
     }>,
   ): Promise<CompanySettings> {
     const current = await this.getCompanySettings();

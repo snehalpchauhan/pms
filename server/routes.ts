@@ -21,6 +21,7 @@ import {
   resolveWorkflowStatusForProject,
 } from "@shared/workflowColumns";
 import { isValidProjectColor, sanitizeProjectColor } from "@shared/projectColors";
+import { timeLogNoteMeetsMinWords } from "@shared/timeLogDescription";
 
 const MAX_COMPANY_LOGO_BYTES = 2 * 1024 * 1024;
 
@@ -255,6 +256,8 @@ export async function registerRoutes(
     ms365ClientSecret: z.union([z.string().max(4096), z.null()]).optional(),
     taskMarkCompleteStatus: workflowTaskStatusSchema.optional(),
     taskClientReopenStatus: workflowTaskStatusSchema.optional(),
+    /** 0 = no minimum; default on create is 10 */
+    timeLogMinDescriptionWords: z.coerce.number().int().min(0).max(500).optional(),
   });
 
   app.get("/api/company-settings", requireAuth, async (_req, res) => {
@@ -273,6 +276,8 @@ export async function registerRoutes(
         parseWorkflowColumnId(row.taskMarkCompleteStatus) ?? DEFAULT_TASK_MARK_COMPLETE_STATUS,
       taskClientReopenStatus:
         parseWorkflowColumnId(row.taskClientReopenStatus) ?? DEFAULT_TASK_CLIENT_REOPEN_STATUS,
+      timeLogMinDescriptionWords:
+        row.timeLogMinDescriptionWords == null ? 10 : Number(row.timeLogMinDescriptionWords),
     });
   });
 
@@ -296,7 +301,8 @@ export async function registerRoutes(
       body.ms365AllowedDomains === undefined &&
       body.ms365ClientSecret === undefined &&
       body.taskMarkCompleteStatus === undefined &&
-      body.taskClientReopenStatus === undefined
+      body.taskClientReopenStatus === undefined &&
+      body.timeLogMinDescriptionWords === undefined
     ) {
       return res.status(400).json({ message: "No changes provided" });
     }
@@ -313,6 +319,7 @@ export async function registerRoutes(
       ms365AllowedDomains?: string | null;
       taskMarkCompleteStatus?: string;
       taskClientReopenStatus?: string;
+      timeLogMinDescriptionWords?: number;
     } = {};
 
     if (body.companyName !== undefined) updates.companyName = body.companyName;
@@ -358,6 +365,9 @@ export async function registerRoutes(
     if (body.taskClientReopenStatus !== undefined) {
       updates.taskClientReopenStatus = body.taskClientReopenStatus;
     }
+    if (body.timeLogMinDescriptionWords !== undefined) {
+      updates.timeLogMinDescriptionWords = body.timeLogMinDescriptionWords;
+    }
 
     const updated = await storage.updateCompanySettings(updates);
     if (
@@ -382,6 +392,8 @@ export async function registerRoutes(
         parseWorkflowColumnId(updated.taskMarkCompleteStatus) ?? DEFAULT_TASK_MARK_COMPLETE_STATUS,
       taskClientReopenStatus:
         parseWorkflowColumnId(updated.taskClientReopenStatus) ?? DEFAULT_TASK_CLIENT_REOPEN_STATUS,
+      timeLogMinDescriptionWords:
+        updated.timeLogMinDescriptionWords == null ? 10 : Number(updated.timeLogMinDescriptionWords),
     });
   });
 
@@ -1910,13 +1922,22 @@ export async function registerRoutes(
     const userId = currentUser.id;
     const { hours, description, logDate, clientVisible } = req.body;
     if (!hours || !logDate) return res.status(400).json({ message: "hours and logDate are required" });
+    const descStr = description != null && String(description).trim() !== "" ? String(description) : null;
+    const csTaskTime = await storage.getCompanySettings();
+    const minWordsTask =
+      csTaskTime.timeLogMinDescriptionWords == null ? 10 : Number(csTaskTime.timeLogMinDescriptionWords);
+    if (minWordsTask > 0 && !timeLogNoteMeetsMinWords(descStr, minWordsTask)) {
+      return res.status(400).json({
+        message: `Time log work description must be at least ${minWordsTask} words (work type label does not count).`,
+      });
+    }
     const entry = await storage.createTimeEntry({
-      taskId, userId, hours: String(hours), description: description || null, logDate,
+      taskId, userId, hours: String(hours), description: descStr, logDate,
       clientVisible: clientVisible !== undefined ? clientVisible : true,
     });
     const hrs = String(hours);
     const dateLabel = formatTaskDateForLog(logDate);
-    const descRaw = description != null ? String(description).trim() : "";
+    const descRaw = descStr != null ? descStr.trim() : "";
     const descShort = descRaw.length > 80 ? `${descRaw.slice(0, 77)}...` : descRaw;
     await storage.createComment({
       taskId,
@@ -2031,13 +2052,22 @@ export async function registerRoutes(
     const task = await storage.getTask(Number(taskId));
     if (!task) return res.status(404).json({ message: "Task not found" });
     const tid = Number(taskId);
+    const descStrGlobal = description != null && String(description).trim() !== "" ? String(description) : null;
+    const csGlobalTime = await storage.getCompanySettings();
+    const minWordsGlobal =
+      csGlobalTime.timeLogMinDescriptionWords == null ? 10 : Number(csGlobalTime.timeLogMinDescriptionWords);
+    if (minWordsGlobal > 0 && !timeLogNoteMeetsMinWords(descStrGlobal, minWordsGlobal)) {
+      return res.status(400).json({
+        message: `Time log work description must be at least ${minWordsGlobal} words (work type label does not count).`,
+      });
+    }
     const entry = await storage.createTimeEntry({
-      taskId: tid, userId, hours: String(hours), description: description || null, logDate,
+      taskId: tid, userId, hours: String(hours), description: descStrGlobal, logDate,
       clientVisible: clientVisible !== undefined ? clientVisible : true,
     });
     const hrs = String(hours);
     const dateLabel = formatTaskDateForLog(logDate);
-    const descRaw = description != null ? String(description).trim() : "";
+    const descRaw = descStrGlobal != null ? descStrGlobal.trim() : "";
     const descShort = descRaw.length > 80 ? `${descRaw.slice(0, 77)}...` : descRaw;
     await storage.createComment({
       taskId: tid,

@@ -19,6 +19,11 @@ export const companySettings = pgTable("company_settings", {
   taskMarkCompleteStatus: text("task_mark_complete_status").notNull().default("done"),
   /** Fixed workflow id: column tasks move to when a client requests revision / reopens (default in-progress). */
   taskClientReopenStatus: text("task_client_reopen_status").notNull().default("in-progress"),
+  /**
+   * Minimum word count for the time log narrative (text after work type); 0 = no minimum.
+   * Work type prefix `[Label]` is excluded from the count.
+   */
+  timeLogMinDescriptionWords: integer("time_log_min_description_words").notNull().default(10),
 });
 
 export const users = pgTable("users", {

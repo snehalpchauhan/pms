@@ -26,6 +26,11 @@ import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import type { ClientPermissions } from "@/App";
 import type { Project } from "@/lib/mockData";
+import {
+  WORK_CATEGORIES,
+  buildStoredTimeDescription,
+  countWordsInText,
+} from "@shared/timeLogDescription";
 
 interface TimecardsViewProps {
   currentUserRole: string;
@@ -40,21 +45,6 @@ interface AllTask {
   projectName: string;
   status: string;
 }
-
-const WORK_CATEGORIES = [
-  { value: "feature", label: "Feature Development" },
-  { value: "bug", label: "Bug Fix" },
-  { value: "review", label: "Code Review" },
-  { value: "rnd", label: "Research & Development" },
-  { value: "docs", label: "Documentation" },
-  { value: "testing", label: "Testing & QA" },
-  { value: "meeting", label: "Meeting / Planning" },
-  { value: "design", label: "Design" },
-  { value: "devops", label: "DevOps / Deployment" },
-  { value: "support", label: "Support" },
-  { value: "refactor", label: "Refactoring" },
-  { value: "other", label: "Other" },
-] as const;
 
 export default function TimecardsView({ currentUserRole, currentProject, clientPermissions }: TimecardsViewProps) {
   const { user: currentUser } = useAuth();
@@ -108,6 +98,19 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
     queryParams.set("projectId", String(numericProjectId));
   }
 
+  const { data: companySettingsForTime } = useQuery<{ timeLogMinDescriptionWords?: number }>({
+    queryKey: ["/api/company-settings"],
+    queryFn: async () => {
+      const res = await fetch("/api/company-settings", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load company settings");
+      return res.json();
+    },
+  });
+  const minWordsRequired =
+    companySettingsForTime?.timeLogMinDescriptionWords == null
+      ? 10
+      : Number(companySettingsForTime.timeLogMinDescriptionWords);
+
   const { data: entries = [], isLoading } = useQuery<any[]>({
     queryKey: ["/api/time-entries", filterUserId, filterProjectId, filterStartDate, filterEndDate, currentUserRole, numericProjectId],
     queryFn: async () => {
@@ -140,7 +143,11 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
 
   const handleLogSubmit = async () => {
     if (!logTaskId || !logCategory || !logHours || !logDate) {
-      toast({ title: "Please fill in project, task, work type, hours and date", variant: "destructive" });
+      toast({
+        title: "Missing fields",
+        description: "Choose project, task, work type, hours, and date.",
+        variant: "destructive",
+      });
       return;
     }
     const h = parseFloat(logHours);
@@ -148,10 +155,15 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
       toast({ title: "Hours must be between 0.1 and 24", variant: "destructive" });
       return;
     }
-    const categoryLabel = WORK_CATEGORIES.find(c => c.value === logCategory)?.label || logCategory;
-    const description = logNote.trim()
-      ? `[${categoryLabel}] ${logNote.trim()}`
-      : `[${categoryLabel}]`;
+    if (minWordsRequired > 0 && countWordsInText(logNote) < minWordsRequired) {
+      toast({
+        title: "Description too short",
+        description: `Enter at least ${minWordsRequired} words in the work description (set in Company Settings).`,
+        variant: "destructive",
+      });
+      return;
+    }
+    const description = buildStoredTimeDescription(logCategory, logNote);
 
     setLogSaving(true);
     try {
@@ -690,11 +702,15 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
               </div>
             </div>
 
-            {/* Step 5: Additional note (optional) */}
+            {/* Step 5: Work description */}
             <div className="space-y-1.5">
               <Label htmlFor="log-note">
-                Additional Details
-                <span className="text-muted-foreground text-xs font-normal ml-1">(optional)</span>
+                Work description
+                {minWordsRequired > 0 ? (
+                  <span className="text-destructive"> *</span>
+                ) : (
+                  <span className="text-muted-foreground text-xs font-normal ml-1">(optional)</span>
+                )}
               </Label>
               <Textarea
                 id="log-note"
@@ -706,15 +722,23 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
                 }
                 value={logNote}
                 onChange={e => setLogNote(e.target.value)}
-                rows={2}
-                className="resize-none"
+                rows={4}
+                className="min-h-[96px] resize-y"
                 data-testid="textarea-log-note"
               />
-              {logCategory && (
+              {minWordsRequired > 0 ? (
                 <p className="text-[11px] text-muted-foreground">
-                  Will be saved as: <span className="font-mono text-foreground">[{WORK_CATEGORIES.find(c => c.value === logCategory)?.label}]{logNote.trim() ? ` ${logNote.trim()}` : ""}</span>
+                  {countWordsInText(logNote)} / {minWordsRequired} words minimum (work type is not counted).
                 </p>
-              )}
+              ) : null}
+              {logCategory ? (
+                <p className="text-[11px] text-muted-foreground">
+                  Stored as:{" "}
+                  <span className="font-mono text-foreground">
+                    {buildStoredTimeDescription(logCategory, logNote)}
+                  </span>
+                </p>
+              ) : null}
             </div>
 
             {/* Share with client checkbox — always shown for non-clients, disabled if no client timecards */}

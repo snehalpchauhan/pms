@@ -18,7 +18,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Building2, Upload, Plus, MoreHorizontal, Search, Trash2, LogIn, Kanban, Pencil } from "lucide-react";
+import { Building2, Upload, Plus, MoreHorizontal, Search, Trash2, LogIn, Kanban, Pencil, Clock } from "lucide-react";
 import {
     WORKFLOW_COLUMN_PRESETS,
     DEFAULT_TASK_CLIENT_REOPEN_STATUS,
@@ -60,6 +60,7 @@ type CompanySettingsDto = {
     ms365ClientSecretFromEnv: boolean;
     taskMarkCompleteStatus: WorkflowColumnId;
     taskClientReopenStatus: WorkflowColumnId;
+    timeLogMinDescriptionWords: number;
 };
 
 /** Mirrors server `ms365FullyConfigured` for UI (tenant, client id, secret). */
@@ -119,6 +120,7 @@ export default function CompanySettingsView() {
         useState<WorkflowColumnId>(DEFAULT_TASK_MARK_COMPLETE_STATUS);
     const [taskClientReopenStatus, setTaskClientReopenStatus] =
         useState<WorkflowColumnId>(DEFAULT_TASK_CLIENT_REOPEN_STATUS);
+    const [timeLogMinDescriptionWords, setTimeLogMinDescriptionWords] = useState<number>(10);
 
     const [activeSettingsTab, setActiveSettingsTab] = useState<SettingsTab>(settingsTabFromHash);
 
@@ -162,6 +164,9 @@ export default function CompanySettingsView() {
         setMs365AllowedDomains(companyData.ms365AllowedDomains ?? "");
         setTaskMarkCompleteStatus(companyData.taskMarkCompleteStatus ?? DEFAULT_TASK_MARK_COMPLETE_STATUS);
         setTaskClientReopenStatus(companyData.taskClientReopenStatus ?? DEFAULT_TASK_CLIENT_REOPEN_STATUS);
+        setTimeLogMinDescriptionWords(
+            companyData.timeLogMinDescriptionWords == null ? 10 : Number(companyData.timeLogMinDescriptionWords),
+        );
     }, [companyData]);
 
     const displayLogoSrc =
@@ -179,6 +184,7 @@ export default function CompanySettingsView() {
                 ms365AllowedDomains: ms365AllowedDomains.trim(),
                 taskMarkCompleteStatus,
                 taskClientReopenStatus,
+                timeLogMinDescriptionWords,
             };
             if (removeStoredMs365Secret) {
                 body.ms365ClientSecret = null;
@@ -567,6 +573,52 @@ export default function CompanySettingsView() {
                                         <p className="text-xs text-muted-foreground">
                                             Default: <strong>In Progress</strong>. Applies when a client uses Request
                                             revision from the review column.
+                                        </p>
+                                    </div>
+                                </CardContent>
+                            </Card>
+
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle className="flex items-center gap-2">
+                                        <Clock className="w-5 h-5 text-muted-foreground" />
+                                        Time tracking
+                                    </CardTitle>
+                                    <CardDescription>
+                                        Require a minimum word count for the <strong>work description</strong> when logging
+                                        time (from the task Time tab or Timecards). The work type label is not counted.
+                                        Set to <strong>0</strong> to turn this off.
+                                    </CardDescription>
+                                </CardHeader>
+                                <CardContent className="space-y-4">
+                                    {!isAdmin && (
+                                        <p className="text-sm text-muted-foreground rounded-md border border-border/60 bg-muted/30 px-3 py-2">
+                                            Only administrators can edit this setting.
+                                        </p>
+                                    )}
+                                    <div className="space-y-2 max-w-xs">
+                                        <Label htmlFor="time-log-min-words">Minimum words for time log description</Label>
+                                        <Input
+                                            id="time-log-min-words"
+                                            type="number"
+                                            min={0}
+                                            max={500}
+                                            value={timeLogMinDescriptionWords}
+                                            onChange={(e) => {
+                                                const raw = e.target.value;
+                                                if (raw === "") {
+                                                    setTimeLogMinDescriptionWords(0);
+                                                    return;
+                                                }
+                                                const n = parseInt(raw, 10);
+                                                if (!Number.isNaN(n)) {
+                                                    setTimeLogMinDescriptionWords(Math.min(500, Math.max(0, n)));
+                                                }
+                                            }}
+                                            disabled={!isAdmin || companyLoading}
+                                        />
+                                        <p className="text-xs text-muted-foreground">
+                                            Default is 10. Use 0 if descriptions should be optional with no length rule.
                                         </p>
                                     </div>
                                 </CardContent>
