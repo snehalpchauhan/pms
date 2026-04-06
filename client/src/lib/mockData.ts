@@ -34,6 +34,8 @@ export interface User {
   role: UserRole;
   status?: "online" | "offline" | "busy";
   email?: string;
+  /** Login username from API (empty for mock-only users). */
+  username?: string;
 }
 
 export interface ChecklistItem {

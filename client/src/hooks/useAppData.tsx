@@ -24,6 +24,7 @@ function convertUser(u: any): User {
     role: u.role,
     status: u.status || "offline",
     email: u.email || "",
+    username: u.username ?? "",
   };
 }
 

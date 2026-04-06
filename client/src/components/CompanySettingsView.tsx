@@ -18,7 +18,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Building2, Upload, Plus, MoreHorizontal, Search, Trash2, UserCog, LogIn, Kanban, Pencil } from "lucide-react";
+import { Building2, Upload, Plus, MoreHorizontal, Search, Trash2, LogIn, Kanban, Pencil } from "lucide-react";
 import {
     WORKFLOW_COLUMN_PRESETS,
     DEFAULT_TASK_CLIENT_REOPEN_STATUS,
@@ -83,14 +83,15 @@ export default function CompanySettingsView() {
     const [addError, setAddError] = useState("");
     const [addLoading, setAddLoading] = useState(false);
 
-    const [editRoleUser, setEditRoleUser] = useState<{ id: string; name: string; role: UserRole } | null>(null);
-    const [editRole, setEditRole] = useState<UserRole>("employee");
-    const [editLoading, setEditLoading] = useState(false);
-    const [editError, setEditError] = useState("");
-
-    const [editDetailsUser, setEditDetailsUser] = useState<{ id: string; name: string; email: string } | null>(null);
-    const [editDetailsLoading, setEditDetailsLoading] = useState(false);
-    const [editDetailsError, setEditDetailsError] = useState("");
+    const [editUser, setEditUser] = useState<{
+        id: string;
+        name: string;
+        email: string;
+        username: string;
+        role: UserRole;
+    } | null>(null);
+    const [editUserLoading, setEditUserLoading] = useState(false);
+    const [editUserError, setEditUserError] = useState("");
 
     const [deleteUserId, setDeleteUserId] = useState<string | null>(null);
     const [deleteLoading, setDeleteLoading] = useState(false);
@@ -221,8 +222,11 @@ export default function CompanySettingsView() {
     }
 
     const filteredUsers = usersArray.filter(u => {
-        const matchesSearch = u.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            (u.email || "").toLowerCase().includes(searchTerm.toLowerCase());
+        const q = searchTerm.toLowerCase();
+        const matchesSearch =
+            u.name.toLowerCase().includes(q) ||
+            (u.email || "").toLowerCase().includes(q) ||
+            (u.username || "").toLowerCase().includes(q);
         const matchesRole = roleFilter === "all" || u.role === roleFilter;
         return matchesSearch && matchesRole;
     });
@@ -252,49 +256,41 @@ export default function CompanySettingsView() {
         }
     }
 
-    async function handleEditRole() {
-        if (!editRoleUser) return;
-        setEditError("");
-        setEditLoading(true);
-        try {
-            await apiRequest("PATCH", `/api/users/${editRoleUser.id}`, { role: editRole });
-            refetchUsers();
-            setEditRoleUser(null);
-        } catch (err) {
-            setEditError(parseApiError(err));
-        } finally {
-            setEditLoading(false);
-        }
-    }
-
-    async function handleSaveUserDetails() {
-        if (!editDetailsUser) return;
-        const name = editDetailsUser.name.trim();
-        const email = editDetailsUser.email.trim();
-        setEditDetailsError("");
+    async function handleSaveEditUser() {
+        if (!editUser) return;
+        const name = editUser.name.trim();
+        const username = editUser.username.trim();
+        const email = editUser.email.trim();
+        setEditUserError("");
         if (!name) {
-            setEditDetailsError("Name is required.");
+            setEditUserError("Name is required.");
+            return;
+        }
+        if (!username) {
+            setEditUserError("Username is required.");
             return;
         }
         if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-            setEditDetailsError("Enter a valid email address.");
+            setEditUserError("Enter a valid email address.");
             return;
         }
-        const body: { name: string; email?: string } = { name };
+        const isSelf = String(currentUser?.id) === editUser.id;
+        const body: { name: string; username: string; email?: string; role?: UserRole } = { name, username };
         if (email) body.email = email;
-        setEditDetailsLoading(true);
+        if (!isSelf) body.role = editUser.role;
+        setEditUserLoading(true);
         try {
-            await apiRequest("PATCH", `/api/users/${editDetailsUser.id}`, body);
+            await apiRequest("PATCH", `/api/users/${editUser.id}`, body);
             await refetchUsers();
-            if (String(currentUser?.id) === editDetailsUser.id) {
+            if (isSelf) {
                 await queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
             }
-            setEditDetailsUser(null);
+            setEditUser(null);
             toast({ title: "User updated" });
         } catch (err) {
-            setEditDetailsError(parseApiError(err));
+            setEditUserError(parseApiError(err));
         } finally {
-            setEditDetailsLoading(false);
+            setEditUserLoading(false);
         }
     }
 
@@ -755,28 +751,19 @@ export default function CompanySettingsView() {
                                                         </DropdownMenuTrigger>
                                                         <DropdownMenuContent align="end">
                                                             <DropdownMenuItem
-                                                                data-testid={`menu-edit-user-details-${user.id}`}
+                                                                data-testid={`menu-edit-user-${user.id}`}
                                                                 onClick={() => {
-                                                                    setEditDetailsError("");
-                                                                    setEditDetailsUser({
+                                                                    setEditUserError("");
+                                                                    setEditUser({
                                                                         id: user.id,
                                                                         name: user.name,
                                                                         email: user.email ?? "",
+                                                                        username: user.username ?? "",
+                                                                        role: user.role as UserRole,
                                                                     });
                                                                 }}
                                                             >
-                                                                <Pencil className="w-4 h-4 mr-2" /> Edit name and email
-                                                            </DropdownMenuItem>
-                                                            <DropdownMenuItem
-                                                                data-testid={`menu-edit-role-${user.id}`}
-                                                                disabled={user.id === String(currentUser?.id)}
-                                                                onClick={() => {
-                                                                    setEditError("");
-                                                                    setEditRoleUser({ id: user.id, name: user.name, role: user.role as UserRole });
-                                                                    setEditRole(user.role as UserRole);
-                                                                }}
-                                                            >
-                                                                <UserCog className="w-4 h-4 mr-2" /> Edit Role
+                                                                <Pencil className="w-4 h-4 mr-2" /> Edit user
                                                             </DropdownMenuItem>
                                                             <DropdownMenuSeparator />
                                                             <DropdownMenuItem
@@ -886,34 +873,58 @@ export default function CompanySettingsView() {
                 </DialogContent>
             </Dialog>
 
-            {/* Edit name and email */}
-            <Dialog open={!!editDetailsUser} onOpenChange={(open) => { if (!open) { setEditDetailsUser(null); setEditDetailsError(""); } }}>
+            {/* Edit user (name, username, email, role) */}
+            <Dialog
+                open={!!editUser}
+                onOpenChange={(open) => {
+                    if (!open) {
+                        setEditUser(null);
+                        setEditUserError("");
+                    }
+                }}
+            >
                 <DialogContent className="sm:max-w-md">
                     <DialogHeader>
-                        <DialogTitle>Edit name and email</DialogTitle>
+                        <DialogTitle>Edit user</DialogTitle>
                     </DialogHeader>
                     <div className="space-y-4 py-2">
                         <div className="space-y-1.5">
-                            <Label htmlFor="edit-details-name">Full name <span className="text-destructive">*</span></Label>
+                            <Label htmlFor="edit-user-name">Full name <span className="text-destructive">*</span></Label>
                             <Input
-                                id="edit-details-name"
+                                id="edit-user-name"
                                 data-testid="input-edit-user-name"
-                                value={editDetailsUser?.name ?? ""}
+                                value={editUser?.name ?? ""}
                                 onChange={(e) =>
-                                    setEditDetailsUser((prev) => (prev ? { ...prev, name: e.target.value } : prev))
+                                    setEditUser((prev) => (prev ? { ...prev, name: e.target.value } : prev))
                                 }
                                 placeholder="Jane Doe"
                             />
                         </div>
                         <div className="space-y-1.5">
-                            <Label htmlFor="edit-details-email">Email</Label>
+                            <Label htmlFor="edit-user-username">Username <span className="text-destructive">*</span></Label>
                             <Input
-                                id="edit-details-email"
+                                id="edit-user-username"
+                                data-testid="input-edit-user-username"
+                                autoComplete="off"
+                                value={editUser?.username ?? ""}
+                                onChange={(e) =>
+                                    setEditUser((prev) => (prev ? { ...prev, username: e.target.value } : prev))
+                                }
+                                placeholder="janedoe"
+                            />
+                            <p className="text-xs text-muted-foreground">
+                                Used to sign in. Must be unique in this workspace.
+                            </p>
+                        </div>
+                        <div className="space-y-1.5">
+                            <Label htmlFor="edit-user-email">Email</Label>
+                            <Input
+                                id="edit-user-email"
                                 data-testid="input-edit-user-email"
                                 type="email"
-                                value={editDetailsUser?.email ?? ""}
+                                value={editUser?.email ?? ""}
                                 onChange={(e) =>
-                                    setEditDetailsUser((prev) => (prev ? { ...prev, email: e.target.value } : prev))
+                                    setEditUser((prev) => (prev ? { ...prev, email: e.target.value } : prev))
                                 }
                                 placeholder="jane@example.com"
                             />
@@ -921,49 +932,42 @@ export default function CompanySettingsView() {
                                 Leave email blank to keep the current address on file.
                             </p>
                         </div>
-                        {editDetailsError && <p className="text-sm text-destructive">{editDetailsError}</p>}
-                    </div>
-                    <DialogFooter>
-                        <Button
-                            variant="outline"
-                            onClick={() => setEditDetailsUser(null)}
-                            disabled={editDetailsLoading}
-                        >
-                            Cancel
-                        </Button>
-                        <Button data-testid="button-confirm-edit-user-details" onClick={() => void handleSaveUserDetails()} disabled={editDetailsLoading}>
-                            {editDetailsLoading ? "Saving…" : "Save"}
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
-
-            {/* Edit Role Dialog */}
-            <Dialog open={!!editRoleUser} onOpenChange={(open) => { if (!open) setEditRoleUser(null); }}>
-                <DialogContent className="sm:max-w-sm">
-                    <DialogHeader>
-                        <DialogTitle>Edit Role — {editRoleUser?.name}</DialogTitle>
-                    </DialogHeader>
-                    <div className="space-y-4 py-2">
                         <div className="space-y-1.5">
-                            <Label>New Role</Label>
-                            <Select value={editRole} onValueChange={(v) => setEditRole(v as UserRole)}>
-                                <SelectTrigger data-testid="select-edit-role">
+                            <Label>Role</Label>
+                            <Select
+                                value={editUser?.role ?? "employee"}
+                                onValueChange={(v) =>
+                                    setEditUser((prev) => (prev ? { ...prev, role: v as UserRole } : prev))
+                                }
+                                disabled={editUser != null && editUser.id === String(currentUser?.id)}
+                            >
+                                <SelectTrigger data-testid="select-edit-user-role">
                                     <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    {ALL_ROLES.map(r => (
-                                        <SelectItem key={r} value={r} className="capitalize">{r.charAt(0).toUpperCase() + r.slice(1)}</SelectItem>
+                                    {ALL_ROLES.map((r) => (
+                                        <SelectItem key={r} value={r} className="capitalize">
+                                            {r.charAt(0).toUpperCase() + r.slice(1)}
+                                        </SelectItem>
                                     ))}
                                 </SelectContent>
                             </Select>
+                            {editUser != null && editUser.id === String(currentUser?.id) && (
+                                <p className="text-xs text-muted-foreground">You cannot change your own role.</p>
+                            )}
                         </div>
-                        {editError && <p className="text-sm text-destructive">{editError}</p>}
+                        {editUserError && <p className="text-sm text-destructive">{editUserError}</p>}
                     </div>
                     <DialogFooter>
-                        <Button variant="outline" onClick={() => setEditRoleUser(null)} disabled={editLoading}>Cancel</Button>
-                        <Button data-testid="button-confirm-edit-role" onClick={handleEditRole} disabled={editLoading}>
-                            {editLoading ? "Saving..." : "Save Role"}
+                        <Button variant="outline" onClick={() => setEditUser(null)} disabled={editUserLoading}>
+                            Cancel
+                        </Button>
+                        <Button
+                            data-testid="button-confirm-edit-user"
+                            onClick={() => void handleSaveEditUser()}
+                            disabled={editUserLoading}
+                        >
+                            {editUserLoading ? "Saving…" : "Save"}
                         </Button>
                     </DialogFooter>
                 </DialogContent>

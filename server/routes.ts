@@ -373,6 +373,7 @@ export async function registerRoutes(
   const updateUserSchema = z.object({
     name: z.string().min(1).optional(),
     email: z.string().email().optional(),
+    username: z.string().min(1, "Username is required").optional(),
     role: z.enum(["admin", "manager", "employee", "client"]).optional(),
     status: z.string().optional(),
   });
@@ -397,11 +398,37 @@ export async function registerRoutes(
     if (!Number.isInteger(targetId) || targetId <= 0) return res.status(400).json({ message: "Invalid user id" });
     const parsed = updateUserSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: parsed.error.issues[0].message });
-    const { role } = parsed.data;
+    const { name, email, username, role, status } = parsed.data;
     if (role !== undefined && targetId === currentUser.id) {
       return res.status(400).json({ message: "You cannot change your own role" });
     }
-    const updated = await storage.updateUser(targetId, parsed.data);
+    const target = await storage.getUser(targetId);
+    if (!target) return res.status(404).json({ message: "User not found" });
+
+    const updates: Partial<{ name: string; email: string; username: string; role: string; status: string }> = {};
+    if (name !== undefined) updates.name = name;
+    if (email !== undefined) updates.email = email;
+    if (role !== undefined) updates.role = role;
+    if (status !== undefined) updates.status = status;
+    if (username !== undefined) {
+      const trimmed = username.trim();
+      if (trimmed.length < 1) {
+        return res.status(400).json({ message: "Username cannot be empty" });
+      }
+      if (trimmed !== target.username) {
+        const taken = await storage.getUserByUsername(trimmed);
+        if (taken && taken.id !== targetId) {
+          return res.status(409).json({ message: "Username already taken" });
+        }
+      }
+      updates.username = trimmed;
+    }
+
+    if (Object.keys(updates).length === 0) {
+      const { password: _pw, ...safe } = target;
+      return res.json(safe);
+    }
+    const updated = await storage.updateUser(targetId, updates);
     if (!updated) return res.status(404).json({ message: "User not found" });
     const { password: _pw, ...safe } = updated;
     res.json(safe);
