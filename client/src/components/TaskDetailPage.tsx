@@ -343,10 +343,6 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
   const [startDatePopoverOpen, setStartDatePopoverOpen] = useState(false);
   const [dueDatePopoverOpen, setDueDatePopoverOpen] = useState(false);
   const [timelineSaving, setTimelineSaving] = useState(false);
-  const [estimatedHoursInput, setEstimatedHoursInput] = useState(() =>
-    task.estimatedHours != null ? String(task.estimatedHours) : "",
-  );
-  const [estimatedHoursSaving, setEstimatedHoursSaving] = useState(false);
 
   const isClient = currentUser?.role === "client";
   const isFullAccess = isClient && clientPermissions?.clientTaskAccess === "full";
@@ -416,10 +412,6 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
   }, [liveTask, task.estimatedHours]);
 
   useEffect(() => {
-    setEstimatedHoursInput(estimatedHoursParsed != null ? String(estimatedHoursParsed) : "");
-  }, [task.id, estimatedHoursParsed]);
-
-  useEffect(() => {
     setComments(task.comments || []);
     setAttachments(task.attachments || []);
     setTags(task.tags?.length ? [...task.tags] : []);
@@ -477,38 +469,6 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
       toast({ title: "Could not update priority", variant: "destructive" });
     } finally {
       setPrioritySaving(false);
-    }
-  };
-
-  const commitEstimatedHours = async () => {
-    if (!canEditTaskFields || !Number.isInteger(numericTaskId) || numericTaskId <= 0) return;
-    const resolvedEstimate = getEstimatedHoursFromTaskPayload(liveTask) ?? parseTaskHoursField(task.estimatedHours);
-    const trimmed = estimatedHoursInput.trim();
-    let payload: number | null;
-    if (trimmed === "") {
-      payload = null;
-    } else {
-      const n = parseFloat(trimmed.replace(",", "."));
-      if (Number.isNaN(n) || n < 0) {
-        toast({ title: "Invalid estimated hours", description: "Use a non-negative number.", variant: "destructive" });
-        setEstimatedHoursInput(resolvedEstimate != null ? String(resolvedEstimate) : "");
-        return;
-      }
-      payload = Math.round(n * 100) / 100;
-    }
-    const current = resolvedEstimate;
-    const unchanged =
-      (payload === null && current === undefined) ||
-      (payload !== null && current !== undefined && Math.abs(payload - current) < 0.001);
-    if (unchanged) return;
-    setEstimatedHoursSaving(true);
-    try {
-      await patchTask({ estimatedHours: payload });
-    } catch {
-      setEstimatedHoursInput(resolvedEstimate != null ? String(resolvedEstimate) : "");
-      toast({ title: "Could not update estimated hours", variant: "destructive" });
-    } finally {
-      setEstimatedHoursSaving(false);
     }
   };
 
@@ -1267,11 +1227,11 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                          </DialogContent>
                      </Dialog>
 
-                     {/* Metadata Bar - Updated with Start/End Dates */}
+                     {/* Metadata: row 1 = assignees / timeline / tags; row 2 = hours (read-only estimate) */}
                      <div className="bg-muted/20 border border-border/50 rounded-xl overflow-hidden">
-                     <div className="grid grid-cols-1 md:grid-cols-12 gap-x-6 gap-y-4 p-5 md:items-start">
+                     <div className="grid grid-cols-1 md:grid-cols-12 gap-x-6 gap-y-4 p-5 md:items-start md:pb-4">
                         {/* Assignees */}
-                        <div className="space-y-2 md:col-span-3">
+                        <div className="space-y-2 md:col-span-3 min-w-0">
                              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Assignees</div>
                              <div className="flex flex-wrap gap-2">
                                 {assignees.map(id => {
@@ -1337,9 +1297,9 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                         </div>
 
                         {/* Dates - Start & Due */}
-                        <div className="space-y-2 md:col-span-4">
+                        <div className="space-y-2 md:col-span-5 min-w-0">
                              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Timeline</div>
-                             <div className="flex items-center gap-2 flex-wrap">
+                             <div className="flex flex-wrap items-center gap-x-2 gap-y-2">
                                  {(!isClient || isFullAccess) ? (
                                    <Popover open={startDatePopoverOpen} onOpenChange={setStartDatePopoverOpen}>
                                      <PopoverTrigger asChild>
@@ -1391,7 +1351,7 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                                     </div>
                                  )}
                                  
-                                 <ArrowRight className="w-3 h-3 text-muted-foreground/50" />
+                                 <ArrowRight className="w-3 h-3 shrink-0 text-muted-foreground/50" aria-hidden />
 
                                  {(!isClient || isFullAccess) ? (
                                      <Popover open={dueDatePopoverOpen} onOpenChange={setDueDatePopoverOpen}>
@@ -1433,50 +1393,8 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                              </div>
                         </div>
 
-                        {/* Hours — estimate vs actual (over-estimate callout lives below the grid so row height stays even) */}
-                        <div className="space-y-2 md:col-span-2 min-w-0">
-                          <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Hours</div>
-                          <div className="grid grid-cols-2 gap-3">
-                            <div className="min-w-0">
-                              <div className="text-[10px] font-medium text-muted-foreground mb-1">Estimated</div>
-                              {canEditTaskFields ? (
-                                <Input
-                                  type="number"
-                                  min={0}
-                                  step={0.25}
-                                  placeholder="—"
-                                  className="h-8 text-sm bg-background border-border/50"
-                                  value={estimatedHoursInput}
-                                  disabled={estimatedHoursSaving}
-                                  onChange={(e) => setEstimatedHoursInput(e.target.value)}
-                                  onBlur={() => void commitEstimatedHours()}
-                                  onKeyDown={(e) => {
-                                    if (e.key === "Enter") {
-                                      e.preventDefault();
-                                      (e.target as HTMLInputElement).blur();
-                                    }
-                                  }}
-                                />
-                              ) : (
-                                <div className="text-sm font-medium text-foreground tabular-nums">
-                                  {estimatedHoursParsed != null ? `${estimatedHoursParsed.toFixed(1)}h` : "—"}
-                                </div>
-                              )}
-                            </div>
-                            <div className="min-w-0">
-                              <div className="text-[10px] font-medium text-muted-foreground mb-1">Actual</div>
-                              <div className="text-sm font-medium tabular-nums text-foreground">
-                                {showActualHoursInHeader ? `${totalHours.toFixed(1)}h` : "—"}
-                              </div>
-                              {!showActualHoursInHeader && (
-                                <p className="text-[10px] text-muted-foreground mt-0.5 leading-tight">Hidden</p>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-
                          {/* Tags */}
-                         <div className="space-y-2 md:col-span-3">
+                         <div className="space-y-2 md:col-span-4 min-w-0">
                              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Tags</div>
                              <div className="flex flex-wrap gap-2">
                                 {tags.map((tag) => (
@@ -1532,6 +1450,27 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                                 )}
                             </div>
                         </div>
+                     </div>
+
+                     <div className="border-t border-border/50 px-5 py-4 bg-muted/10">
+                       <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Hours</div>
+                       <div className="flex flex-wrap gap-x-12 gap-y-3 items-start">
+                         <div className="min-w-[7rem]">
+                           <div className="text-[10px] font-medium text-muted-foreground mb-1">Estimated</div>
+                           <div className="text-sm font-medium text-foreground tabular-nums">
+                             {estimatedHoursParsed != null ? `${estimatedHoursParsed.toFixed(1)}h` : "—"}
+                           </div>
+                         </div>
+                         <div className="min-w-[7rem]">
+                           <div className="text-[10px] font-medium text-muted-foreground mb-1">Actual (logged)</div>
+                           <div className="text-sm font-medium tabular-nums text-foreground">
+                             {showActualHoursInHeader ? `${totalHours.toFixed(1)}h` : "—"}
+                           </div>
+                           {!showActualHoursInHeader && (
+                             <p className="text-[10px] text-muted-foreground mt-1">Hidden for your client role</p>
+                           )}
+                         </div>
+                       </div>
                      </div>
 
                      {taskOverInvested && (
