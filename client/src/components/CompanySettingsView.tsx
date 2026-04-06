@@ -971,40 +971,6 @@ export default function CompanySettingsView() {
                             />
                         </div>
                         <div className="space-y-1.5">
-                            <Label htmlFor="edit-user-username">Username</Label>
-                            {editMs365Staff ? (
-                                <>
-                                    <Input
-                                        id="edit-user-username"
-                                        data-testid="input-edit-user-username"
-                                        readOnly
-                                        className="bg-muted/50"
-                                        value={editUser?.username ?? ""}
-                                    />
-                                    <p className="text-xs text-muted-foreground">
-                                        Microsoft sign-in uses email; this username stays for internal records and is not
-                                        edited here.
-                                    </p>
-                                </>
-                            ) : (
-                                <>
-                                    <Input
-                                        id="edit-user-username"
-                                        data-testid="input-edit-user-username"
-                                        autoComplete="off"
-                                        value={editUser?.username ?? ""}
-                                        onChange={(e) =>
-                                            setEditUser((prev) => (prev ? { ...prev, username: e.target.value } : prev))
-                                        }
-                                        placeholder="janedoe"
-                                    />
-                                    <p className="text-xs text-muted-foreground">
-                                        Used to sign in. Must be unique in this workspace.
-                                    </p>
-                                </>
-                            )}
-                        </div>
-                        <div className="space-y-1.5">
                             <Label htmlFor="edit-user-email">Email</Label>
                             <Input
                                 id="edit-user-email"
@@ -1016,9 +982,16 @@ export default function CompanySettingsView() {
                                 }
                                 placeholder="jane@example.com"
                             />
-                            <p className="text-xs text-muted-foreground">
-                                Leave email blank to keep the current address on file.
-                            </p>
+                            {editMs365Staff ? (
+                                <p className="text-xs text-muted-foreground">
+                                    Must match their Microsoft work email for Sign in with Microsoft. Changing email and
+                                    saving assigns a new unique login id from the new address (same rules as adding a user).
+                                </p>
+                            ) : (
+                                <p className="text-xs text-muted-foreground">
+                                    Leave email blank to keep the current address on file.
+                                </p>
+                            )}
                         </div>
                         <div className="space-y-1.5">
                             <Label>Role</Label>
@@ -1044,6 +1017,49 @@ export default function CompanySettingsView() {
                                 <p className="text-xs text-muted-foreground">You cannot change your own role.</p>
                             )}
                         </div>
+                        {editMs365Staff ? (
+                            <div
+                                className="rounded-md border border-border/60 bg-muted/30 px-3 py-2.5 space-y-1"
+                                data-testid="edit-user-ms365-hint"
+                            >
+                                <p className="text-xs font-medium text-foreground">Microsoft 365 sign-in</p>
+                                <p className="text-xs text-muted-foreground">
+                                    Username is not edited manually. It is derived from the email (part before @), with a
+                                    numeric suffix if needed. A random password remains on file; sign-in is via Microsoft
+                                    only.
+                                </p>
+                                <p className="text-xs text-muted-foreground pt-1">
+                                    Current login id:{" "}
+                                    <span className="font-mono text-foreground">{editUser?.username || "—"}</span>
+                                </p>
+                                {editUser?.email?.includes("@") && (
+                                    <p className="text-xs text-muted-foreground pt-1">
+                                        If you save with this email, the next login id would start as{" "}
+                                        <span className="font-mono text-foreground">
+                                            {previewUsernameFromEmail(editUser.email)}
+                                        </span>{" "}
+                                        (or <span className="font-mono text-foreground">…-1</span>, etc. if that id is taken).
+                                    </p>
+                                )}
+                            </div>
+                        ) : (
+                            <div className="space-y-1.5">
+                                <Label htmlFor="edit-user-username">Username <span className="text-destructive">*</span></Label>
+                                <Input
+                                    id="edit-user-username"
+                                    data-testid="input-edit-user-username"
+                                    autoComplete="off"
+                                    value={editUser?.username ?? ""}
+                                    onChange={(e) =>
+                                        setEditUser((prev) => (prev ? { ...prev, username: e.target.value } : prev))
+                                    }
+                                    placeholder="janedoe"
+                                />
+                                <p className="text-xs text-muted-foreground">
+                                    Used to sign in. Must be unique in this workspace.
+                                </p>
+                            </div>
+                        )}
                         {editUserError && <p className="text-sm text-destructive">{editUserError}</p>}
                     </div>
                     <DialogFooter>

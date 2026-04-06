@@ -434,12 +434,18 @@ export async function registerRoutes(
     const target = await storage.getUser(targetId);
     if (!target) return res.status(404).json({ message: "User not found" });
 
+    const companySettingsRow = await storage.getCompanySettings();
+    const roleAfter = role !== undefined ? role : target.role;
+    const ms365Staff =
+      ms365FullyConfigured(companySettingsRow) &&
+      (roleAfter === "employee" || roleAfter === "manager");
+
     const updates: Partial<{ name: string; email: string; username: string; role: string; status: string }> = {};
     if (name !== undefined) updates.name = name;
-    if (email !== undefined) updates.email = email;
+    if (email !== undefined) updates.email = email.trim();
     if (role !== undefined) updates.role = role;
     if (status !== undefined) updates.status = status;
-    if (username !== undefined) {
+    if (username !== undefined && !ms365Staff) {
       const trimmed = username.trim();
       if (trimmed.length < 1) {
         return res.status(400).json({ message: "Username cannot be empty" });
@@ -453,17 +459,17 @@ export async function registerRoutes(
       updates.username = trimmed;
     }
 
-    const companySettingsRow = await storage.getCompanySettings();
-    if (
-      updates.username !== undefined &&
-      ms365FullyConfigured(companySettingsRow) &&
-      (target.role === "employee" || target.role === "manager") &&
-      updates.username !== target.username
-    ) {
-      return res.status(400).json({
-        message:
-          "Username cannot be changed for employees and managers while Microsoft 365 sign-in is configured.",
-      });
+    if (ms365Staff && email !== undefined) {
+      const newEmail = updates.email as string;
+      const oldNorm = (target.email ?? "").trim().toLowerCase();
+      const newNorm = newEmail.toLowerCase();
+      if (newNorm !== oldNorm) {
+        const dup = await storage.getUserByEmailIgnoreCase(newEmail);
+        if (dup && dup.id !== targetId) {
+          return res.status(409).json({ message: "A user with this email already exists" });
+        }
+        updates.username = await storage.allocateUniqueUsernameFromEmail(newEmail, targetId);
+      }
     }
 
     if (Object.keys(updates).length === 0) {

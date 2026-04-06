@@ -100,8 +100,8 @@ export interface IStorage {
 
   getUserByEmailIgnoreCase(email: string): Promise<User | undefined>;
 
-  /** Local part of email, sanitized; append -2, -3, … until unique. */
-  allocateUniqueUsernameFromEmail(email: string): Promise<string>;
+  /** Local part of email, sanitized; append -1, -2, … until unique. `excludeUserId` treats that user as not blocking. */
+  allocateUniqueUsernameFromEmail(email: string, excludeUserId?: number): Promise<string>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -126,7 +126,7 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
-  async allocateUniqueUsernameFromEmail(email: string): Promise<string> {
+  async allocateUniqueUsernameFromEmail(email: string, excludeUserId?: number): Promise<string> {
     const trimmed = email.trim().toLowerCase();
     const at = trimmed.indexOf("@");
     let base =
@@ -136,6 +136,7 @@ export class DatabaseStorage implements IStorage {
       const candidate = n === 0 ? base : `${base}-${n}`;
       const existing = await this.getUserByUsername(candidate);
       if (!existing) return candidate;
+      if (excludeUserId !== undefined && existing.id === excludeUserId) return candidate;
     }
     throw new Error("Could not allocate a unique username");
   }
