@@ -172,9 +172,9 @@ export default function TaskListView({ tasks, project, onTaskClick }: TaskListVi
                                                     {task.priority}
                                                 </Badge>
                                                 {overInvested && (
-                                                    <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-400 shrink-0" title="Over estimate">
+                                                    <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-400 shrink-0" title="Over budget">
                                                         <AlertTriangle className="w-3 h-3" />
-                                                        Over
+                                                        Over budget
                                                     </span>
                                                 )}
                                                 </div>

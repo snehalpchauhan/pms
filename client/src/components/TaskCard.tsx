@@ -91,10 +91,10 @@ export function TaskCard({ task, onClick, disableDrag = false }: TaskCardProps) 
               {overInvested && (
                 <span
                   className="inline-flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-400"
-                  title="Actual time logged exceeds the estimate"
+                  title="Actual time logged exceeds the budget"
                 >
                   <AlertTriangle className="w-3 h-3" />
-                  Over
+                  Over budget
                 </span>
               )}
             </div>

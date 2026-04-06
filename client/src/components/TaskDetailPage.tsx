@@ -1476,11 +1476,11 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                      {taskOverInvested && (
                        <div
                          className="flex items-center gap-2 px-5 py-2 border-t border-amber-500/25 bg-amber-500/10 text-xs text-amber-900 dark:text-amber-100"
-                         data-testid="banner-over-estimate"
+                         data-testid="banner-over-budget"
                        >
                          <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
                          <span className="min-w-0 leading-snug">
-                           <span className="font-medium">Over estimate:</span>{" "}
+                           <span className="font-medium">Over budget:</span>{" "}
                            <span className="tabular-nums">{totalHours.toFixed(1)}h</span> logged vs{" "}
                            <span className="tabular-nums">{estimatedHoursParsed!.toFixed(1)}h</span> estimated
                          </span>
@@ -1673,7 +1673,7 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                               <div className="flex items-start gap-2 p-3 rounded-lg border border-amber-500/40 bg-amber-500/10 text-sm text-amber-900 dark:text-amber-100">
                                 <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
                                 <span>
-                                  Logged time ({totalHours.toFixed(1)}h) exceeds the estimate ({estimatedHoursParsed!.toFixed(1)}h).
+                                  Logged time ({totalHours.toFixed(1)}h) exceeds the budget ({estimatedHoursParsed!.toFixed(1)}h).
                                 </span>
                               </div>
                             )}
