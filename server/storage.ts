@@ -84,7 +84,16 @@ export interface IStorage {
   createTimeEntry(entry: InsertTimeEntry): Promise<TimeEntry>;
   getTimeEntriesByTask(taskId: number): Promise<(TimeEntry & { userName: string })[]>;
   getTimeEntriesByUser(userId: number): Promise<TimeEntry[]>;
-  getAllTimeEntries(filters?: { userId?: number; projectId?: number; startDate?: string; endDate?: string; clientVisibleOnly?: boolean; clientProjectIds?: number[] }): Promise<(TimeEntry & { taskTitle: string; projectId: number; userName: string })[]>;
+  getAllTimeEntries(filters?: {
+    userId?: number;
+    projectId?: number;
+    startDate?: string;
+    endDate?: string;
+    clientVisibleOnly?: boolean;
+    clientProjectIds?: number[];
+    /** If set, only entries whose task belongs to one of these projects */
+    allowedProjectIds?: number[];
+  }): Promise<(TimeEntry & { taskTitle: string; projectId: number; userName: string })[]>;
   deleteTimeEntry(id: number): Promise<void>;
   getTimeEntry(id: number): Promise<TimeEntry | undefined>;
 
@@ -549,7 +558,15 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(timeEntries).where(eq(timeEntries.userId, userId)).orderBy(desc(timeEntries.id));
   }
 
-  async getAllTimeEntries(filters?: { userId?: number; projectId?: number; startDate?: string; endDate?: string; clientVisibleOnly?: boolean; clientProjectIds?: number[] }): Promise<(TimeEntry & { taskTitle: string; projectId: number; userName: string })[]> {
+  async getAllTimeEntries(filters?: {
+    userId?: number;
+    projectId?: number;
+    startDate?: string;
+    endDate?: string;
+    clientVisibleOnly?: boolean;
+    clientProjectIds?: number[];
+    allowedProjectIds?: number[];
+  }): Promise<(TimeEntry & { taskTitle: string; projectId: number; userName: string })[]> {
     const rows = await db
       .select({
         id: timeEntries.id,
@@ -574,6 +591,13 @@ export class DatabaseStorage implements IStorage {
       if (filters?.endDate && row.logDate > filters.endDate) return false;
       if (filters?.clientVisibleOnly && !row.clientVisible) return false;
       if (filters?.clientProjectIds && !filters.clientProjectIds.includes(row.projectId)) return false;
+      if (
+        filters?.allowedProjectIds &&
+        filters.allowedProjectIds.length > 0 &&
+        !filters.allowedProjectIds.includes(row.projectId)
+      ) {
+        return false;
+      }
       return true;
     });
   }

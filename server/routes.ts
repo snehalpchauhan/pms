@@ -540,13 +540,12 @@ export async function registerRoutes(
   // Projects
   app.get("/api/projects", requireAuth, async (req, res) => {
     const currentUser = req.user as any;
-    if (currentUser.role === "client") {
-      const userProjects = await storage.getUserProjects(currentUser.id);
-      res.json(userProjects);
-    } else {
+    if (currentUser.role === "admin") {
       const allProjects = await storage.getProjects();
-      res.json(allProjects);
+      return res.json(allProjects);
     }
+    const userProjects = await storage.getUserProjects(currentUser.id);
+    res.json(userProjects);
   });
 
   app.get("/api/projects/:id", requireAuth, async (req, res) => {
@@ -554,8 +553,7 @@ export async function registerRoutes(
     const projectId = Number(req.params.id);
     const project = await storage.getProject(projectId);
     if (!project) return res.status(404).json({ message: "Project not found" });
-    // Clients can only access their own projects
-    if (currentUser.role === "client") {
+    if (currentUser.role !== "admin") {
       const membership = await storage.getProjectMembership(projectId, currentUser.id);
       if (!membership) return res.status(403).json({ message: "Access denied" });
     }
@@ -752,8 +750,7 @@ export async function registerRoutes(
   app.get("/api/projects/:id/members", requireAuth, async (req, res) => {
     const currentUser = req.user as any;
     const projectId = Number(req.params.id);
-    // Clients can only view members of their own projects
-    if (currentUser.role === "client") {
+    if (currentUser.role !== "admin") {
       const membership = await storage.getProjectMembership(projectId, currentUser.id);
       if (!membership) return res.status(403).json({ message: "Access denied" });
     }
@@ -907,8 +904,7 @@ export async function registerRoutes(
   app.get("/api/projects/:id/has-client-timecards", requireAuth, async (req, res) => {
     const currentUser = req.user as any;
     const projectId = Number(req.params.id);
-    // Clients must be members of this project to query its settings
-    if (currentUser.role === "client") {
+    if (currentUser.role !== "admin") {
       const membership = await storage.getProjectMembership(projectId, currentUser.id);
       if (!membership) return res.status(403).json({ message: "Access denied" });
     }
@@ -919,20 +915,22 @@ export async function registerRoutes(
   // Tasks
   app.get("/api/tasks", requireAuth, async (req, res) => {
     const currentUser = req.user as any;
-    if (currentUser.role === "client") {
-      const userProjects = await storage.getUserProjects(currentUser.id);
-      const allTasks: any[] = [];
-      for (const project of userProjects) {
-        const projectTasks = await storage.getTasksByProject(project.id);
-        projectTasks.forEach(t => allTasks.push({ id: t.id, title: t.title, projectId: t.projectId, projectName: project.name, status: t.status }));
-      }
-      return res.json(allTasks);
-    }
-    const allProjects = await storage.getProjects();
+    const projects =
+      currentUser.role === "admin"
+        ? await storage.getProjects()
+        : await storage.getUserProjects(currentUser.id);
     const allTasks: any[] = [];
-    for (const project of allProjects) {
+    for (const project of projects) {
       const projectTasks = await storage.getTasksByProject(project.id);
-      projectTasks.forEach(t => allTasks.push({ id: t.id, title: t.title, projectId: t.projectId, projectName: project.name, status: t.status }));
+      projectTasks.forEach((t) =>
+        allTasks.push({
+          id: t.id,
+          title: t.title,
+          projectId: t.projectId,
+          projectName: project.name,
+          status: t.status,
+        }),
+      );
     }
     res.json(allTasks);
   });
@@ -947,6 +945,11 @@ export async function registerRoutes(
     if (isClient) {
       clientMembership = await storage.getProjectMembership(projectId, currentUser.id);
       if (!clientMembership) {
+        return res.status(403).json({ message: "Access denied: not a member of this project" });
+      }
+    } else if (currentUser.role !== "admin") {
+      const staffMem = await storage.getProjectMembership(projectId, currentUser.id);
+      if (!staffMem) {
         return res.status(403).json({ message: "Access denied: not a member of this project" });
       }
     }
@@ -995,6 +998,9 @@ export async function registerRoutes(
     if (currentUser.role === "client") {
       clientMembership = await storage.getProjectMembership(task.projectId, currentUser.id);
       if (!clientMembership) return res.status(403).json({ message: "Access denied" });
+    } else if (currentUser.role !== "admin") {
+      const staffMem = await storage.getProjectMembership(task.projectId, currentUser.id);
+      if (!staffMem) return res.status(403).json({ message: "Access denied" });
     }
     const assignees = await storage.getTaskAssignees(task.id);
     const checklist = await storage.getChecklistItems(task.id);
@@ -1034,6 +1040,11 @@ export async function registerRoutes(
       }
       // Tag client tasks
       taskData.tags = [...(taskData.tags || []), "[Client Request]"];
+    }
+    if (currentUser.role !== "admin" && currentUser.role !== "client") {
+      const pidMem = Number(taskData.projectId);
+      const m = await storage.getProjectMembership(pidMem, currentUser.id);
+      if (!m) return res.status(403).json({ message: "Access denied" });
     }
     const pid = Number(taskData.projectId);
     const st = String(taskData.status ?? "todo");
@@ -1086,9 +1097,11 @@ export async function registerRoutes(
     const task = await storage.getTask(taskId);
     if (!task) return res.status(404).json({ message: "Task not found" });
 
-    const membership = await storage.getProjectMembership(task.projectId, currentUser.id);
-    if (!membership) {
-      return res.status(403).json({ message: "Access denied" });
+    if (currentUser.role !== "admin") {
+      const membership = await storage.getProjectMembership(task.projectId, currentUser.id);
+      if (!membership) {
+        return res.status(403).json({ message: "Access denied" });
+      }
     }
 
     const isOwner = task.ownerId != null && Number(task.ownerId) === Number(currentUser.id);
@@ -1136,6 +1149,10 @@ export async function registerRoutes(
 
     const before = await storage.getTask(taskId);
     if (!before) return res.status(404).json({ message: "Task not found" });
+    if (currentUser.role !== "client" && currentUser.role !== "admin") {
+      const staffMem = await storage.getProjectMembership(before.projectId, currentUser.id);
+      if (!staffMem) return res.status(403).json({ message: "Access denied" });
+    }
 
     const project = await storage.getProject(before.projectId);
     const boardCols: BoardColumn[] = Array.isArray(project?.columns) ? (project!.columns as BoardColumn[]) : [];
@@ -1176,7 +1193,7 @@ export async function registerRoutes(
 
     if (statusChanged) {
       const fromT = boardColumnTitle(boardCols, before.status);
-      const toT = boardColumnTitle(boardCols, updates.status);
+      const toT = boardColumnTitle(boardCols, typeof updates.status === "string" ? updates.status : before.status);
       await appendSystemLog(`Moved to ${toT} (from ${fromT}).`);
     }
 
@@ -1374,14 +1391,32 @@ export async function registerRoutes(
     return !!(membership && membership.clientTaskAccess === "full");
   }
 
+  /** Admins bypass; clients rely on route-specific rules; other roles must be project members. */
+  async function requireStaffProjectMembership(
+    user: { id: number; role?: string },
+    projectId: number,
+  ): Promise<boolean> {
+    if (user.role === "admin") return true;
+    if (user.role === "client") return true;
+    const m = await storage.getProjectMembership(projectId, user.id);
+    return !!m;
+  }
+
   // Checklist
   app.post("/api/tasks/:taskId/checklist", requireAuth, async (req, res) => {
     const currentUser = req.user as any;
+    const tid = Number(req.params.taskId);
     if (currentUser.role === "client") {
-      const ok = await clientHasFullAccess(currentUser.id, Number(req.params.taskId));
+      const ok = await clientHasFullAccess(currentUser.id, tid);
       if (!ok) return res.status(403).json({ message: "Not authorized" });
+    } else {
+      const taskRow = await storage.getTask(tid);
+      if (!taskRow) return res.status(404).json({ message: "Task not found" });
+      if (!(await requireStaffProjectMembership(currentUser, taskRow.projectId))) {
+        return res.status(403).json({ message: "Not authorized" });
+      }
     }
-    const item = await storage.createChecklistItem(Number(req.params.taskId), req.body.text);
+    const item = await storage.createChecklistItem(tid, req.body.text);
     const snippet =
       item.text.length > 80 ? `${item.text.slice(0, 77)}...` : item.text;
     await storage.createComment({
@@ -1400,6 +1435,12 @@ export async function registerRoutes(
     if (currentUser.role === "client") {
       const ok = await clientHasFullAccess(currentUser.id, item.taskId);
       if (!ok) return res.status(403).json({ message: "Not authorized" });
+    } else {
+      const taskRow = await storage.getTask(item.taskId);
+      if (!taskRow) return res.status(404).json({ message: "Not found" });
+      if (!(await requireStaffProjectMembership(currentUser, taskRow.projectId))) {
+        return res.status(403).json({ message: "Not authorized" });
+      }
     }
     const prevCompleted = item.completed;
     await storage.updateChecklistItem(Number(req.params.id), req.body.completed);
@@ -1424,6 +1465,12 @@ export async function registerRoutes(
     if (currentUser.role === "client") {
       const ok = await clientHasFullAccess(currentUser.id, item.taskId);
       if (!ok) return res.status(403).json({ message: "Not authorized" });
+    } else {
+      const taskRow = await storage.getTask(item.taskId);
+      if (!taskRow) return res.status(404).json({ message: "Not found" });
+      if (!(await requireStaffProjectMembership(currentUser, taskRow.projectId))) {
+        return res.status(403).json({ message: "Not authorized" });
+      }
     }
     const snippet = item.text.length > 80 ? `${item.text.slice(0, 77)}...` : item.text;
     await storage.deleteChecklistItem(Number(req.params.id));
@@ -1455,6 +1502,8 @@ export async function registerRoutes(
     if (currentUser.role === "client") {
       const ok = await clientHasFullAccess(currentUser.id, taskId);
       if (!ok) return res.status(403).json({ message: "Not authorized" });
+    } else if (!(await requireStaffProjectMembership(currentUser, task.projectId))) {
+      return res.status(403).json({ message: "Not authorized" });
     }
 
     if (req.body?.fileDataUrl != null) {
@@ -1522,6 +1571,12 @@ export async function registerRoutes(
       if (!attachment.taskId) return res.status(403).json({ message: "Not authorized" });
       const ok = await clientHasFullAccess(currentUser.id, attachment.taskId);
       if (!ok) return res.status(403).json({ message: "Not authorized" });
+    } else if (attachment.taskId) {
+      const taskRow = await storage.getTask(attachment.taskId);
+      if (!taskRow) return res.status(404).json({ message: "Not found" });
+      if (!(await requireStaffProjectMembership(currentUser, taskRow.projectId))) {
+        return res.status(403).json({ message: "Not authorized" });
+      }
     }
 
     const taskIdForLog = attachment.taskId;
@@ -1552,6 +1607,12 @@ export async function registerRoutes(
       if (!task) return res.status(404).json({ message: "Not found" });
       const membership = await storage.getProjectMembership(task.projectId, currentUser.id);
       if (!membership) return res.status(403).json({ message: "Access denied" });
+    } else {
+      const task = await storage.getTask(taskId);
+      if (!task) return res.status(404).json({ message: "Not found" });
+      if (!(await requireStaffProjectMembership(currentUser, task.projectId))) {
+        return res.status(403).json({ message: "Access denied" });
+      }
     }
     const taskComments = await storage.getComments(taskId);
     res.json(taskComments);
@@ -1566,6 +1627,12 @@ export async function registerRoutes(
       if (!task) return res.status(404).json({ message: "Not found" });
       const membership = await storage.getProjectMembership(task.projectId, currentUser.id);
       if (!membership) return res.status(403).json({ message: "Access denied" });
+    } else {
+      const task = await storage.getTask(taskId);
+      if (!task) return res.status(404).json({ message: "Not found" });
+      if (!(await requireStaffProjectMembership(currentUser, task.projectId))) {
+        return res.status(403).json({ message: "Access denied" });
+      }
     }
     const comment = await storage.createComment({
       taskId,
@@ -1607,6 +1674,8 @@ export async function registerRoutes(
     if (currentUser.role === "client") {
       const membership = await storage.getProjectMembership(task.projectId, currentUser.id);
       if (!membership) return res.status(403).json({ message: "Access denied" });
+    } else if (!(await requireStaffProjectMembership(currentUser, task.projectId))) {
+      return res.status(403).json({ message: "Access denied" });
     }
     const nextContent = parsed.data.content;
     if (comment.content === nextContent) {
@@ -1636,6 +1705,8 @@ export async function registerRoutes(
     if (currentUser.role === "client") {
       const membership = await storage.getProjectMembership(task.projectId, currentUser.id);
       if (!membership) return res.status(403).json({ message: "Access denied" });
+    } else if (!(await requireStaffProjectMembership(currentUser, task.projectId))) {
+      return res.status(403).json({ message: "Access denied" });
     }
     const subtree = await storage.getCommentSubtreePostOrder(comment.taskId, commentId);
     const attachmentRows = await storage.getAttachments(comment.taskId);
@@ -1664,11 +1735,40 @@ export async function registerRoutes(
       // Clients see no channels
       return res.json([]);
     }
-    const projectId = req.query.projectId ? Number(req.query.projectId) : undefined;
-    const allChannels = await storage.getChannels(projectId);
-    const uniqueProjectIds = [
-      ...new Set(allChannels.map((c) => c.projectId).filter((id): id is number => id != null)),
-    ];
+    const rawProjectId = req.query.projectId;
+    let allChannels: Awaited<ReturnType<typeof storage.getChannels>>;
+    if (currentUser.role === "admin") {
+      const projectId =
+        rawProjectId != null && String(rawProjectId).trim() !== ""
+          ? Number(rawProjectId)
+          : undefined;
+      allChannels = await storage.getChannels(projectId);
+    } else {
+      const userProjects = await storage.getUserProjects(currentUser.id);
+      const memberIds = new Set(userProjects.map((p) => p.id));
+      if (rawProjectId != null && String(rawProjectId).trim() !== "") {
+        const pid = Number(rawProjectId);
+        if (!Number.isInteger(pid) || pid <= 0 || !memberIds.has(pid)) {
+          return res.json([]);
+        }
+        allChannels = await storage.getChannels(pid);
+      } else {
+        const lists = await Promise.all(userProjects.map((p) => storage.getChannels(p.id)));
+        const seen = new Set<number>();
+        allChannels = [];
+        for (const list of lists) {
+          for (const ch of list) {
+            if (!seen.has(ch.id)) {
+              seen.add(ch.id);
+              allChannels.push(ch);
+            }
+          }
+        }
+      }
+    }
+    const uniqueProjectIds = Array.from(
+      new Set(allChannels.map((c) => c.projectId).filter((id): id is number => id != null)),
+    );
     const projectMemberCountMap = new Map<number, number>();
     await Promise.all(
       uniqueProjectIds.map(async (pid) => {
@@ -1734,6 +1834,8 @@ export async function registerRoutes(
   async function userCanAccessChannel(userId: number, channelId: number): Promise<boolean> {
     const channel = await storage.getChannel(channelId);
     if (!channel) return false;
+    const channelUser = await storage.getUser(userId);
+    if (channelUser?.role === "admin") return true;
     const members = await storage.getChannelMembers(channelId);
     if (channel.type === "direct") {
       return members.some((m) => m.id === userId);
@@ -1870,7 +1972,7 @@ export async function registerRoutes(
     if (!parsed.success) return res.status(400).json({ message: "Invalid body" });
 
     const projectId = channel.projectId;
-    const withEditor = [...new Set([...parsed.data.memberIds, currentUser.id])];
+    const withEditor = Array.from(new Set([...parsed.data.memberIds, currentUser.id]));
     for (const uid of withEditor) {
       const m = await storage.getProjectMembership(projectId, uid);
       if (!m) {
@@ -1970,14 +2072,18 @@ export async function registerRoutes(
   app.post("/api/tasks/:taskId/time-entries", requireAuth, async (req, res) => {
     const currentUser = req.user as any;
     const taskId = Number(req.params.taskId);
+    if (!Number.isInteger(taskId) || taskId <= 0) {
+      return res.status(400).json({ message: "Invalid task" });
+    }
+    const taskForTime = await storage.getTask(taskId);
+    if (!taskForTime) return res.status(404).json({ message: "Task not found" });
     if (currentUser.role === "client") {
-      // Only full-access clients can log time
-      const task = await storage.getTask(taskId);
-      if (!task) return res.status(404).json({ message: "Task not found" });
-      const membership = await storage.getProjectMembership(task.projectId, currentUser.id);
+      const membership = await storage.getProjectMembership(taskForTime.projectId, currentUser.id);
       if (!membership || membership.clientTaskAccess !== "full") {
         return res.status(403).json({ message: "Clients cannot log time" });
       }
+    } else if (!(await requireStaffProjectMembership(currentUser, taskForTime.projectId))) {
+      return res.status(403).json({ message: "Access denied" });
     }
     const userId = currentUser.id;
     const { hours, description, logDate, clientVisible } = req.body;
@@ -1992,7 +2098,11 @@ export async function registerRoutes(
       });
     }
     const entry = await storage.createTimeEntry({
-      taskId, userId, hours: String(hours), description: descStr, logDate,
+      taskId: taskId,
+      userId,
+      hours: String(hours),
+      description: descStr,
+      logDate,
       clientVisible: clientVisible !== undefined ? clientVisible : true,
     });
     const hrs = String(hours);
@@ -2013,15 +2123,20 @@ export async function registerRoutes(
   app.get("/api/tasks/:taskId/time-entries", requireAuth, async (req, res) => {
     const currentUser = req.user as any;
     const taskId = Number(req.params.taskId);
+    if (!Number.isInteger(taskId) || taskId <= 0) {
+      return res.status(400).json({ message: "Invalid task" });
+    }
+    const taskForList = await storage.getTask(taskId);
+    if (!taskForList) return res.status(404).json({ message: "Task not found" });
     if (currentUser.role === "client") {
-      // Verify client is a member of the task's project
-      const task = await storage.getTask(taskId);
-      if (!task) return res.status(404).json({ message: "Task not found" });
-      const membership = await storage.getProjectMembership(task.projectId, currentUser.id);
+      const membership = await storage.getProjectMembership(taskForList.projectId, currentUser.id);
       if (!membership) return res.status(403).json({ message: "Access denied" });
       if (!membership.clientShowTimecards) return res.json([]);
       const entries = await storage.getTimeEntriesByTask(taskId);
-      return res.json(entries.filter(e => e.clientVisible !== false));
+      return res.json(entries.filter((e) => e.clientVisible !== false));
+    }
+    if (!(await requireStaffProjectMembership(currentUser, taskForList.projectId))) {
+      return res.status(403).json({ message: "Access denied" });
     }
     const entries = await storage.getTimeEntriesByTask(taskId);
     res.json(entries);
@@ -2043,7 +2158,14 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Not authorized to delete this entry" });
       }
     } else {
-      const canDelete = entry.userId === currentUser.id || currentUser.role === "admin" || currentUser.role === "manager";
+      const taskForDel = await storage.getTask(entry.taskId);
+      if (!taskForDel) return res.status(404).json({ message: "Task not found" });
+      if (currentUser.role !== "admin") {
+        const mem = await storage.getProjectMembership(taskForDel.projectId, currentUser.id);
+        if (!mem) return res.status(403).json({ message: "Not authorized to delete this entry" });
+      }
+      const canDelete =
+        entry.userId === currentUser.id || currentUser.role === "admin" || currentUser.role === "manager";
       if (!canDelete) return res.status(403).json({ message: "Not authorized to delete this entry" });
     }
     const taskIdLog = entry.taskId;
@@ -2090,15 +2212,43 @@ export async function registerRoutes(
       return res.json(entries);
     }
 
-    const filters: { userId?: number; projectId?: number; startDate?: string; endDate?: string } = {};
-    if (req.query.projectId) filters.projectId = Number(req.query.projectId);
+    const filters: {
+      userId?: number;
+      projectId?: number;
+      startDate?: string;
+      endDate?: string;
+      allowedProjectIds?: number[];
+    } = {};
     if (req.query.startDate) filters.startDate = String(req.query.startDate);
     if (req.query.endDate) filters.endDate = String(req.query.endDate);
-    if (isManagerOrAdmin) {
-      if (req.query.userId) filters.userId = Number(req.query.userId);
+
+    if (currentUser.role === "admin") {
+      if (req.query.projectId) filters.projectId = Number(req.query.projectId);
+      if (isManagerOrAdmin) {
+        if (req.query.userId) filters.userId = Number(req.query.userId);
+      } else {
+        filters.userId = currentUser.id;
+      }
     } else {
-      filters.userId = currentUser.id;
+      const ups = await storage.getUserProjects(currentUser.id);
+      filters.allowedProjectIds = ups.map((p) => p.id);
+      if (filters.allowedProjectIds.length === 0) {
+        return res.json([]);
+      }
+      if (req.query.projectId) {
+        const pid = Number(req.query.projectId);
+        if (!filters.allowedProjectIds.includes(pid)) {
+          return res.json([]);
+        }
+        filters.projectId = pid;
+      }
+      if (isManagerOrAdmin) {
+        if (req.query.userId) filters.userId = Number(req.query.userId);
+      } else {
+        filters.userId = currentUser.id;
+      }
     }
+
     const entries = await storage.getAllTimeEntries(filters);
     res.json(entries);
   });
@@ -2111,6 +2261,10 @@ export async function registerRoutes(
     if (!taskId || !hours || !logDate) return res.status(400).json({ message: "taskId, hours and logDate are required" });
     const task = await storage.getTask(Number(taskId));
     if (!task) return res.status(404).json({ message: "Task not found" });
+    if (currentUser.role !== "admin") {
+      const mem = await storage.getProjectMembership(task.projectId, currentUser.id);
+      if (!mem) return res.status(403).json({ message: "Access denied" });
+    }
     const tid = Number(taskId);
     const descStrGlobal = description != null && String(description).trim() !== "" ? String(description) : null;
     const csGlobalTime = await storage.getCompanySettings();
