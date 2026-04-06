@@ -29,7 +29,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { Calendar, Paperclip, Tag, User as UserIcon, CheckCircle2, MessageSquare, Plus, X, Reply, Clock, History, FileText, Activity, Repeat, CalendarCheck, ArrowRight, CheckSquare, Trash2, Download, Lock, RotateCcw } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { cn } from "@/lib/utils";
+import { cn, getUserInitials } from "@/lib/utils";
 import { useState, useEffect, useMemo, useRef } from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -375,6 +375,24 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
       };
     },
   });
+
+  const { data: projectMembers = [], isLoading: projectMembersLoading } = useQuery<
+    { id: number; name: string; avatar?: string | null }[]
+  >({
+    queryKey: ["/api/projects", numericProjectId, "members-with-settings"],
+    queryFn: async () => {
+      const res = await fetch(`/api/projects/${numericProjectId}/members`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load project members");
+      return res.json();
+    },
+    enabled: Number.isInteger(numericProjectId) && numericProjectId > 0,
+  });
+
+  const assignableProjectMembers = useMemo(() => {
+    return projectMembers
+      .filter((m) => !assignees.includes(String(m.id)))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [projectMembers, assignees]);
 
   useEffect(() => {
     setComments(task.comments || []);
@@ -1231,23 +1249,34 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                                         </PopoverTrigger>
                                         <PopoverContent className="w-60 p-2" align="start">
                                             <div className="space-y-1">
-                                                <div className="text-xs font-semibold text-muted-foreground px-2 py-1.5">Add Assignee</div>
-                                                {Object.values(users).filter(u => !assignees.includes(u.id)).map(user => (
+                                                <div className="text-xs font-semibold text-muted-foreground px-2 py-1.5">Add assignee</div>
+                                                <p className="px-2 pb-1 text-[10px] text-muted-foreground">
+                                                  Only people on this project can be assigned.
+                                                </p>
+                                                {assignableProjectMembers.map((m) => (
                                                     <button 
-                                                        key={user.id}
+                                                        key={m.id}
                                                         type="button"
-                                                        onClick={() => void toggleAssignee(user.id)}
+                                                        onClick={() => void toggleAssignee(String(m.id))}
                                                         className="flex items-center gap-2 w-full px-2 py-1.5 hover:bg-muted rounded-md text-sm transition-colors"
                                                     >
                                                         <Avatar className="h-6 w-6">
-                                                            <AvatarImage src={user.avatar} />
-                                                            <AvatarFallback>{user.name[0]}</AvatarFallback>
+                                                            <AvatarImage src={m.avatar?.trim() || undefined} />
+                                                            <AvatarFallback className="text-[10px]">
+                                                              {getUserInitials(m.name, undefined)}
+                                                            </AvatarFallback>
                                                         </Avatar>
-                                                        <span>{user.name}</span>
+                                                        <span>{m.name}</span>
                                                     </button>
                                                 ))}
-                                                {Object.values(users).filter(u => !assignees.includes(u.id)).length === 0 && (
-                                                    <div className="text-xs text-muted-foreground px-2 py-2 italic">All users assigned</div>
+                                                {assignableProjectMembers.length === 0 && (
+                                                    <div className="text-xs text-muted-foreground px-2 py-2 italic">
+                                                      {projectMembersLoading
+                                                        ? "Loading members…"
+                                                        : projectMembers.length === 0
+                                                          ? "No members on this project yet. Add them under Members & Access."
+                                                          : "Everyone on this project is already assigned."}
+                                                    </div>
                                                 )}
                                             </div>
                                         </PopoverContent>

@@ -940,9 +940,22 @@ export async function registerRoutes(
       const maxOrder = await storage.getMaxBoardOrderForStatus(pid, st);
       taskData.boardOrder = maxOrder + 1;
     }
+    const assigneeIds = Array.isArray(assignees)
+      ? assignees
+          .map((id: unknown) => Number(id))
+          .filter((n: number) => Number.isInteger(n) && n > 0)
+      : [];
+    if (assigneeIds.length > 0 && Number.isInteger(pid) && pid > 0) {
+      for (const uid of assigneeIds) {
+        const mem = await storage.getProjectMembership(pid, uid);
+        if (!mem) {
+          return res.status(400).json({ message: "Assignees must be members of this project" });
+        }
+      }
+    }
     const task = await storage.createTask({ ...taskData, ownerId: currentUser.id });
-    if (assignees && assignees.length > 0) {
-      await storage.setTaskAssignees(task.id, assignees);
+    if (assigneeIds.length > 0) {
+      await storage.setTaskAssignees(task.id, assigneeIds);
     }
     res.status(201).json(task);
   });
@@ -1010,6 +1023,12 @@ export async function registerRoutes(
       const ids = assignees
         .map((id: unknown) => Number(id))
         .filter((n: number) => Number.isInteger(n) && n > 0);
+      for (const uid of ids) {
+        const mem = await storage.getProjectMembership(before.projectId, uid);
+        if (!mem) {
+          return res.status(400).json({ message: "Assignees must be members of this project" });
+        }
+      }
       await storage.setTaskAssignees(task.id, ids);
     }
 
