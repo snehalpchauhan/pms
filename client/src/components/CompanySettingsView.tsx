@@ -18,7 +18,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Building2, Upload, Plus, MoreHorizontal, Search, Trash2, UserCog, LogIn, Kanban } from "lucide-react";
+import { Building2, Upload, Plus, MoreHorizontal, Search, Trash2, UserCog, LogIn, Kanban, Pencil } from "lucide-react";
 import {
     WORKFLOW_COLUMN_PRESETS,
     DEFAULT_TASK_CLIENT_REOPEN_STATUS,
@@ -87,6 +87,10 @@ export default function CompanySettingsView() {
     const [editRole, setEditRole] = useState<UserRole>("employee");
     const [editLoading, setEditLoading] = useState(false);
     const [editError, setEditError] = useState("");
+
+    const [editDetailsUser, setEditDetailsUser] = useState<{ id: string; name: string; email: string } | null>(null);
+    const [editDetailsLoading, setEditDetailsLoading] = useState(false);
+    const [editDetailsError, setEditDetailsError] = useState("");
 
     const [deleteUserId, setDeleteUserId] = useState<string | null>(null);
     const [deleteLoading, setDeleteLoading] = useState(false);
@@ -260,6 +264,37 @@ export default function CompanySettingsView() {
             setEditError(parseApiError(err));
         } finally {
             setEditLoading(false);
+        }
+    }
+
+    async function handleSaveUserDetails() {
+        if (!editDetailsUser) return;
+        const name = editDetailsUser.name.trim();
+        const email = editDetailsUser.email.trim();
+        setEditDetailsError("");
+        if (!name) {
+            setEditDetailsError("Name is required.");
+            return;
+        }
+        if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+            setEditDetailsError("Enter a valid email address.");
+            return;
+        }
+        const body: { name: string; email?: string } = { name };
+        if (email) body.email = email;
+        setEditDetailsLoading(true);
+        try {
+            await apiRequest("PATCH", `/api/users/${editDetailsUser.id}`, body);
+            await refetchUsers();
+            if (String(currentUser?.id) === editDetailsUser.id) {
+                await queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+            }
+            setEditDetailsUser(null);
+            toast({ title: "User updated" });
+        } catch (err) {
+            setEditDetailsError(parseApiError(err));
+        } finally {
+            setEditDetailsLoading(false);
         }
     }
 
@@ -720,6 +755,19 @@ export default function CompanySettingsView() {
                                                         </DropdownMenuTrigger>
                                                         <DropdownMenuContent align="end">
                                                             <DropdownMenuItem
+                                                                data-testid={`menu-edit-user-details-${user.id}`}
+                                                                onClick={() => {
+                                                                    setEditDetailsError("");
+                                                                    setEditDetailsUser({
+                                                                        id: user.id,
+                                                                        name: user.name,
+                                                                        email: user.email ?? "",
+                                                                    });
+                                                                }}
+                                                            >
+                                                                <Pencil className="w-4 h-4 mr-2" /> Edit name and email
+                                                            </DropdownMenuItem>
+                                                            <DropdownMenuItem
                                                                 data-testid={`menu-edit-role-${user.id}`}
                                                                 disabled={user.id === String(currentUser?.id)}
                                                                 onClick={() => {
@@ -833,6 +881,58 @@ export default function CompanySettingsView() {
                         <Button variant="outline" onClick={() => setShowAddDialog(false)} disabled={addLoading}>Cancel</Button>
                         <Button data-testid="button-confirm-add-user" onClick={handleAddUser} disabled={addLoading}>
                             {addLoading ? "Creating..." : "Create User"}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Edit name and email */}
+            <Dialog open={!!editDetailsUser} onOpenChange={(open) => { if (!open) { setEditDetailsUser(null); setEditDetailsError(""); } }}>
+                <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>Edit name and email</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4 py-2">
+                        <div className="space-y-1.5">
+                            <Label htmlFor="edit-details-name">Full name <span className="text-destructive">*</span></Label>
+                            <Input
+                                id="edit-details-name"
+                                data-testid="input-edit-user-name"
+                                value={editDetailsUser?.name ?? ""}
+                                onChange={(e) =>
+                                    setEditDetailsUser((prev) => (prev ? { ...prev, name: e.target.value } : prev))
+                                }
+                                placeholder="Jane Doe"
+                            />
+                        </div>
+                        <div className="space-y-1.5">
+                            <Label htmlFor="edit-details-email">Email</Label>
+                            <Input
+                                id="edit-details-email"
+                                data-testid="input-edit-user-email"
+                                type="email"
+                                value={editDetailsUser?.email ?? ""}
+                                onChange={(e) =>
+                                    setEditDetailsUser((prev) => (prev ? { ...prev, email: e.target.value } : prev))
+                                }
+                                placeholder="jane@example.com"
+                            />
+                            <p className="text-xs text-muted-foreground">
+                                Leave email blank to keep the current address on file.
+                            </p>
+                        </div>
+                        {editDetailsError && <p className="text-sm text-destructive">{editDetailsError}</p>}
+                    </div>
+                    <DialogFooter>
+                        <Button
+                            variant="outline"
+                            onClick={() => setEditDetailsUser(null)}
+                            disabled={editDetailsLoading}
+                        >
+                            Cancel
+                        </Button>
+                        <Button data-testid="button-confirm-edit-user-details" onClick={() => void handleSaveUserDetails()} disabled={editDetailsLoading}>
+                            {editDetailsLoading ? "Saving…" : "Save"}
                         </Button>
                     </DialogFooter>
                 </DialogContent>

@@ -9,6 +9,8 @@ import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { useState, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -36,7 +38,7 @@ export default function TeamView({ project, currentUserRole }: TeamViewProps) {
     const queryClient = useQueryClient();
     const { toast } = useToast();
     const [isInviteOpen, setIsInviteOpen] = useState(false);
-    const [selectedUserId, setSelectedUserId] = useState<string>("");
+    const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(() => new Set());
     const [addMemberLoading, setAddMemberLoading] = useState(false);
 
     const canManageTeam = currentUserRole === 'manager' || currentUserRole === 'admin';
@@ -63,25 +65,56 @@ export default function TeamView({ project, currentUserRole }: TeamViewProps) {
       [usersArray, memberIdSet],
     );
 
-    const handleAddExistingMember = async () => {
-      if (!selectedUserId) {
-        toast({ title: "Select a user", variant: "destructive" });
+    const toggleUserSelected = (userId: string) => {
+      setSelectedUserIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(userId)) next.delete(userId);
+        else next.add(userId);
+        return next;
+      });
+    };
+
+    const handleAddSelectedMembers = async () => {
+      if (selectedUserIds.size === 0) {
+        toast({ title: "Select at least one user", variant: "destructive" });
         return;
       }
       setAddMemberLoading(true);
+      const ids = Array.from(selectedUserIds);
       try {
-        await apiRequest("POST", `/api/projects/${numericProjectId}/members`, {
-          userId: Number(selectedUserId),
-        });
+        const results = await Promise.allSettled(
+          ids.map((id) =>
+            apiRequest("POST", `/api/projects/${numericProjectId}/members`, { userId: Number(id) }),
+          ),
+        );
+        const failed = results.filter((r) => r.status === "rejected");
         queryClient.invalidateQueries({ queryKey: ["/api/projects", numericProjectId, "members-with-settings"] });
         queryClient.invalidateQueries({ queryKey: ["/api/projects", numericProjectId, "members"] });
         queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
-        toast({ title: "Member added to project" });
-        setSelectedUserId("");
-        setIsInviteOpen(false);
+        if (failed.length === 0) {
+          const n = ids.length;
+          toast({
+            title: n === 1 ? "Member added to project" : `${n} members added to project`,
+          });
+          setSelectedUserIds(new Set());
+          setIsInviteOpen(false);
+        } else if (failed.length === results.length) {
+          const msg = failed[0]?.status === "rejected" && failed[0].reason instanceof Error
+            ? failed[0].reason.message
+            : "Failed to add members";
+          toast({ title: "Could not add members", description: msg, variant: "destructive" });
+        } else {
+          toast({
+            title: "Some members could not be added",
+            description: `${failed.length} of ${ids.length} failed. Others were added.`,
+            variant: "destructive",
+          });
+          setSelectedUserIds(new Set());
+          setIsInviteOpen(false);
+        }
       } catch (e) {
-        const msg = e instanceof Error ? e.message : "Failed to add member";
-        toast({ title: "Could not add member", description: msg, variant: "destructive" });
+        const msg = e instanceof Error ? e.message : "Failed to add members";
+        toast({ title: "Could not add members", description: msg, variant: "destructive" });
       } finally {
         setAddMemberLoading(false);
       }
@@ -220,36 +253,53 @@ export default function TeamView({ project, currentUserRole }: TeamViewProps) {
           open={isInviteOpen}
           onOpenChange={(open) => {
             setIsInviteOpen(open);
-            if (!open) setSelectedUserId("");
+            if (!open) setSelectedUserIds(new Set());
           }}
         >
-          <DialogContent className="sm:max-w-[425px]">
+          <DialogContent className="sm:max-w-[440px]">
             <DialogHeader>
-              <DialogTitle>Add team member</DialogTitle>
+              <DialogTitle>Add team members</DialogTitle>
             </DialogHeader>
             <div className="grid gap-4 py-2">
               <p className="text-sm text-muted-foreground">
-                Choose someone who already has an account in this workspace. Their role stays the same as in Company
+                Choose people who already have an account in this workspace. Their role stays the same as in Company
                 Settings.
               </p>
               <div className="space-y-2">
-                <Label htmlFor="add-member-user">Workspace user</Label>
+                <Label>Workspace users</Label>
                 {workspaceUsersNotOnProject.length === 0 ? (
                   <p className="text-sm text-muted-foreground py-2">Everyone is already on this project.</p>
                 ) : (
-                  <Select value={selectedUserId || undefined} onValueChange={setSelectedUserId}>
-                    <SelectTrigger id="add-member-user">
-                      <SelectValue placeholder="Select a user…" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {workspaceUsersNotOnProject.map((u) => (
-                        <SelectItem key={u.id} value={u.id}>
-                          {u.name}
-                          {u.email ? ` (${u.email})` : ""}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <ScrollArea className="h-[min(280px,50vh)] rounded-md border border-border/60 bg-muted/20 p-2">
+                    <div className="space-y-1 pr-2">
+                      {workspaceUsersNotOnProject.map((u) => {
+                        const checked = selectedUserIds.has(u.id);
+                        return (
+                          <label
+                            key={u.id}
+                            className={cn(
+                              "flex items-center gap-3 rounded-md px-2 py-2 text-sm cursor-pointer hover:bg-muted/60",
+                            )}
+                          >
+                            <Checkbox
+                              checked={checked}
+                              onCheckedChange={() => toggleUserSelected(u.id)}
+                              data-testid={`checkbox-add-member-${u.id}`}
+                            />
+                            <span className="min-w-0 flex-1">
+                              <span className="font-medium text-foreground">{u.name}</span>
+                              {u.email ? (
+                                <span className="block text-xs text-muted-foreground truncate">{u.email}</span>
+                              ) : null}
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </ScrollArea>
+                )}
+                {selectedUserIds.size > 0 && (
+                  <p className="text-xs text-muted-foreground">{selectedUserIds.size} selected</p>
                 )}
               </div>
             </div>
@@ -259,10 +309,15 @@ export default function TeamView({ project, currentUserRole }: TeamViewProps) {
               </Button>
               <Button
                 type="button"
-                onClick={() => void handleAddExistingMember()}
-                disabled={addMemberLoading || !selectedUserId || workspaceUsersNotOnProject.length === 0}
+                data-testid="button-add-members-to-project"
+                onClick={() => void handleAddSelectedMembers()}
+                disabled={addMemberLoading || selectedUserIds.size === 0 || workspaceUsersNotOnProject.length === 0}
               >
-                {addMemberLoading ? "Adding…" : "Add to project"}
+                {addMemberLoading
+                  ? "Adding…"
+                  : selectedUserIds.size <= 1
+                    ? "Add to project"
+                    : `Add ${selectedUserIds.size} to project`}
               </Button>
             </DialogFooter>
           </DialogContent>
