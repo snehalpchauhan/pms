@@ -176,7 +176,7 @@ export function Sidebar({ currentView, currentChannelId, onViewChange, currentPr
                                             : "opacity-80 hover:opacity-100 hover:scale-[1.02]",
                                     )}
                                 >
-                                    <span>{project.name.substring(0, 2).toUpperCase()}</span>
+                                    <span>{getUserInitials(project.name, undefined)}</span>
                                     {!isGlobalView && currentProject?.id === project.id && (
                                         <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-[18px] w-1 h-8 bg-white/90 rounded-r-full" />
                                     )}

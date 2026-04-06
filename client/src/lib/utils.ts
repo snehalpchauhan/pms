@@ -5,7 +5,11 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-/** Two-letter initials for avatars from display name or username. */
+/**
+ * Two-letter initials from a display name: first letter of the first two words when there are
+ * multiple words; otherwise the first two characters of the single word. Also used for project
+ * rail chips. Falls back to username, then "?".
+ */
 export function getUserInitials(
   name: string | null | undefined,
   username: string | null | undefined,
