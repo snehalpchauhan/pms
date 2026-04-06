@@ -1,4 +1,4 @@
-import { Task, Priority } from "@/lib/mockData";
+import { Task, Priority, isSystemTaskComment } from "@/lib/mockData";
 import { useAppData } from "@/hooks/useAppData";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -37,6 +37,7 @@ export function TaskCard({ task, onClick, disableDrag = false }: TaskCardProps) 
   const estimated = parseTaskHoursField(task.estimatedHours);
   const actual = task.totalHours ?? 0;
   const overInvested = isTaskOverInvested(estimated, actual);
+  const discussionCommentCount = task.comments.filter((c) => !isSystemTaskComment(c)).length;
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: task.id,
     data: { type: "task" as const, task },
@@ -105,10 +106,10 @@ export function TaskCard({ task, onClick, disableDrag = false }: TaskCardProps) 
         <CardContent className="p-3 pt-2">{/* keep layout */}</CardContent>
         <CardFooter className="p-3 pt-0 flex items-center justify-between text-muted-foreground">
           <div className="flex items-center gap-3 text-xs">
-            {task.comments.length > 0 && (
+            {discussionCommentCount > 0 && (
               <div className="flex items-center gap-1 hover:text-foreground">
                 <MessageSquare className="w-3.5 h-3.5" />
-                <span>{task.comments.length}</span>
+                <span>{discussionCommentCount}</span>
               </div>
             )}
             {task.attachments.length > 0 && (

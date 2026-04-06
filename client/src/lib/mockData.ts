@@ -29,6 +29,11 @@ export interface Comment {
   type?: "comment" | "system"; // Distinguish between user comments and system logs (e.g. status changes)
 }
 
+/** Activity / automation rows (not user discussion); replies stay type "comment" and are included in discussion counts. */
+export function isSystemTaskComment(c: { type?: string }): boolean {
+  return String(c.type ?? "").toLowerCase() === "system";
+}
+
 export interface User {
   id: string;
   name: string;

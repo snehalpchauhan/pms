@@ -22,7 +22,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
-import { Task, ChecklistItem, Attachment } from "@/lib/mockData";
+import { Task, ChecklistItem, Attachment, isSystemTaskComment } from "@/lib/mockData";
 import { useAppData } from "@/hooks/useAppData";
 import { useAuth } from "@/hooks/useAuth";
 import { apiRequest } from "@/lib/queryClient";
@@ -165,7 +165,7 @@ function CommentItem({
   const canManage =
     Boolean(currentUserId) &&
     String(comment.authorId) === String(currentUserId) &&
-    String(comment.type ?? "comment").toLowerCase() !== "system";
+    !isSystemTaskComment(comment);
 
   const replies = useMemo(
     () => allComments.filter((r) => String(r.parentId) === String(comment.id)),
@@ -1043,8 +1043,6 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
 
   const currentUserId = currentUser ? String(currentUser.id) : "";
 
-  const isSystemLogType = (c: { type?: string }) => String(c.type ?? "").toLowerCase() === "system";
-
   useEffect(() => {
     const list = liveTask?.comments as
       | {
@@ -1100,7 +1098,7 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
 
   const sortedUserComments = useMemo(
     () =>
-      [...comments.filter((c) => !isSystemLogType(c))].sort((a, b) => {
+      [...comments.filter((c) => !isSystemTaskComment(c))].sort((a, b) => {
         const ta = new Date(a.createdAt).getTime();
         const tb = new Date(b.createdAt).getTime();
         return tb - ta;
@@ -2213,7 +2211,7 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                                     return String(entry.createdAt);
                                   })();
 
-                                  if (isSystemLogType(entry)) {
+                                  if (isSystemTaskComment(entry)) {
                                     const actor = users[entry.authorId];
                                     return (
                                       <div
