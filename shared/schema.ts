@@ -67,6 +67,8 @@ export const tasks = pgTable("tasks", {
   dueDate: text("due_date"),
   recurrence: jsonb("recurrence"),
   coverImage: text("cover_image"),
+  /** Planned effort (hours); compare to sum of time entries for budget / over-invested UI. */
+  estimatedHours: numeric("estimated_hours", { precision: 10, scale: 2 }),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

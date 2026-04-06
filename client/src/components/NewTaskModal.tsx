@@ -83,7 +83,7 @@ export function NewTaskModal({ open, onOpenChange, project, membersProjectId, on
     const [selectedDays, setSelectedDays] = useState<number[]>([]);
 
     const [selectedAssigneeIds, setSelectedAssigneeIds] = useState<Set<string>>(() => new Set());
-    const [initialHoursInput, setInitialHoursInput] = useState("");
+    const [estimatedHoursInput, setEstimatedHoursInput] = useState("");
 
     const [projectMembers, setProjectMembers] = useState<ProjectMemberRow[]>([]);
     const [membersLoading, setMembersLoading] = useState(false);
@@ -146,7 +146,7 @@ export function NewTaskModal({ open, onOpenChange, project, membersProjectId, on
     useEffect(() => {
       if (!open) return;
       setSelectedAssigneeIds(new Set());
-      setInitialHoursInput("");
+      setEstimatedHoursInput("");
     }, [open]);
 
     const toggleAssignee = (userId: string) => {
@@ -170,9 +170,9 @@ export function NewTaskModal({ open, onOpenChange, project, membersProjectId, on
             };
         }
 
-        const hoursParsed = parseFloat(initialHoursInput.replace(",", "."));
-        const initialHours =
-          initialHoursInput.trim() !== "" && !Number.isNaN(hoursParsed) && hoursParsed > 0
+        const hoursParsed = parseFloat(estimatedHoursInput.replace(",", "."));
+        const estimatedHours =
+          estimatedHoursInput.trim() !== "" && !Number.isNaN(hoursParsed) && hoursParsed >= 0
             ? hoursParsed
             : undefined;
 
@@ -187,7 +187,7 @@ export function NewTaskModal({ open, onOpenChange, project, membersProjectId, on
             checklist: checklistItems,
             projectId: project.id,
             assignees: Array.from(selectedAssigneeIds),
-            initialHours,
+            estimatedHours,
             tags: ["New"],
             comments: [],
             attachments: attachments.map((f, i) => ({
@@ -208,7 +208,7 @@ export function NewTaskModal({ open, onOpenChange, project, membersProjectId, on
         setChecklistItems([]);
         setAttachments([]);
         setSelectedAssigneeIds(new Set());
-        setInitialHoursInput("");
+        setEstimatedHoursInput("");
         onOpenChange(false);
     };
 
@@ -459,27 +459,26 @@ export function NewTaskModal({ open, onOpenChange, project, membersProjectId, on
                             </div>
                             <div className="space-y-2">
                                 <Label
-                                    htmlFor="initial-hours"
+                                    htmlFor="estimated-hours"
                                     className="text-xs uppercase font-semibold text-muted-foreground"
                                 >
-                                    Initial hours (optional)
+                                    Estimated hours (optional)
                                 </Label>
                                 <div className="flex items-start gap-2">
                                     <Clock className="mt-2.5 h-4 w-4 shrink-0 text-muted-foreground" />
                                     <div className="flex-1 space-y-1">
                                         <Input
-                                            id="initial-hours"
+                                            id="estimated-hours"
                                             type="number"
                                             min={0}
                                             step={0.25}
-                                            placeholder="e.g. 1.5"
+                                            placeholder="e.g. 4"
                                             className="bg-background/50 border-border/50"
-                                            value={initialHoursInput}
-                                            onChange={(e) => setInitialHoursInput(e.target.value)}
+                                            value={estimatedHoursInput}
+                                            onChange={(e) => setEstimatedHoursInput(e.target.value)}
                                         />
                                         <p className="text-[11px] text-muted-foreground">
-                                            Logs this time on the new task for you (today&apos;s date). Requires permission to
-                                            log time.
+                                            Planned effort for this task. Actual time comes from logged time entries.
                                         </p>
                                     </div>
                                 </div>

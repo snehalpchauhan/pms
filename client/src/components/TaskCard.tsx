@@ -5,7 +5,8 @@ import { CSS } from "@dnd-kit/utilities";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { MessageSquare, Paperclip, Calendar, MoreHorizontal, Clock } from "lucide-react";
+import { MessageSquare, Paperclip, Calendar, MoreHorizontal, Clock, AlertTriangle } from "lucide-react";
+import { isTaskOverInvested, parseTaskHoursField } from "@/lib/taskHours";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { format } from "date-fns";
@@ -33,6 +34,9 @@ const PriorityBadge = ({ priority }: { priority: Priority }) => {
 
 export function TaskCard({ task, onClick, disableDrag = false }: TaskCardProps) {
   const { users } = useAppData();
+  const estimated = parseTaskHoursField(task.estimatedHours);
+  const actual = task.totalHours ?? 0;
+  const overInvested = isTaskOverInvested(estimated, actual);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: task.id,
     data: { type: "task" as const, task },
@@ -61,7 +65,12 @@ export function TaskCard({ task, onClick, disableDrag = false }: TaskCardProps) 
       className="group touch-none"
       onClick={() => onClick(task)}
     >
-      <Card className="cursor-grab active:cursor-grabbing hover:shadow-md transition-shadow border-border/60 hover:border-primary/50 overflow-hidden group-hover:translate-y-[-2px]">
+      <Card
+        className={cn(
+          "cursor-grab active:cursor-grabbing hover:shadow-md transition-shadow border-border/60 hover:border-primary/50 overflow-hidden group-hover:translate-y-[-2px]",
+          overInvested && "border-amber-500/70 ring-1 ring-amber-500/40",
+        )}
+      >
         {task.coverImage && (
           <div className="h-32 w-full overflow-hidden border-b border-border/50">
             <img
@@ -73,12 +82,21 @@ export function TaskCard({ task, onClick, disableDrag = false }: TaskCardProps) 
         )}
         <CardHeader className="p-3 pb-0 space-y-2">
           <div className="flex justify-between items-start">
-            <div className="flex gap-2 flex-wrap">
+            <div className="flex gap-2 flex-wrap items-center">
               {task.tags.map((tag) => (
                 <Badge key={tag} variant="secondary" className="text-[10px] h-5 px-1.5 font-normal text-muted-foreground bg-muted/50">
                   {tag}
                 </Badge>
               ))}
+              {overInvested && (
+                <span
+                  className="inline-flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-400"
+                  title="Actual time logged exceeds the estimate"
+                >
+                  <AlertTriangle className="w-3 h-3" />
+                  Over
+                </span>
+              )}
             </div>
             <PriorityBadge priority={task.priority} />
           </div>
@@ -105,10 +123,21 @@ export function TaskCard({ task, onClick, disableDrag = false }: TaskCardProps) 
                 <span>{format(new Date(task.dueDate), "MMM d")}</span>
               </div>
             )}
-            {(task.totalHours ?? 0) > 0 && (
-              <div className="flex items-center gap-1 hover:text-foreground text-primary/70" data-testid={`text-hours-${task.id}`}>
-                <Clock className="w-3.5 h-3.5" />
-                <span>{(task.totalHours ?? 0).toFixed(1)}h</span>
+            {(estimated != null || actual > 0) && (
+              <div
+                className={cn(
+                  "flex items-center gap-1 hover:text-foreground",
+                  overInvested ? "text-amber-700 dark:text-amber-400" : "text-primary/70",
+                )}
+                data-testid={`text-hours-${task.id}`}
+                title={estimated != null ? `Estimated ${estimated.toFixed(1)}h · Actual ${actual.toFixed(1)}h` : `Actual ${actual.toFixed(1)}h`}
+              >
+                <Clock className="w-3.5 h-3.5 shrink-0" />
+                <span className="tabular-nums">
+                  {estimated != null ? `${estimated.toFixed(1)}h est` : null}
+                  {estimated != null && actual > 0 ? " · " : null}
+                  {actual > 0 ? `${actual.toFixed(1)}h act` : estimated != null ? "" : null}
+                </span>
               </div>
             )}
           </div>

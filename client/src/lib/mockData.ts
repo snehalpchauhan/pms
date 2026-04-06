@@ -51,8 +51,8 @@ export interface Recurrence {
   customType?: "days" | "weeks" | "months" | "years";
 }
 
-/** Fields accepted when creating a task from the new-task dialog (includes optional initial time log). */
-export type CreateTaskInput = Partial<Task> & { initialHours?: number };
+/** Fields accepted when creating a task from the new-task dialog. */
+export type CreateTaskInput = Partial<Task> & { estimatedHours?: number };
 
 export interface Task {
   id: string;
@@ -74,6 +74,8 @@ export interface Task {
   attachments: Attachment[];
   coverImage?: string;
   projectId: string;
+  /** Planned effort (hours); compare to totalHours from time entries. */
+  estimatedHours?: number;
   totalHours?: number;
 }
 

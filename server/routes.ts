@@ -904,27 +904,41 @@ export async function registerRoutes(
     const currentUser = req.user as any;
     const task = await storage.getTask(Number(req.params.id));
     if (!task) return res.status(404).json({ message: "Task not found" });
-    // Clients must be members of the task's project
+    let clientMembership: any = null;
     if (currentUser.role === "client") {
-      const membership = await storage.getProjectMembership(task.projectId, currentUser.id);
-      if (!membership) return res.status(403).json({ message: "Access denied" });
+      clientMembership = await storage.getProjectMembership(task.projectId, currentUser.id);
+      if (!clientMembership) return res.status(403).json({ message: "Access denied" });
     }
     const assignees = await storage.getTaskAssignees(task.id);
     const checklist = await storage.getChecklistItems(task.id);
     const taskAttachments = await storage.getAttachments(task.id);
     const taskComments = await storage.getComments(task.id);
+    const taskTimeEntries = await storage.getTimeEntriesByTask(task.id);
+    let totalHours: number;
+    if (currentUser.role === "client") {
+      if (clientMembership?.clientShowTimecards) {
+        totalHours = taskTimeEntries
+          .filter((e) => e.clientVisible !== false)
+          .reduce((sum, e) => sum + parseFloat(e.hours || "0"), 0);
+      } else {
+        totalHours = 0;
+      }
+    } else {
+      totalHours = taskTimeEntries.reduce((sum, e) => sum + parseFloat(e.hours || "0"), 0);
+    }
     res.json({
       ...task,
       assignees: assignees.map(({ password, ...u }) => u),
       checklist,
       attachments: taskAttachments,
       comments: taskComments,
+      totalHours,
     });
   });
 
   app.post("/api/tasks", requireAuth, async (req, res) => {
     const currentUser = req.user as any;
-    const { assignees, ownerId: _ignoreOwner, ...taskData } = req.body;
+    const { assignees, ownerId: _ignoreOwner, initialHours: _legacyInitialHours, ...taskData } = req.body;
     // Clients with "contribute" access can create tasks tagged [Client Request]
     if (currentUser.role === "client") {
       const membership = await storage.getProjectMembership(taskData.projectId, currentUser.id);
@@ -951,6 +965,17 @@ export async function registerRoutes(
         if (!mem) {
           return res.status(400).json({ message: "Assignees must be members of this project" });
         }
+      }
+    }
+    const est = (taskData as { estimatedHours?: unknown }).estimatedHours;
+    if (est === null || est === undefined || est === "") {
+      delete (taskData as { estimatedHours?: unknown }).estimatedHours;
+    } else {
+      const n = typeof est === "number" ? est : parseFloat(String(est).replace(",", "."));
+      if (Number.isNaN(n) || n < 0) {
+        delete (taskData as { estimatedHours?: unknown }).estimatedHours;
+      } else {
+        (taskData as { estimatedHours?: string }).estimatedHours = String(Math.round(n * 100) / 100);
       }
     }
     const task = await storage.createTask({ ...taskData, ownerId: currentUser.id });
@@ -991,7 +1016,21 @@ export async function registerRoutes(
 
   app.patch("/api/tasks/:id", requireAuth, async (req, res) => {
     const currentUser = req.user as any;
-    const { assignees, ownerId: _ignoreOwnerPatch, ...updates } = req.body;
+    const { assignees, ownerId: _ignoreOwnerPatch, ...rawUpdates } = req.body;
+    const updates: Record<string, unknown> = { ...rawUpdates };
+    if ("estimatedHours" in updates) {
+      const est = updates.estimatedHours;
+      if (est === null || est === undefined || est === "") {
+        updates.estimatedHours = null;
+      } else {
+        const n = typeof est === "number" ? est : parseFloat(String(est).replace(",", "."));
+        if (Number.isNaN(n) || n < 0) {
+          delete updates.estimatedHours;
+        } else {
+          updates.estimatedHours = String(Math.round(n * 100) / 100);
+        }
+      }
+    }
     const taskId = Number(req.params.id);
 
     if (currentUser.role === "client") {
@@ -1014,7 +1053,7 @@ export async function registerRoutes(
 
     let task = before;
     if (Object.keys(updates).length > 0) {
-      const updated = await storage.updateTask(taskId, updates);
+      const updated = await storage.updateTask(taskId, updates as any);
       if (!updated) return res.status(404).json({ message: "Task not found" });
       task = updated;
     }

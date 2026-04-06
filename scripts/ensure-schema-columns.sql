@@ -6,3 +6,5 @@ ALTER TABLE projects ADD COLUMN IF NOT EXISTS owner_id integer REFERENCES users(
 
 -- Optional: align defaults for new expectations (does not overwrite existing rows)
 ALTER TABLE users ALTER COLUMN status SET DEFAULT 'offline';
+
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS estimated_hours numeric(10, 2);
