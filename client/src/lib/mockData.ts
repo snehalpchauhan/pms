@@ -63,7 +63,7 @@ export type CreateTaskInput = Partial<Task> & { estimatedHours?: number };
 
 export interface Task {
   id: string;
-  /** Server user id of the creator; only they may delete the task (unless legacy null owner). */
+  /** Server user id of the creator; admins may delete any task; otherwise only the owner (unless legacy null owner). */
   ownerId?: number | null;
   title: string;
   description: string;

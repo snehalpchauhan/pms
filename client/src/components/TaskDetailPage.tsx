@@ -527,6 +527,7 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
 
   const canDeleteTask = useMemo(() => {
     if (!currentUser) return false;
+    if (currentUser.role === "admin") return true;
     const oid = task.ownerId;
     const isOwner = oid != null && Number(oid) === Number(currentUser.id);
     const legacyStaffDelete = (oid == null || Number.isNaN(Number(oid))) && !isClient;

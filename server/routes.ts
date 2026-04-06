@@ -1228,9 +1228,10 @@ export async function registerRoutes(
 
     const isOwner = task.ownerId != null && Number(task.ownerId) === Number(currentUser.id);
     const legacyStaffDelete = task.ownerId == null && currentUser.role !== "client";
+    const isAdmin = currentUser.role === "admin";
 
-    if (!isOwner && !legacyStaffDelete) {
-      return res.status(403).json({ message: "Only the task owner can delete this task" });
+    if (!isOwner && !legacyStaffDelete && !isAdmin) {
+      return res.status(403).json({ message: "Only the task owner or an admin can delete this task" });
     }
 
     const attachmentRows = await storage.getAttachments(taskId);
