@@ -764,9 +764,6 @@ export async function registerRoutes(
   app.post("/api/projects/:id/members", requireAuth, async (req, res) => {
     const currentUser = req.user as any;
     if (currentUser.role === "client") return res.status(403).json({ message: "Clients cannot add members" });
-    if (currentUser.role !== "admin" && currentUser.role !== "manager") {
-      return res.status(403).json({ message: "Only admins and managers can add members" });
-    }
     const projectId = Number(req.params.id);
     const userId = Number(req.body?.userId);
     if (!Number.isInteger(projectId) || projectId <= 0) {
@@ -775,8 +772,19 @@ export async function registerRoutes(
     if (!Number.isInteger(userId) || userId <= 0) {
       return res.status(400).json({ message: "Invalid user id" });
     }
+    const projectRecord = await storage.getProject(projectId);
+    if (!projectRecord) return res.status(404).json({ message: "Project not found" });
+    const isAdmin = currentUser.role === "admin";
+    const isManager = currentUser.role === "manager";
+    const isProjectOwner =
+      projectRecord.ownerId != null && Number(projectRecord.ownerId) === Number(currentUser.id);
+    if (!isAdmin && !isManager && !isProjectOwner) {
+      return res.status(403).json({
+        message: "Only administrators, managers, or the project owner can add members",
+      });
+    }
     let membership = await storage.getProjectMembership(projectId, currentUser.id);
-    if (!membership && currentUser.role === "admin") {
+    if (!membership && isAdmin) {
       await storage.addProjectMember(projectId, currentUser.id);
       membership = await storage.getProjectMembership(projectId, currentUser.id);
     }
@@ -787,6 +795,51 @@ export async function registerRoutes(
     if (!target) return res.status(404).json({ message: "User not found" });
     await storage.addProjectMember(projectId, userId);
     res.status(201).json({ message: "Member added" });
+  });
+
+  app.delete("/api/projects/:id/members/:userId", requireAuth, async (req, res) => {
+    const currentUser = req.user as any;
+    if (currentUser.role === "client") {
+      return res.status(403).json({ message: "Clients cannot remove members" });
+    }
+    const projectId = Number(req.params.id);
+    const targetUserId = Number(req.params.userId);
+    if (!Number.isInteger(projectId) || projectId <= 0) {
+      return res.status(400).json({ message: "Invalid project" });
+    }
+    if (!Number.isInteger(targetUserId) || targetUserId <= 0) {
+      return res.status(400).json({ message: "Invalid user id" });
+    }
+    const projectRecord = await storage.getProject(projectId);
+    if (!projectRecord) return res.status(404).json({ message: "Project not found" });
+
+    if (projectRecord.ownerId != null && Number(projectRecord.ownerId) === targetUserId) {
+      return res.status(400).json({ message: "Cannot remove the project owner from the team" });
+    }
+
+    const isAdmin = currentUser.role === "admin";
+    const isManager = currentUser.role === "manager";
+    const isProjectOwner =
+      projectRecord.ownerId != null && Number(projectRecord.ownerId) === Number(currentUser.id);
+    if (!isAdmin && !isManager && !isProjectOwner) {
+      return res.status(403).json({
+        message: "Only administrators, managers, or the project owner can remove members",
+      });
+    }
+    if (isManager && !isAdmin && !isProjectOwner) {
+      const mem = await storage.getProjectMembership(projectId, currentUser.id);
+      if (!mem) {
+        return res.status(403).json({ message: "You must be a member of this project to remove people" });
+      }
+    }
+
+    const targetMembership = await storage.getProjectMembership(projectId, targetUserId);
+    if (!targetMembership) {
+      return res.status(404).json({ message: "User is not a member of this project" });
+    }
+
+    await storage.removeProjectMember(projectId, targetUserId);
+    res.json({ message: "Member removed" });
   });
 
   // Get caller's permissions for a project

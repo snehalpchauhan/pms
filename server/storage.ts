@@ -31,6 +31,7 @@ export interface IStorage {
   getProjectMembers(projectId: number): Promise<User[]>;
   getProjectMembersWithSettings(projectId: number): Promise<(User & { clientShowTimecards: boolean; clientTaskAccess: string })[]>;
   addProjectMember(projectId: number, userId: number): Promise<void>;
+  removeProjectMember(projectId: number, userId: number): Promise<void>;
   getUserProjects(userId: number): Promise<Project[]>;
   getProjectMembership(projectId: number, userId: number): Promise<ProjectMember | undefined>;
   getUserMemberships(userId: number): Promise<ProjectMember[]>;
@@ -220,6 +221,12 @@ export class DatabaseStorage implements IStorage {
 
   async addProjectMember(projectId: number, userId: number): Promise<void> {
     await db.insert(projectMembers).values({ projectId, userId }).onConflictDoNothing();
+  }
+
+  async removeProjectMember(projectId: number, userId: number): Promise<void> {
+    await db
+      .delete(projectMembers)
+      .where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.userId, userId)));
   }
 
   async getUserProjects(userId: number): Promise<Project[]> {

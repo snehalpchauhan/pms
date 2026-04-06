@@ -3,7 +3,7 @@ import { useAppData, effectivePresenceStatus } from "@/hooks/useAppData";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
-import { Mail, MoreHorizontal, Plus, Shield, User, Briefcase, Trash2, Clock } from "lucide-react";
+import { Mail, Plus, Shield, User, Briefcase, Trash2, Clock, Crown } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
@@ -16,6 +16,17 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/hooks/useAuth";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface TeamViewProps {
     project: Project;
@@ -36,13 +47,20 @@ interface MemberWithSettings {
 
 export default function TeamView({ project, currentUserRole }: TeamViewProps) {
     const { usersArray } = useAppData();
+    const { user: authUser } = useAuth();
     const queryClient = useQueryClient();
     const { toast } = useToast();
     const [isInviteOpen, setIsInviteOpen] = useState(false);
     const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(() => new Set());
     const [addMemberLoading, setAddMemberLoading] = useState(false);
+    const [memberToRemove, setMemberToRemove] = useState<MemberWithSettings | null>(null);
+    const [removeLoading, setRemoveLoading] = useState(false);
 
-    const canManageTeam = currentUserRole === 'manager' || currentUserRole === 'admin';
+    const isProjectOwnerUser =
+      project.ownerId != null && String(project.ownerId) === String(authUser?.id);
+    const canManageClientSettings = currentUserRole === "manager" || currentUserRole === "admin";
+    const canInviteRemoveMembers =
+      currentUserRole === "manager" || currentUserRole === "admin" || isProjectOwnerUser;
 
     const numericProjectId = Number(project.id);
 
@@ -57,6 +75,46 @@ export default function TeamView({ project, currentUserRole }: TeamViewProps) {
     });
 
     const memberIdSet = useMemo(() => new Set(membersWithSettings.map((m) => String(m.id))), [membersWithSettings]);
+
+    const sortedMembers = useMemo(() => {
+      const oid = project.ownerId;
+      if (oid == null || String(oid).trim() === "") return membersWithSettings;
+      return [...membersWithSettings].sort((a, b) => {
+        const aOwn = String(a.id) === String(oid) ? 0 : 1;
+        const bOwn = String(b.id) === String(oid) ? 0 : 1;
+        return aOwn - bOwn;
+      });
+    }, [membersWithSettings, project.ownerId]);
+
+    const ownerUser = useMemo(() => {
+      if (project.ownerId == null) return undefined;
+      return usersArray.find((u) => String(u.id) === String(project.ownerId));
+    }, [usersArray, project.ownerId]);
+
+    const handleConfirmRemoveMember = async () => {
+      if (!memberToRemove) return;
+      setRemoveLoading(true);
+      try {
+        await apiRequest("DELETE", `/api/projects/${numericProjectId}/members/${memberToRemove.id}`);
+        queryClient.invalidateQueries({ queryKey: ["/api/projects", numericProjectId, "members-with-settings"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/projects", numericProjectId, "members"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+        toast({ title: `${memberToRemove.name} removed from this project` });
+        setMemberToRemove(null);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "Could not remove member";
+        let detail = msg;
+        try {
+          const parsed = JSON.parse(msg.replace(/^\d+:\s*/, ""));
+          if (typeof parsed?.message === "string") detail = parsed.message;
+        } catch {
+          /* ignore */
+        }
+        toast({ title: "Could not remove member", description: detail, variant: "destructive" });
+      } finally {
+        setRemoveLoading(false);
+      }
+    };
 
     const workspaceUsersNotOnProject = useMemo(
       () =>
@@ -148,7 +206,7 @@ export default function TeamView({ project, currentUserRole }: TeamViewProps) {
                 <h2 className="text-3xl font-display font-bold text-foreground">Project Team</h2>
                 <p className="text-muted-foreground mt-1">Members working on <span className="font-medium text-foreground">{project.name}</span></p>
             </div>
-            {canManageTeam && (
+            {canInviteRemoveMembers && (
                 <Button onClick={() => setIsInviteOpen(true)}>
                     <Plus className="w-4 h-4 mr-2" />
                     Invite Member
@@ -156,28 +214,57 @@ export default function TeamView({ project, currentUserRole }: TeamViewProps) {
             )}
         </div>
 
+        {project.ownerId != null && String(project.ownerId).trim() !== "" && (
+          <div className="rounded-xl border border-primary/25 bg-primary/5 px-4 py-3 flex flex-wrap items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary">
+              <Crown className="h-5 w-5" aria-hidden />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-semibold uppercase tracking-wide text-primary">Project owner</p>
+              <p className="text-sm text-muted-foreground">
+                Created this project
+                {ownerUser?.name ? (
+                  <>
+                    : <span className="font-medium text-foreground">{ownerUser.name}</span>
+                    {ownerUser.email ? (
+                      <span className="text-muted-foreground"> ({ownerUser.email})</span>
+                    ) : null}
+                  </>
+                ) : (
+                  <span className="text-foreground"> (user #{project.ownerId})</span>
+                )}
+              </p>
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {membersWithSettings.map(user => {
+            {sortedMembers.map(user => {
                 const presence = effectivePresenceStatus(user.status, user.lastSeenAt);
+                const isOwnerMember = project.ownerId != null && String(user.id) === String(project.ownerId);
+                const canRemoveThisMember =
+                  canInviteRemoveMembers &&
+                  !isOwnerMember;
                 return (
                 <div key={user.id} className="space-y-0">
-                    <Card className={cn("hover:shadow-md transition-shadow border-border/60 relative group", user.role === 'client' && canManageTeam && "rounded-b-none border-b-0")}>
+                    <Card className={cn("hover:shadow-md transition-shadow border-border/60 relative group", user.role === 'client' && canManageClientSettings && "rounded-b-none border-b-0")}>
                         <CardHeader className="flex flex-row items-center gap-4 pb-2">
                             <Avatar className="h-12 w-12 border border-border">
                                 <AvatarImage src={user.avatar} />
                                 <AvatarFallback>{user.name[0]}</AvatarFallback>
                             </Avatar>
-                            <div className="flex-1">
-                                <h3 className="font-semibold text-lg">{user.name}</h3>
-                                <div className="flex items-center gap-2 mt-1">
+                            <div className="flex-1 min-w-0">
+                                <h3 className="font-semibold text-lg truncate">{user.name}</h3>
+                                <div className="flex items-center gap-2 mt-1 flex-wrap">
                                     {getRoleBadge(user.role)}
+                                    {isOwnerMember ? (
+                                      <Badge variant="secondary" className="text-[10px] gap-1 font-medium border-primary/20 bg-primary/10 text-primary">
+                                        <Crown className="h-3 w-3" />
+                                        Owner
+                                      </Badge>
+                                    ) : null}
                                 </div>
                             </div>
-                            {canManageTeam && (
-                                <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
-                                    <MoreHorizontal className="w-4 h-4" />
-                                </Button>
-                            )}
                         </CardHeader>
                         <CardContent>
                             <div className="flex items-center text-sm text-muted-foreground mb-4">
@@ -193,8 +280,15 @@ export default function TeamView({ project, currentUserRole }: TeamViewProps) {
                                     <span className="text-xs font-medium capitalize">{presence}</span>
                                 </div>
                                 
-                                {canManageTeam && (
-                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive opacity-0 group-hover:opacity-100 transition-opacity">
+                                {canRemoveThisMember && (
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-8 w-8 text-destructive opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                                        aria-label={`Remove ${user.name} from project`}
+                                        onClick={() => setMemberToRemove(user)}
+                                    >
                                         <Trash2 className="w-4 h-4" />
                                     </Button>
                                 )}
@@ -203,7 +297,7 @@ export default function TeamView({ project, currentUserRole }: TeamViewProps) {
                     </Card>
 
                     {/* Client settings row — visible to admin/manager only */}
-                    {user.role === 'client' && canManageTeam && (
+                    {user.role === 'client' && canManageClientSettings && (
                         <div className="bg-muted/40 border border-border/60 border-t-0 rounded-b-xl px-4 py-3 space-y-2" data-testid={`client-settings-${user.id}`}>
                             <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Client Access Settings</p>
                             <div className="flex items-center justify-between">
@@ -243,8 +337,8 @@ export default function TeamView({ project, currentUserRole }: TeamViewProps) {
                 );
             })}
             
-            {canManageTeam && (
-                <button onClick={() => setIsInviteOpen(true)} className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-border/50 rounded-xl hover:bg-muted/10 transition-colors h-full min-h-[160px] gap-2 group">
+            {canInviteRemoveMembers && (
+                <button type="button" onClick={() => setIsInviteOpen(true)} className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-border/50 rounded-xl hover:bg-muted/10 transition-colors h-full min-h-[160px] gap-2 group">
                     <div className="w-10 h-10 rounded-full bg-muted/50 flex items-center justify-center group-hover:bg-primary/10 group-hover:text-primary transition-colors">
                         <Plus className="w-5 h-5 text-muted-foreground group-hover:text-primary" />
                     </div>
@@ -326,6 +420,35 @@ export default function TeamView({ project, currentUserRole }: TeamViewProps) {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        <AlertDialog open={memberToRemove != null} onOpenChange={(open) => !open && setMemberToRemove(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Remove from project?</AlertDialogTitle>
+              <AlertDialogDescription>
+                {memberToRemove ? (
+                  <>
+                    <span className="font-medium text-foreground">{memberToRemove.name}</span> will lose access to this
+                    project and its tasks. This does not delete their workspace account.
+                  </>
+                ) : null}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={removeLoading}>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                disabled={removeLoading}
+                onClick={(e) => {
+                  e.preventDefault();
+                  void handleConfirmRemoveMember();
+                }}
+              >
+                {removeLoading ? "Removing…" : "Remove"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
     </div>
   );
 }
