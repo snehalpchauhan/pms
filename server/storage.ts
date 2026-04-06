@@ -118,6 +118,7 @@ export interface IStorage {
       taskMarkCompleteStatus: string;
       taskClientReopenStatus: string;
       timeLogMinDescriptionWords: number;
+      timeLogMaxHoursPerEntry: string | null;
     }>,
   ): Promise<CompanySettings>;
 
@@ -651,6 +652,7 @@ export class DatabaseStorage implements IStorage {
       taskMarkCompleteStatus: string;
       taskClientReopenStatus: string;
       timeLogMinDescriptionWords: number;
+      timeLogMaxHoursPerEntry: string | null;
     }>,
   ): Promise<CompanySettings> {
     const current = await this.getCompanySettings();

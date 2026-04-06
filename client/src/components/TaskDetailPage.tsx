@@ -551,6 +551,7 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
         taskMarkCompleteStatus?: string;
         taskClientReopenStatus?: string;
         timeLogMinDescriptionWords?: number;
+        timeLogMaxHoursPerEntry?: number | null;
       };
     },
   });
@@ -559,8 +560,21 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
     companyWorkflowSettings?.timeLogMinDescriptionWords == null
       ? 10
       : Number(companyWorkflowSettings.timeLogMinDescriptionWords);
+  const timeLogMaxHours =
+    companyWorkflowSettings?.timeLogMaxHoursPerEntry == null ||
+    Number(companyWorkflowSettings.timeLogMaxHoursPerEntry) <= 0
+      ? null
+      : Number(companyWorkflowSettings.timeLogMaxHoursPerEntry);
   const timeDescriptionWordCount = countWordsInText(timeDescription);
   const timeDescriptionMeetsMin = timeLogMinWords <= 0 || timeDescriptionWordCount >= timeLogMinWords;
+  const timeHoursParsed = useMemo(() => {
+    const t = String(timeHours).trim().replace(",", ".");
+    if (t === "") return NaN;
+    return parseFloat(t);
+  }, [timeHours]);
+  const timeHoursPositive = !Number.isNaN(timeHoursParsed) && timeHoursParsed > 0;
+  const timeHoursOverCompanyMax =
+    timeLogMaxHours != null && timeHoursPositive && timeHoursParsed > timeLogMaxHours + 1e-9;
 
   const { data: projectMembers = [], isLoading: projectMembersLoading } = useQuery<
     { id: number; name: string; avatar?: string | null }[]
@@ -911,6 +925,14 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
 
   const handleLogTime = async () => {
     if (!timeHours || isNaN(Number(timeHours)) || Number(timeHours) <= 0) return;
+    if (timeLogMaxHours != null && timeHoursOverCompanyMax) {
+      toast({
+        title: "Hours over company limit",
+        description: `Each entry cannot exceed ${timeLogMaxHours} hours. Add multiple entries for longer work.`,
+        variant: "destructive",
+      });
+      return;
+    }
     if (!timeLogCategory) {
       toast({ title: "Select a work type", variant: "destructive" });
       return;
@@ -1954,6 +1976,7 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                                             <Input
                                                 type="number"
                                                 min="0.25"
+                                                max={timeLogMaxHours != null ? timeLogMaxHours : undefined}
                                                 step="0.25"
                                                 placeholder="e.g. 1.5"
                                                 value={timeHours}
@@ -1961,6 +1984,11 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                                                 className="h-9 text-sm"
                                                 data-testid="input-time-hours"
                                             />
+                                            {timeLogMaxHours != null ? (
+                                                <p className="text-[11px] text-muted-foreground">
+                                                    Up to {timeLogMaxHours}h per entry (company setting).
+                                                </p>
+                                            ) : null}
                                         </div>
                                         <div className="space-y-1">
                                             <Label className="text-xs text-muted-foreground">Date</Label>
@@ -2025,6 +2053,7 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                                             disabled={
                                                 timeLogging ||
                                                 !timeHours ||
+                                                timeHoursOverCompanyMax ||
                                                 !timeLogCategory ||
                                                 !timeDescriptionMeetsMin
                                             }

@@ -98,7 +98,10 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
     queryParams.set("projectId", String(numericProjectId));
   }
 
-  const { data: companySettingsForTime } = useQuery<{ timeLogMinDescriptionWords?: number }>({
+  const { data: companySettingsForTime } = useQuery<{
+    timeLogMinDescriptionWords?: number;
+    timeLogMaxHoursPerEntry?: number | null;
+  }>({
     queryKey: ["/api/company-settings"],
     queryFn: async () => {
       const res = await fetch("/api/company-settings", { credentials: "include" });
@@ -110,6 +113,12 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
     companySettingsForTime?.timeLogMinDescriptionWords == null
       ? 10
       : Number(companySettingsForTime.timeLogMinDescriptionWords);
+  const maxHoursPerEntryCap =
+    companySettingsForTime?.timeLogMaxHoursPerEntry == null ||
+    Number(companySettingsForTime.timeLogMaxHoursPerEntry) <= 0
+      ? null
+      : Number(companySettingsForTime.timeLogMaxHoursPerEntry);
+  const logHoursInputMax = maxHoursPerEntryCap != null ? Math.min(24, maxHoursPerEntryCap) : 24;
 
   const { data: entries = [], isLoading } = useQuery<any[]>({
     queryKey: ["/api/time-entries", filterUserId, filterProjectId, filterStartDate, filterEndDate, currentUserRole, numericProjectId],
@@ -150,9 +159,17 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
       });
       return;
     }
-    const h = parseFloat(logHours);
+    const h = parseFloat(logHours.replace(",", "."));
     if (isNaN(h) || h <= 0 || h > 24) {
       toast({ title: "Hours must be between 0.1 and 24", variant: "destructive" });
+      return;
+    }
+    if (maxHoursPerEntryCap != null && h > maxHoursPerEntryCap + 1e-9) {
+      toast({
+        title: "Hours over company limit",
+        description: `Each entry cannot exceed ${maxHoursPerEntryCap} hours. Add multiple entries for longer work.`,
+        variant: "destructive",
+      });
       return;
     }
     if (minWordsRequired > 0 && countWordsInText(logNote) < minWordsRequired) {
@@ -185,8 +202,20 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
       setLogNote("");
       setLogDate(format(new Date(), "yyyy-MM-dd"));
       setLogClientVisible(true);
-    } catch {
-      toast({ title: "Failed to log time", variant: "destructive" });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      let detail: string | undefined;
+      try {
+        const parsed = JSON.parse(msg.replace(/^\d+:\s*/, ""));
+        if (typeof parsed?.message === "string") detail = parsed.message;
+      } catch {
+        /* ignore */
+      }
+      toast({
+        title: "Failed to log time",
+        description: detail || msg,
+        variant: "destructive",
+      });
     } finally {
       setLogSaving(false);
     }
@@ -682,13 +711,18 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
                   id="log-hours"
                   type="number"
                   min="0.1"
-                  max="24"
+                  max={logHoursInputMax}
                   step="0.5"
                   placeholder="e.g. 2.5"
                   value={logHours}
                   onChange={e => setLogHours(e.target.value)}
                   data-testid="input-log-hours"
                 />
+                {maxHoursPerEntryCap != null ? (
+                  <p className="text-[11px] text-muted-foreground">
+                    Company limit: up to {maxHoursPerEntryCap}h per entry.
+                  </p>
+                ) : null}
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="log-date">Date <span className="text-destructive">*</span></Label>

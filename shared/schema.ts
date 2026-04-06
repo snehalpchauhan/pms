@@ -26,6 +26,8 @@ export const companySettings = pgTable("company_settings", {
    * Work type prefix `[Label]` is excluded from the count.
    */
   timeLogMinDescriptionWords: integer("time_log_min_description_words").notNull().default(10),
+  /** If set, a single time entry cannot exceed this many hours (split longer work across entries). */
+  timeLogMaxHoursPerEntry: numeric("time_log_max_hours_per_entry", { precision: 8, scale: 2 }),
 });
 
 export const users = pgTable("users", {

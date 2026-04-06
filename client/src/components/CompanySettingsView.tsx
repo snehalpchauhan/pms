@@ -62,6 +62,8 @@ type CompanySettingsDto = {
     taskMarkCompleteStatus: WorkflowColumnId;
     taskClientReopenStatus: WorkflowColumnId;
     timeLogMinDescriptionWords: number;
+    /** null = no limit */
+    timeLogMaxHoursPerEntry: number | null;
 };
 
 /** Mirrors server `ms365FullyConfigured` for UI (tenant, client id, secret). */
@@ -123,6 +125,7 @@ export default function CompanySettingsView() {
     const [taskClientReopenStatus, setTaskClientReopenStatus] =
         useState<WorkflowColumnId>(DEFAULT_TASK_CLIENT_REOPEN_STATUS);
     const [timeLogMinDescriptionWords, setTimeLogMinDescriptionWords] = useState<number>(10);
+    const [timeLogMaxHoursPerEntry, setTimeLogMaxHoursPerEntry] = useState<string>("");
 
     const [activeSettingsTab, setActiveSettingsTab] = useState<SettingsTab>(settingsTabFromHash);
 
@@ -170,6 +173,10 @@ export default function CompanySettingsView() {
         setTimeLogMinDescriptionWords(
             companyData.timeLogMinDescriptionWords == null ? 10 : Number(companyData.timeLogMinDescriptionWords),
         );
+        const cap = companyData.timeLogMaxHoursPerEntry;
+        setTimeLogMaxHoursPerEntry(
+            cap == null || Number(cap) <= 0 ? "" : String(Number(cap)),
+        );
     }, [companyData]);
 
     const displayLogoSrc =
@@ -178,6 +185,19 @@ export default function CompanySettingsView() {
 
     const saveCompanyMutation = useMutation({
         mutationFn: async () => {
+            let timeLogMaxHoursPayload: number | null = null;
+            if (timeLogMaxHoursPerEntry.trim() !== "") {
+                const n = parseFloat(timeLogMaxHoursPerEntry.replace(",", "."));
+                if (Number.isNaN(n) || n < 0.25 || n > 24) {
+                    toast({
+                        title: "Invalid max hours per entry",
+                        description: "Enter a number from 0.25 to 24, or leave the field empty for no limit.",
+                        variant: "destructive",
+                    });
+                    throw new Error("validation");
+                }
+                timeLogMaxHoursPayload = n;
+            }
             const body: Record<string, unknown> = {
                 companyName: companyName.trim(),
                 browserTitle: browserTitle.trim(),
@@ -189,6 +209,7 @@ export default function CompanySettingsView() {
                 taskMarkCompleteStatus,
                 taskClientReopenStatus,
                 timeLogMinDescriptionWords,
+                timeLogMaxHoursPerEntry: timeLogMaxHoursPayload,
             };
             if (removeStoredMs365Secret) {
                 body.ms365ClientSecret = null;
@@ -602,9 +623,8 @@ export default function CompanySettingsView() {
                                         Time tracking
                                     </CardTitle>
                                     <CardDescription>
-                                        Require a minimum word count for the <strong>work description</strong> when logging
-                                        time (from the task Time tab or Timecards). The work type label is not counted.
-                                        Set to <strong>0</strong> to turn this off.
+                                        Control how time is logged from the task Time tab and Timecards: optional caps on
+                                        description length and on hours per single entry.
                                     </CardDescription>
                                 </CardHeader>
                                 <CardContent className="space-y-4">
@@ -635,7 +655,26 @@ export default function CompanySettingsView() {
                                             disabled={!isAdmin || companyLoading}
                                         />
                                         <p className="text-xs text-muted-foreground">
-                                            Default is 10. Use 0 if descriptions should be optional with no length rule.
+                                            Default is 10. Use 0 if descriptions should be optional with no length rule. The
+                                            work type label is not counted.
+                                        </p>
+                                    </div>
+                                    <div className="space-y-2 max-w-xs">
+                                        <Label htmlFor="time-log-max-hours">Maximum hours per time entry</Label>
+                                        <Input
+                                            id="time-log-max-hours"
+                                            type="number"
+                                            min={0.25}
+                                            max={24}
+                                            step={0.25}
+                                            placeholder="No limit"
+                                            value={timeLogMaxHoursPerEntry}
+                                            onChange={(e) => setTimeLogMaxHoursPerEntry(e.target.value)}
+                                            disabled={!isAdmin || companyLoading}
+                                        />
+                                        <p className="text-xs text-muted-foreground">
+                                            Leave empty for no limit. If set (e.g. 2), one entry cannot exceed that many
+                                            hours—users split a full day across multiple entries.
                                         </p>
                                     </div>
                                 </CardContent>

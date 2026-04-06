@@ -12,6 +12,7 @@ ALTER TABLE tasks ADD COLUMN IF NOT EXISTS estimated_hours numeric(10, 2);
 ALTER TABLE comments ADD COLUMN IF NOT EXISTS edited_at timestamp;
 
 ALTER TABLE company_settings ADD COLUMN IF NOT EXISTS time_log_min_description_words integer NOT NULL DEFAULT 10;
+ALTER TABLE company_settings ADD COLUMN IF NOT EXISTS time_log_max_hours_per_entry numeric(8,2);
 ALTER TABLE company_settings ADD COLUMN IF NOT EXISTS browser_title text;
 
 ALTER TABLE users ADD COLUMN IF NOT EXISTS project_sidebar_order jsonb;

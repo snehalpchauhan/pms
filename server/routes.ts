@@ -23,6 +23,39 @@ import {
 import { isValidProjectColor, sanitizeProjectColor } from "@shared/projectColors";
 import { timeLogNoteMeetsMinWords } from "@shared/timeLogDescription";
 
+function parsePositiveTimeEntryHours(raw: unknown): number | null {
+  if (raw == null || raw === "") return null;
+  const n = typeof raw === "number" ? raw : parseFloat(String(raw).replace(",", "."));
+  if (Number.isNaN(n) || n <= 0) return null;
+  return n;
+}
+
+/** Company cap from DB row; null or non-positive = no limit. */
+function companyTimeLogMaxHoursPerEntry(
+  maxFromDb: string | number | null | undefined,
+): number | null {
+  if (maxFromDb == null || maxFromDb === "") return null;
+  const n = Number(maxFromDb);
+  if (Number.isNaN(n) || n <= 0) return null;
+  return n;
+}
+
+/** Returns an error message when hours exceed the cap (or are invalid if a cap exists); null if OK. */
+function timeEntryHoursExceedsCompanyMax(
+  hoursRaw: unknown,
+  maxFromDb: string | number | null | undefined,
+): string | null {
+  const cap = companyTimeLogMaxHoursPerEntry(maxFromDb);
+  if (cap == null) return null;
+  const hrs = parsePositiveTimeEntryHours(hoursRaw);
+  if (hrs == null) return "Invalid hours value";
+  if (hrs > cap + 1e-9) {
+    const label = Number.isInteger(cap) ? String(cap) : cap.toFixed(2).replace(/\.?0+$/, "");
+    return `Each time entry cannot exceed ${label} hours. Split your time across multiple entries.`;
+  }
+  return null;
+}
+
 const MAX_COMPANY_LOGO_BYTES = 2 * 1024 * 1024;
 
 function persistCompanyLogoFromDataUrl(dataUrl: string, uploadsDir: string): string {
@@ -326,6 +359,10 @@ export async function registerRoutes(
     taskClientReopenStatus: workflowTaskStatusSchema.optional(),
     /** 0 = no minimum; default on create is 10 */
     timeLogMinDescriptionWords: z.coerce.number().int().min(0).max(500).optional(),
+    /** null or 0 = no cap; otherwise max hours per single time entry (0.25–24) */
+    timeLogMaxHoursPerEntry: z
+      .union([z.coerce.number().min(0.25).max(24), z.literal(0), z.null()])
+      .optional(),
   });
 
   app.get("/api/company-settings", requireAuth, async (_req, res) => {
@@ -347,6 +384,7 @@ export async function registerRoutes(
         parseWorkflowColumnId(row.taskClientReopenStatus) ?? DEFAULT_TASK_CLIENT_REOPEN_STATUS,
       timeLogMinDescriptionWords:
         row.timeLogMinDescriptionWords == null ? 10 : Number(row.timeLogMinDescriptionWords),
+      timeLogMaxHoursPerEntry: companyTimeLogMaxHoursPerEntry(row.timeLogMaxHoursPerEntry),
     });
   });
 
@@ -372,7 +410,8 @@ export async function registerRoutes(
       body.ms365ClientSecret === undefined &&
       body.taskMarkCompleteStatus === undefined &&
       body.taskClientReopenStatus === undefined &&
-      body.timeLogMinDescriptionWords === undefined
+      body.timeLogMinDescriptionWords === undefined &&
+      body.timeLogMaxHoursPerEntry === undefined
     ) {
       return res.status(400).json({ message: "No changes provided" });
     }
@@ -391,6 +430,7 @@ export async function registerRoutes(
       taskMarkCompleteStatus?: string;
       taskClientReopenStatus?: string;
       timeLogMinDescriptionWords?: number;
+      timeLogMaxHoursPerEntry?: string | null;
     } = {};
 
     if (body.companyName !== undefined) updates.companyName = body.companyName;
@@ -442,6 +482,12 @@ export async function registerRoutes(
     if (body.timeLogMinDescriptionWords !== undefined) {
       updates.timeLogMinDescriptionWords = body.timeLogMinDescriptionWords;
     }
+    if (body.timeLogMaxHoursPerEntry !== undefined) {
+      updates.timeLogMaxHoursPerEntry =
+        body.timeLogMaxHoursPerEntry === null || body.timeLogMaxHoursPerEntry === 0
+          ? null
+          : String(body.timeLogMaxHoursPerEntry);
+    }
 
     const updated = await storage.updateCompanySettings(updates);
     if (
@@ -469,6 +515,7 @@ export async function registerRoutes(
         parseWorkflowColumnId(updated.taskClientReopenStatus) ?? DEFAULT_TASK_CLIENT_REOPEN_STATUS,
       timeLogMinDescriptionWords:
         updated.timeLogMinDescriptionWords == null ? 10 : Number(updated.timeLogMinDescriptionWords),
+      timeLogMaxHoursPerEntry: companyTimeLogMaxHoursPerEntry(updated.timeLogMaxHoursPerEntry),
     });
   });
 
@@ -2172,6 +2219,10 @@ export async function registerRoutes(
         message: `Time log work description must be at least ${minWordsTask} words (work type label does not count).`,
       });
     }
+    const maxHoursErr = timeEntryHoursExceedsCompanyMax(hours, csTaskTime.timeLogMaxHoursPerEntry);
+    if (maxHoursErr) {
+      return res.status(400).json({ message: maxHoursErr });
+    }
     const entry = await storage.createTimeEntry({
       taskId: taskId,
       userId,
@@ -2349,6 +2400,10 @@ export async function registerRoutes(
       return res.status(400).json({
         message: `Time log work description must be at least ${minWordsGlobal} words (work type label does not count).`,
       });
+    }
+    const maxHoursErrGlobal = timeEntryHoursExceedsCompanyMax(hours, csGlobalTime.timeLogMaxHoursPerEntry);
+    if (maxHoursErrGlobal) {
+      return res.status(400).json({ message: maxHoursErrGlobal });
     }
     const entry = await storage.createTimeEntry({
       taskId: tid, userId, hours: String(hours), description: descStrGlobal, logDate,
