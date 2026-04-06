@@ -60,6 +60,10 @@ export interface IStorage {
   getComments(taskId: number): Promise<Comment[]>;
   getComment(id: number): Promise<Comment | undefined>;
   createComment(comment: InsertComment): Promise<Comment>;
+  updateComment(id: number, updates: { content: string; editedAt: Date }): Promise<Comment | undefined>;
+  /** Root and all nested replies, post-order (children before parent). */
+  getCommentSubtreePostOrder(taskId: number, rootId: number): Promise<number[]>;
+  deleteCommentsByIds(ids: number[]): Promise<void>;
 
   getChannels(projectId?: number): Promise<Channel[]>;
   getChannel(id: number): Promise<Channel | undefined>;
@@ -368,6 +372,38 @@ export class DatabaseStorage implements IStorage {
   async createComment(comment: InsertComment): Promise<Comment> {
     const [created] = await db.insert(comments).values(comment).returning();
     return created;
+  }
+
+  async updateComment(id: number, updates: { content: string; editedAt: Date }): Promise<Comment | undefined> {
+    const [updated] = await db.update(comments).set(updates).where(eq(comments.id, id)).returning();
+    return updated;
+  }
+
+  async getCommentSubtreePostOrder(taskId: number, rootId: number): Promise<number[]> {
+    const all = await db
+      .select({ id: comments.id, parentId: comments.parentId })
+      .from(comments)
+      .where(eq(comments.taskId, taskId));
+    const byParent = new Map<number | null, number[]>();
+    for (const c of all) {
+      const p = c.parentId;
+      const list = byParent.get(p) ?? [];
+      list.push(c.id);
+      byParent.set(p, list);
+    }
+    const out: number[] = [];
+    const walk = (cid: number) => {
+      const kids = byParent.get(cid) ?? [];
+      for (const k of kids) walk(k);
+      out.push(cid);
+    };
+    walk(rootId);
+    return out;
+  }
+
+  async deleteCommentsByIds(ids: number[]): Promise<void> {
+    if (ids.length === 0) return;
+    await db.delete(comments).where(inArray(comments.id, ids));
   }
 
   async getChannels(projectId?: number): Promise<Channel[]> {

@@ -1505,6 +1505,79 @@ export async function registerRoutes(
     res.status(201).json(comment);
   });
 
+  const patchCommentBodySchema = z.object({
+    content: z
+      .string()
+      .transform((s) => s.trim())
+      .pipe(z.string().min(1, "Content is required").max(20000)),
+  });
+
+  app.patch("/api/comments/:id", requireAuth, async (req, res) => {
+    const currentUser = req.user as any;
+    const commentId = Number(req.params.id);
+    if (!Number.isInteger(commentId) || commentId <= 0) {
+      return res.status(400).json({ message: "Invalid comment" });
+    }
+    const parsed = patchCommentBodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: parsed.error.flatten().formErrors.join(", ") || "Invalid body" });
+    }
+    const comment = await storage.getComment(commentId);
+    if (!comment) return res.status(404).json({ message: "Not found" });
+    if (comment.type === "system") {
+      return res.status(403).json({ message: "System comments cannot be edited" });
+    }
+    if (Number(comment.authorId) !== Number(currentUser.id)) {
+      return res.status(403).json({ message: "You can only edit your own comments" });
+    }
+    const task = await storage.getTask(comment.taskId);
+    if (!task) return res.status(404).json({ message: "Task not found" });
+    if (currentUser.role === "client") {
+      const membership = await storage.getProjectMembership(task.projectId, currentUser.id);
+      if (!membership) return res.status(403).json({ message: "Access denied" });
+    }
+    const nextContent = parsed.data.content;
+    if (comment.content === nextContent) {
+      return res.json(comment);
+    }
+    const updated = await storage.updateComment(commentId, { content: nextContent, editedAt: new Date() });
+    if (!updated) return res.status(404).json({ message: "Not found" });
+    res.json(updated);
+  });
+
+  app.delete("/api/comments/:id", requireAuth, async (req, res) => {
+    const currentUser = req.user as any;
+    const commentId = Number(req.params.id);
+    if (!Number.isInteger(commentId) || commentId <= 0) {
+      return res.status(400).json({ message: "Invalid comment" });
+    }
+    const comment = await storage.getComment(commentId);
+    if (!comment) return res.status(404).json({ message: "Not found" });
+    if (comment.type === "system") {
+      return res.status(403).json({ message: "System comments cannot be deleted" });
+    }
+    if (Number(comment.authorId) !== Number(currentUser.id)) {
+      return res.status(403).json({ message: "You can only delete your own comments" });
+    }
+    const task = await storage.getTask(comment.taskId);
+    if (!task) return res.status(404).json({ message: "Task not found" });
+    if (currentUser.role === "client") {
+      const membership = await storage.getProjectMembership(task.projectId, currentUser.id);
+      if (!membership) return res.status(403).json({ message: "Access denied" });
+    }
+    const subtree = await storage.getCommentSubtreePostOrder(comment.taskId, commentId);
+    const attachmentRows = await storage.getAttachments(comment.taskId);
+    const subtreeSet = new Set(subtree);
+    for (const a of attachmentRows) {
+      if (a.commentId != null && subtreeSet.has(a.commentId)) {
+        safeUnlinkTaskAttachmentUrl(a.url, uploadsDir);
+        await storage.deleteAttachment(a.id);
+      }
+    }
+    await storage.deleteCommentsByIds(subtree);
+    res.json({ deletedIds: subtree });
+  });
+
   const createChannelBodySchema = z.object({
     name: z.string().min(1).max(200),
     type: z.enum(["public", "private"]),

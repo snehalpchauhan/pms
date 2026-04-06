@@ -27,7 +27,7 @@ import { useAppData } from "@/hooks/useAppData";
 import { useAuth } from "@/hooks/useAuth";
 import { apiRequest } from "@/lib/queryClient";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
-import { Calendar, Paperclip, Tag, User as UserIcon, CheckCircle2, MessageSquare, Plus, X, Reply, Clock, History, FileText, Activity, Repeat, CalendarCheck, ArrowRight, CheckSquare, Trash2, Download, Lock, RotateCcw, AlertTriangle } from "lucide-react";
+import { Calendar, Paperclip, Tag, User as UserIcon, CheckCircle2, MessageSquare, Plus, X, Reply, Clock, History, FileText, Activity, Repeat, CalendarCheck, ArrowRight, CheckSquare, Trash2, Download, Lock, RotateCcw, AlertTriangle, Pencil } from "lucide-react";
 import { getEstimatedHoursFromTaskPayload, isTaskOverInvested, parseTaskHoursField } from "@/lib/taskHours";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn, getUserInitials } from "@/lib/utils";
@@ -104,6 +104,8 @@ function CommentItem({
   users,
   currentUserId,
   onPostReply,
+  onPatchComment,
+  onDeleteComment,
   depth = 0,
 }: {
   comment: any;
@@ -111,6 +113,8 @@ function CommentItem({
   users: any;
   currentUserId: string;
   onPostReply: (parentId: string, text: string, files: CommentPayload[]) => Promise<void>;
+  onPatchComment: (commentId: string, content: string) => Promise<void>;
+  onDeleteComment: (commentId: string) => Promise<void>;
   depth?: number;
 }) {
   const author = users[comment.authorId];
@@ -120,6 +124,16 @@ function CommentItem({
   const [replySending, setReplySending] = useState(false);
   const replyFileInputRef = useRef<HTMLInputElement>(null);
   const { toast: replyToast } = useToast();
+  const [isEditing, setIsEditing] = useState(false);
+  const [editDraft, setEditDraft] = useState(comment.content);
+  const [editSaving, setEditSaving] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
+  const canManage =
+    Boolean(currentUserId) &&
+    String(comment.authorId) === String(currentUserId) &&
+    String(comment.type ?? "comment").toLowerCase() !== "system";
 
   const replies = useMemo(
     () => allComments.filter((r) => String(r.parentId) === String(comment.id)),
@@ -137,6 +151,39 @@ function CommentItem({
         }
       })()
     : "Just now";
+
+  useEffect(() => {
+    if (!isEditing) setEditDraft(comment.content);
+  }, [comment.content, isEditing]);
+
+  const saveEdit = async () => {
+    const trimmed = editDraft.trim();
+    if (!trimmed) {
+      replyToast({ title: "Comment cannot be empty", variant: "destructive" });
+      return;
+    }
+    setEditSaving(true);
+    try {
+      await onPatchComment(String(comment.id), trimmed);
+      setIsEditing(false);
+    } catch {
+      replyToast({ title: "Could not save edit", variant: "destructive" });
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  const confirmDelete = async () => {
+    setDeleteLoading(true);
+    try {
+      await onDeleteComment(String(comment.id));
+      setDeleteOpen(false);
+    } catch {
+      replyToast({ title: "Could not delete comment", variant: "destructive" });
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
 
   const submitReply = async () => {
     const text = replyInput.trim();
@@ -181,7 +228,36 @@ function CommentItem({
       <div className="flex-1 min-w-0 space-y-1">
         <div className="bg-muted/30 px-3 py-2 rounded-2xl rounded-tl-sm inline-block max-w-[90%] border border-border/30">
           <div className="font-semibold text-xs text-foreground mb-0.5">{author?.name || "Unknown"}</div>
-          <div className="text-sm text-foreground/90 leading-snug whitespace-pre-wrap">{comment.content}</div>
+          {isEditing ? (
+            <div className="space-y-2 min-w-[200px] max-w-full">
+              <Textarea
+                value={editDraft}
+                onChange={(e) => setEditDraft(e.target.value)}
+                className="min-h-[72px] text-sm resize-y"
+                disabled={editSaving}
+              />
+              <div className="flex gap-2">
+                <Button type="button" size="sm" className="h-7 text-xs px-3" disabled={editSaving} onClick={() => void saveEdit()}>
+                  {editSaving ? "Saving…" : "Save"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 text-xs px-3"
+                  disabled={editSaving}
+                  onClick={() => {
+                    setEditDraft(comment.content);
+                    setIsEditing(false);
+                  }}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="text-sm text-foreground/90 leading-snug whitespace-pre-wrap">{comment.content}</div>
+          )}
         </div>
         <div className="flex items-center gap-3 pl-1 flex-wrap">
           <button
@@ -191,8 +267,73 @@ function CommentItem({
           >
             Reply
           </button>
+          {canManage && !isEditing ? (
+            <>
+              <button
+                type="button"
+                className="text-[10px] text-muted-foreground font-medium hover:underline cursor-pointer bg-transparent border-0 p-0 inline-flex items-center gap-0.5"
+                onClick={() => {
+                  setEditDraft(comment.content);
+                  setIsEditing(true);
+                  setIsReplying(false);
+                }}
+              >
+                <Pencil className="w-3 h-3" aria-hidden />
+                Edit
+              </button>
+              <button
+                type="button"
+                className="text-[10px] text-muted-foreground font-medium hover:underline cursor-pointer bg-transparent border-0 p-0 inline-flex items-center gap-0.5"
+                onClick={() => setDeleteOpen(true)}
+              >
+                <Trash2 className="w-3 h-3" aria-hidden />
+                Delete
+              </button>
+            </>
+          ) : null}
           <span className="text-[10px] text-muted-foreground">{formattedDate}</span>
+          {comment.editedAt && !isEditing ? (
+            <span
+              className="text-[10px] text-muted-foreground/80 italic"
+              title={
+                (() => {
+                  try {
+                    const d = new Date(comment.editedAt);
+                    if (!isNaN(d.getTime())) return `Edited ${format(d, "MMM d, yyyy · h:mm a")}`;
+                  } catch {
+                    /* ignore */
+                  }
+                  return "Edited";
+                })()
+              }
+            >
+              edited
+            </span>
+          ) : null}
         </div>
+        <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+          <AlertDialogContent className="max-w-md">
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete comment?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This removes this comment
+                {replies.length > 0 ? " and all replies under it" : ""}. This cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={deleteLoading}>Cancel</AlertDialogCancel>
+              <Button
+                type="button"
+                variant="destructive"
+                size="sm"
+                disabled={deleteLoading}
+                onClick={() => void confirmDelete()}
+              >
+                {deleteLoading ? "Deleting…" : "Delete"}
+              </Button>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
         {comment.attachments && comment.attachments.length > 0 && (
           <div className="flex gap-2 mt-1 flex-wrap pl-1">
             {comment.attachments.map((att: any) => (
@@ -291,6 +432,8 @@ function CommentItem({
                 users={users}
                 currentUserId={currentUserId}
                 onPostReply={onPostReply}
+                onPatchComment={onPatchComment}
+                onDeleteComment={onDeleteComment}
                 depth={depth + 1}
               />
             ))}
@@ -547,6 +690,36 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
       },
       ...prev,
     ]);
+    invalidateTasks();
+  };
+
+  const patchCommentContent = async (commentId: string, content: string) => {
+    const trimmed = content.trim();
+    if (!trimmed) {
+      toast({ title: "Comment cannot be empty", variant: "destructive" });
+      throw new Error("empty");
+    }
+    const res = await apiRequest("PATCH", `/api/comments/${commentId}`, { content: trimmed });
+    const updated = await res.json();
+    setComments((prev) =>
+      prev.map((c) =>
+        String(c.id) === String(commentId)
+          ? {
+              ...c,
+              content: updated.content,
+              editedAt: updated.editedAt != null ? String(updated.editedAt) : c.editedAt,
+            }
+          : c,
+      ),
+    );
+    invalidateTasks();
+  };
+
+  const deleteCommentBranch = async (commentId: string) => {
+    const res = await apiRequest("DELETE", `/api/comments/${commentId}`);
+    const body = (await res.json()) as { deletedIds?: number[] };
+    const ids = new Set((body.deletedIds ?? []).map((id) => String(id)));
+    setComments((prev) => prev.filter((c) => !ids.has(String(c.id))));
     invalidateTasks();
   };
 
@@ -807,7 +980,15 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
 
   useEffect(() => {
     const list = liveTask?.comments as
-      | { id: number; authorId: number; content: string; createdAt?: string; parentId?: number | null; type?: string | null }[]
+      | {
+          id: number;
+          authorId: number;
+          content: string;
+          createdAt?: string;
+          editedAt?: string | null;
+          parentId?: number | null;
+          type?: string | null;
+        }[]
       | undefined;
     if (!list) return;
 
@@ -842,6 +1023,7 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
         authorId: String(c.authorId),
         content: c.content,
         createdAt: c.createdAt || new Date().toISOString(),
+        editedAt: c.editedAt != null ? String(c.editedAt) : undefined,
         parentId: c.parentId != null ? String(c.parentId) : undefined,
         type: (c.type || "comment") as "comment" | "system",
         attachments: attachmentsByCommentId.get(Number(c.id)) || [],
@@ -1887,6 +2069,8 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                                         users={users}
                                         currentUserId={currentUserId}
                                         onPostReply={(parentId, text, files) => postCommentWithFiles(text, parentId, files)}
+                                        onPatchComment={patchCommentContent}
+                                        onDeleteComment={deleteCommentBranch}
                                     />
                                 ))}
                                 {sortedUserComments.filter((c) => !c.parentId).length === 0 && (
@@ -1982,6 +2166,9 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                                             </Badge>
                                           )}
                                           <span className="text-xs text-muted-foreground">{timeLabel}</span>
+                                          {(entry as { editedAt?: string }).editedAt ? (
+                                            <span className="text-xs text-muted-foreground/80 italic">edited</span>
+                                          ) : null}
                                         </div>
                                         <p className="text-sm text-foreground/90 leading-snug whitespace-pre-wrap">
                                           {entry.content}

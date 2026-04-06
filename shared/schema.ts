@@ -102,6 +102,8 @@ export const comments = pgTable("comments", {
   parentId: integer("parent_id"),
   type: text("type").default("comment"),
   createdAt: timestamp("created_at").defaultNow(),
+  /** Set when the author edits the comment text (shown as "edited" in the UI). */
+  editedAt: timestamp("edited_at"),
 });
 
 export const channels = pgTable("channels", {
@@ -168,7 +170,7 @@ export const insertProjectSchema = createInsertSchema(projects).omit({ id: true 
 export const insertTaskSchema = createInsertSchema(tasks).omit({ id: true, createdAt: true });
 export const insertChecklistItemSchema = createInsertSchema(checklistItems).omit({ id: true });
 export const insertAttachmentSchema = createInsertSchema(attachments).omit({ id: true });
-export const insertCommentSchema = createInsertSchema(comments).omit({ id: true, createdAt: true });
+export const insertCommentSchema = createInsertSchema(comments).omit({ id: true, createdAt: true, editedAt: true });
 export const insertChannelSchema = createInsertSchema(channels).omit({ id: true });
 export const insertMessageSchema = createInsertSchema(messages).omit({ id: true, createdAt: true });
 export const insertTimeEntrySchema = createInsertSchema(timeEntries).omit({ id: true });

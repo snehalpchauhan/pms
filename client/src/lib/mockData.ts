@@ -22,6 +22,8 @@ export interface Comment {
   authorId: string;
   content: string;
   createdAt: string;
+  /** Present after the author edits the comment (server timestamp). */
+  editedAt?: string;
   attachments?: Attachment[];
   parentId?: string; // For threaded replies
   type?: "comment" | "system"; // Distinguish between user comments and system logs (e.g. status changes)

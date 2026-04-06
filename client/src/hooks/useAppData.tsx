@@ -167,6 +167,7 @@ export function convertTask(t: any): Task {
       authorId: String(c.authorId),
       content: c.content,
       createdAt: c.createdAt || "Just now",
+      editedAt: c.editedAt != null ? String(c.editedAt) : undefined,
       parentId: c.parentId ? String(c.parentId) : undefined,
       type: c.type || "comment",
       attachments: attachmentsByCommentId.get(Number(c.id)) || [],
