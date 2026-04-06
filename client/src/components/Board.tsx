@@ -28,6 +28,7 @@ import { cn } from "@/lib/utils";
 import { Plus, CheckCircle2, RotateCcw, GripVertical, Loader2, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { ClientPermissions } from "@/App";
+import { isWorkflowColumnId } from "@shared/workflowColumns";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -230,6 +231,11 @@ function Column({
 
   const isClient = clientPermissions?.role === "client";
   const showAddTask = !isClient || (clientPermissions?.clientTaskAccess === "contribute" || clientPermissions?.clientTaskAccess === "full");
+  const allowRenameRemoveSection =
+    canManageSections &&
+    onRenameSection &&
+    onDeleteSection &&
+    !isWorkflowColumnId(String(id));
 
   const sortedTasks = [...tasks].sort(
     (a, b) => (a.boardOrder ?? 0) - (b.boardOrder ?? 0) || Number(a.id) - Number(b.id),
@@ -245,58 +251,65 @@ function Column({
         columnReorderEnabled && isDragging && "opacity-70 z-50 ring-2 ring-primary/30",
       )}
     >
-      <div className="p-4 pb-3 flex items-center justify-between border-b border-border/40">
-         <div className="flex items-center gap-2 min-w-0 flex-1">
-            {columnReorderEnabled && (
-              <button
-                type="button"
-                className="shrink-0 touch-none p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/80 cursor-grab active:cursor-grabbing"
-                aria-label="Drag to reorder section"
-                {...attributes}
-                {...listeners}
-              >
-                <GripVertical className="w-4 h-4" />
-              </button>
-            )}
-            <div className={cn("w-2.5 h-2.5 rounded-full ring-2 ring-offset-2 ring-offset-muted/30 shadow-sm shrink-0", color)} />
-            <h3 className="font-display font-semibold text-sm text-foreground tracking-tight truncate pl-0.5">{title}</h3>
-            <span className="ml-1 text-[10px] font-mono font-medium text-muted-foreground bg-background/50 border border-border px-1.5 py-0.5 rounded shadow-sm">
-                {tasks.length}
-            </span>
-            {canManageSections && onRenameSection && onDeleteSection && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7 shrink-0 text-muted-foreground"
-                    aria-label="Section actions"
-                  >
-                    <MoreHorizontal className="w-4 h-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={() => onRenameSection(id)}>
-                    <Pencil className="w-4 h-4 mr-2" />
-                    Rename section
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    className="text-destructive focus:text-destructive"
-                    onClick={() => onDeleteSection(id)}
-                  >
-                    <Trash2 className="w-4 h-4 mr-2" />
-                    Remove section
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
-         </div>
-         {showAddTask && (
-             <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-foreground -mr-1" onClick={() => onAddTask(id)}>
-                 <Plus className="w-4 h-4" />
-             </Button>
-         )}
+      <div className="p-4 pb-3 flex items-center justify-between gap-2 border-b border-border/40">
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          {columnReorderEnabled && (
+            <button
+              type="button"
+              className="shrink-0 touch-none p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/80 cursor-grab active:cursor-grabbing"
+              aria-label="Drag to reorder section"
+              {...attributes}
+              {...listeners}
+            >
+              <GripVertical className="w-4 h-4" />
+            </button>
+          )}
+          <div className={cn("w-2.5 h-2.5 rounded-full ring-2 ring-offset-2 ring-offset-muted/30 shadow-sm shrink-0", color)} />
+          <h3 className="font-display font-semibold text-sm text-foreground tracking-tight truncate pl-0.5">{title}</h3>
+          <span className="ml-1 text-[10px] font-mono font-medium text-muted-foreground bg-background/50 border border-border px-1.5 py-0.5 rounded shadow-sm shrink-0">
+            {tasks.length}
+          </span>
+        </div>
+        <div className="flex items-center shrink-0">
+          {showAddTask && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 text-muted-foreground hover:text-foreground"
+              onClick={() => onAddTask(id)}
+            >
+              <Plus className="w-4 h-4" />
+            </Button>
+          )}
+          {allowRenameRemoveSection && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 shrink-0 text-muted-foreground"
+                  aria-label="Section actions"
+                >
+                  <MoreHorizontal className="w-4 h-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => onRenameSection?.(id)}>
+                  <Pencil className="w-4 h-4 mr-2" />
+                  Rename section
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="text-destructive focus:text-destructive"
+                  onClick={() => onDeleteSection?.(id)}
+                >
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Remove section
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        </div>
       </div>
       
       <div className="flex-1 p-3 overflow-hidden">
