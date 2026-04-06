@@ -375,135 +375,134 @@ export function NewTaskModal({ open, onOpenChange, project, membersProjectId, on
                             </div>
                         </div>
 
-                        {/* Assignees */}
-                        <div className="space-y-3 rounded-lg border border-border/50 bg-muted/15 p-4">
-                            <div className="space-y-2">
-                                <Label className="text-xs uppercase font-semibold text-muted-foreground">
-                                    Assignees (optional)
-                                </Label>
-                                <p className="text-[11px] text-muted-foreground">
-                                  Only people on this project (Members &amp; Access). Use + to add more.
-                                </p>
-                                {membersLoading ? (
-                                    <p className="text-xs text-muted-foreground">Loading project members…</p>
-                                ) : sortedMembers.length === 0 ? (
-                                    <p className="text-xs text-muted-foreground">No members on this project.</p>
-                                ) : (
-                                    <div className="flex flex-wrap items-center gap-2">
-                                        {selectedMembersOrdered.map((m) => {
-                                            const id = String(m.id);
-                                            const isSelf = authUser?.id != null && String(authUser.id) === id;
-                                            return (
-                                                <div
-                                                    key={id}
-                                                    className="flex items-center gap-2 bg-background border border-border/50 rounded-full pl-1 pr-2 py-1 shadow-sm"
-                                                >
-                                                    <Avatar className="h-6 w-6">
-                                                        <AvatarImage src={m.avatar?.trim() || undefined} />
-                                                        <AvatarFallback className="text-[10px]">
-                                                            {getUserInitials(m.name, undefined)}
-                                                        </AvatarFallback>
-                                                    </Avatar>
-                                                    <span className="text-xs font-medium truncate max-w-[120px]">
-                                                        {m.name}
-                                                        {isSelf ? (
-                                                            <span className="text-muted-foreground font-normal"> (you)</span>
-                                                        ) : null}
-                                                    </span>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => toggleAssignee(id)}
-                                                        className="text-muted-foreground hover:text-destructive p-0.5 rounded"
-                                                        aria-label={`Remove ${m.name}`}
+                        {/* Assignees + estimated hours: one row on md+; hours is plain field (no inner card) */}
+                        <div className="rounded-lg border border-border/50 bg-muted/15 p-4">
+                            <div className="grid grid-cols-1 gap-4 md:grid-cols-12 md:gap-6 md:items-start">
+                                <div className="space-y-2 md:col-span-7 min-w-0">
+                                    <Label className="text-xs uppercase font-semibold text-muted-foreground">
+                                        Assignees (optional)
+                                    </Label>
+                                    <p className="text-[11px] text-muted-foreground">
+                                        Only people on this project (Members &amp; Access). Use + to add more.
+                                    </p>
+                                    {membersLoading ? (
+                                        <p className="text-xs text-muted-foreground">Loading project members…</p>
+                                    ) : sortedMembers.length === 0 ? (
+                                        <p className="text-xs text-muted-foreground">No members on this project.</p>
+                                    ) : (
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            {selectedMembersOrdered.map((m) => {
+                                                const id = String(m.id);
+                                                const isSelf = authUser?.id != null && String(authUser.id) === id;
+                                                return (
+                                                    <div
+                                                        key={id}
+                                                        className="flex items-center gap-2 bg-background border border-border/50 rounded-full pl-1 pr-2 py-1 shadow-sm"
                                                     >
-                                                        <X className="w-3 h-3" />
-                                                    </button>
-                                                </div>
-                                            );
-                                        })}
-                                        <Popover>
-                                            <PopoverTrigger asChild>
-                                                <Button
-                                                    type="button"
-                                                    variant="ghost"
-                                                    size="icon"
-                                                    className="h-8 w-8 shrink-0 rounded-full border border-dashed border-border/50"
-                                                    aria-label="Add assignees"
-                                                >
-                                                    <Plus className="w-4 h-4" />
-                                                </Button>
-                                            </PopoverTrigger>
-                                            <PopoverContent className="w-60 p-2" align="start">
-                                                <div className="space-y-1">
-                                                    <div className="text-xs font-semibold text-muted-foreground px-2 py-1.5">
-                                                        Add assignee
+                                                        <Avatar className="h-6 w-6">
+                                                            <AvatarImage src={m.avatar?.trim() || undefined} />
+                                                            <AvatarFallback className="text-[10px]">
+                                                                {getUserInitials(m.name, undefined)}
+                                                            </AvatarFallback>
+                                                        </Avatar>
+                                                        <span className="text-xs font-medium truncate max-w-[120px]">
+                                                            {m.name}
+                                                            {isSelf ? (
+                                                                <span className="text-muted-foreground font-normal"> (you)</span>
+                                                            ) : null}
+                                                        </span>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => toggleAssignee(id)}
+                                                            className="text-muted-foreground hover:text-destructive p-0.5 rounded"
+                                                            aria-label={`Remove ${m.name}`}
+                                                        >
+                                                            <X className="w-3 h-3" />
+                                                        </button>
                                                     </div>
-                                                    <p className="px-2 pb-1 text-[10px] text-muted-foreground">
-                                                        Only people on this project can be assigned.
-                                                    </p>
-                                                    <div className="max-h-56 overflow-y-auto space-y-0.5">
-                                                        {assignableProjectMembers.map((m) => (
-                                                            <button
-                                                                key={m.id}
-                                                                type="button"
-                                                                onClick={() => toggleAssignee(String(m.id))}
-                                                                className="flex items-center gap-2 w-full px-2 py-1.5 hover:bg-muted rounded-md text-sm transition-colors text-left"
-                                                            >
-                                                                <Avatar className="h-6 w-6">
-                                                                    <AvatarImage src={m.avatar?.trim() || undefined} />
-                                                                    <AvatarFallback className="text-[10px]">
-                                                                        {getUserInitials(m.name, undefined)}
-                                                                    </AvatarFallback>
-                                                                </Avatar>
-                                                                <span className="truncate">
-                                                                    {m.name}
-                                                                    {authUser?.id != null && String(authUser.id) === String(m.id) ? (
-                                                                        <span className="text-muted-foreground"> (you)</span>
-                                                                    ) : null}
-                                                                </span>
-                                                            </button>
-                                                        ))}
-                                                    </div>
-                                                    {assignableProjectMembers.length === 0 && (
-                                                        <div className="text-xs text-muted-foreground px-2 py-2 italic">
-                                                            {projectMembers.length === 0
-                                                                ? "No members on this project yet."
-                                                                : "Everyone on this project is already assigned."}
+                                                );
+                                            })}
+                                            <Popover>
+                                                <PopoverTrigger asChild>
+                                                    <Button
+                                                        type="button"
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        className="h-8 w-8 shrink-0 rounded-full border border-dashed border-border/50"
+                                                        aria-label="Add assignees"
+                                                    >
+                                                        <Plus className="w-4 h-4" />
+                                                    </Button>
+                                                </PopoverTrigger>
+                                                <PopoverContent className="w-60 p-2" align="start">
+                                                    <div className="space-y-1">
+                                                        <div className="text-xs font-semibold text-muted-foreground px-2 py-1.5">
+                                                            Add assignee
                                                         </div>
-                                                    )}
-                                                </div>
-                                            </PopoverContent>
-                                        </Popover>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-
-                        {/* Estimated hours — separate card; narrow text field (no number spinners) */}
-                        <div className="space-y-3 rounded-lg border border-border/50 bg-muted/15 p-4">
-                            <Label
-                                htmlFor="estimated-hours"
-                                className="text-xs uppercase font-semibold text-muted-foreground"
-                            >
-                                Estimated hours (optional)
-                            </Label>
-                            <div className="flex flex-wrap items-end gap-3">
-                                <div className="flex items-center gap-2">
-                                    <Clock className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
-                                    <Input
-                                        id="estimated-hours"
-                                        type="text"
-                                        inputMode="decimal"
-                                        autoComplete="off"
-                                        placeholder="e.g. 4"
-                                        className="h-9 w-[5.5rem] tabular-nums bg-background/50 border-border/50 sm:w-24"
-                                        value={estimatedHoursInput}
-                                        onChange={(e) => setEstimatedHoursInput(sanitizeEstimatedHoursInput(e.target.value))}
-                                    />
+                                                        <p className="px-2 pb-1 text-[10px] text-muted-foreground">
+                                                            Only people on this project can be assigned.
+                                                        </p>
+                                                        <div className="max-h-56 overflow-y-auto space-y-0.5">
+                                                            {assignableProjectMembers.map((m) => (
+                                                                <button
+                                                                    key={m.id}
+                                                                    type="button"
+                                                                    onClick={() => toggleAssignee(String(m.id))}
+                                                                    className="flex items-center gap-2 w-full px-2 py-1.5 hover:bg-muted rounded-md text-sm transition-colors text-left"
+                                                                >
+                                                                    <Avatar className="h-6 w-6">
+                                                                        <AvatarImage src={m.avatar?.trim() || undefined} />
+                                                                        <AvatarFallback className="text-[10px]">
+                                                                            {getUserInitials(m.name, undefined)}
+                                                                        </AvatarFallback>
+                                                                    </Avatar>
+                                                                    <span className="truncate">
+                                                                        {m.name}
+                                                                        {authUser?.id != null && String(authUser.id) === String(m.id) ? (
+                                                                            <span className="text-muted-foreground"> (you)</span>
+                                                                        ) : null}
+                                                                    </span>
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                        {assignableProjectMembers.length === 0 && (
+                                                            <div className="text-xs text-muted-foreground px-2 py-2 italic">
+                                                                {projectMembers.length === 0
+                                                                    ? "No members on this project yet."
+                                                                    : "Everyone on this project is already assigned."}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </PopoverContent>
+                                            </Popover>
+                                        </div>
+                                    )}
                                 </div>
-                                <p className="text-[11px] text-muted-foreground min-w-0 flex-1 basis-full sm:basis-auto sm:pb-0.5">
-                                    Planned effort for this task. Actual time comes from logged time entries.
-                                </p>
+
+                                <div className="space-y-2 md:col-span-5 min-w-0 border-t border-border/40 pt-4 md:border-t-0 md:pt-0">
+                                    <Label
+                                        htmlFor="estimated-hours"
+                                        className="text-xs uppercase font-semibold text-muted-foreground"
+                                    >
+                                        Estimated hours (optional)
+                                    </Label>
+                                    <div className="flex items-center gap-2">
+                                        <Clock className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+                                        <Input
+                                            id="estimated-hours"
+                                            type="text"
+                                            inputMode="decimal"
+                                            autoComplete="off"
+                                            placeholder="e.g. 4"
+                                            className="h-9 w-[5.5rem] tabular-nums bg-background/50 border-border/50 sm:w-24"
+                                            value={estimatedHoursInput}
+                                            onChange={(e) => setEstimatedHoursInput(sanitizeEstimatedHoursInput(e.target.value))}
+                                        />
+                                    </div>
+                                    <p className="text-[11px] text-muted-foreground leading-snug">
+                                        Planned effort; actuals come from time entries.
+                                    </p>
+                                </div>
                             </div>
                         </div>
 
