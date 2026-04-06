@@ -51,3 +51,56 @@ export function quickMenuPreferencePayload(
   if (all.every((id) => checkedProjectIds.has(id))) return null;
   return all.filter((id) => checkedProjectIds.has(id)).map((id) => Number(id));
 }
+
+/**
+ * Checked (quick menu) ids first, in the order they appear in `ids`; unchecked ids after, A–Z by name.
+ */
+export function normalizeOrderedIdsCheckedFirst(
+  ids: string[],
+  projects: Project[],
+  quickChecked: Set<string>,
+): string[] {
+  const valid = new Set(projects.map((p) => p.id));
+  const checked: string[] = [];
+  const seen = new Set<string>();
+  for (const id of ids) {
+    if (!valid.has(id) || !quickChecked.has(id) || seen.has(id)) continue;
+    checked.push(id);
+    seen.add(id);
+  }
+  for (const p of projects) {
+    if (quickChecked.has(p.id) && !seen.has(p.id)) {
+      checked.push(p.id);
+      seen.add(p.id);
+    }
+  }
+  const unchecked = projects
+    .filter((p) => !quickChecked.has(p.id))
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }))
+    .map((p) => p.id);
+  return [...checked, ...unchecked];
+}
+
+/** Build id list from saved sidebar order, then move unchecked projects to the bottom. */
+export function orderedProjectIdsForDisplay(
+  projects: Project[],
+  sidebarOrder: number[] | null | undefined,
+  quickChecked: Set<string>,
+): string[] {
+  const base = sortProjectsBySidebarOrder(projects, sidebarOrder ?? null).map((p) => p.id);
+  return normalizeOrderedIdsCheckedFirst(base, projects, quickChecked);
+}
+
+/** Full project list: same as sidebar file order, but unchecked rows sit at the bottom (A–Z). */
+export function partitionProjectsCheckedFirst(
+  projectsOrdered: Project[],
+  quickMenuIds: number[] | null | undefined,
+): Project[] {
+  if (quickMenuIds == null) return projectsOrdered;
+  const quick = new Set(quickMenuIds.map(Number));
+  const inQ = projectsOrdered.filter((p) => quick.has(Number(p.id)));
+  const outQ = projectsOrdered
+    .filter((p) => !quick.has(Number(p.id)))
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+  return [...inQ, ...outQ];
+}

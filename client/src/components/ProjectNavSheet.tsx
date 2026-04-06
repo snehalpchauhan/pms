@@ -26,7 +26,11 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
-import { quickMenuPreferencePayload } from "@/lib/projectSidebarOrder";
+import {
+  normalizeOrderedIdsCheckedFirst,
+  orderedProjectIdsForDisplay,
+  quickMenuPreferencePayload,
+} from "@/lib/projectSidebarOrder";
 
 type MeUser = {
   id: number;
@@ -131,21 +135,19 @@ export function ProjectNavSheet({
 
   useLayoutEffect(() => {
     if (!open) return;
-    setOrderedIds((prev) => {
-      const want = new Set(projects.map((p) => p.id));
-      if (prev.length === want.size && prev.every((id) => want.has(id))) {
-        return prev;
-      }
-      return projects.map((p) => p.id);
-    });
     const qm = authUser?.projectQuickMenuIds;
+    let quick: Set<string>;
     if (qm == null) {
-      setQuickChecked(new Set(projects.map((p) => p.id)));
+      quick = new Set(projects.map((p) => p.id));
     } else {
-      const set = new Set(qm.map((n) => String(n)));
-      setQuickChecked(new Set(projects.map((p) => p.id).filter((id) => set.has(id))));
+      const allowed = new Set(qm.map((n) => String(n)));
+      quick = new Set(projects.map((p) => p.id).filter((id) => allowed.has(id)));
     }
-  }, [open, projects, authUser?.projectQuickMenuIds]);
+    setQuickChecked(quick);
+    setOrderedIds(
+      orderedProjectIdsForDisplay(projects, authUser?.projectSidebarOrder ?? null, quick),
+    );
+  }, [open, projects, authUser?.projectQuickMenuIds, authUser?.projectSidebarOrder]);
 
   const idToProject = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects]);
 
@@ -173,14 +175,19 @@ export function ProjectNavSheet({
     }
   }
 
-  async function persistQuickMenuOnly(nextQuick: Set<string>) {
-    const quickMenuProjectIds = quickMenuPreferencePayload(projects, nextQuick);
+  async function persistOrderAndQuickMenu(ids: string[], quick: Set<string>) {
+    const orderedProjectIds = ids.map((id) => Number(id)).filter((n) => Number.isInteger(n) && n > 0);
+    if (orderedProjectIds.length !== projects.length) return;
+    const quickMenuProjectIds = quickMenuPreferencePayload(projects, quick);
     try {
-      const res = await apiRequest("PUT", "/api/auth/me/project-sidebar-order", { quickMenuProjectIds });
+      const res = await apiRequest("PUT", "/api/auth/me/project-sidebar-order", {
+        orderedProjectIds,
+        quickMenuProjectIds,
+      });
       mergeMeCache((await res.json()) as MeUser);
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : "Could not save quick menu";
-      toast({ title: "Could not save quick menu", description: msg, variant: "destructive" });
+      const msg = e instanceof Error ? e.message : "Could not save";
+      toast({ title: "Could not save projects", description: msg, variant: "destructive" });
     }
   }
 
@@ -190,19 +197,20 @@ export function ProjectNavSheet({
     const oldIndex = orderedIds.indexOf(String(active.id));
     const newIndex = orderedIds.indexOf(String(over.id));
     if (oldIndex < 0 || newIndex < 0) return;
-    const next = arrayMove(orderedIds, oldIndex, newIndex);
-    setOrderedIds(next);
-    void persistOrderOnly(next);
+    const moved = arrayMove(orderedIds, oldIndex, newIndex);
+    const normalized = normalizeOrderedIdsCheckedFirst(moved, projects, quickChecked);
+    setOrderedIds(normalized);
+    void persistOrderOnly(normalized);
   }
 
   function handleToggleQuick(projectId: string, checked: boolean) {
-    setQuickChecked((prev) => {
-      const next = new Set(prev);
-      if (checked) next.add(projectId);
-      else next.delete(projectId);
-      void persistQuickMenuOnly(next);
-      return next;
-    });
+    const nextQuick = new Set(quickChecked);
+    if (checked) nextQuick.add(projectId);
+    else nextQuick.delete(projectId);
+    const normalized = normalizeOrderedIdsCheckedFirst(orderedIds, projects, nextQuick);
+    setQuickChecked(nextQuick);
+    setOrderedIds(normalized);
+    void persistOrderAndQuickMenu(normalized, nextQuick);
   }
 
   return (
@@ -210,15 +218,17 @@ export function ProjectNavSheet({
       <SheetContent side="left" className="w-full sm:max-w-md flex flex-col gap-0 p-0">
         <SheetHeader className="px-6 pt-6 pb-2 text-left space-y-1">
           <SheetTitle>Projects</SheetTitle>
-          <SheetDescription>Drag rows to change the order of your projects.</SheetDescription>
+          <SheetDescription>
+            Drag to reorder projects on the quick menu. Unchecked projects stay at the bottom (A–Z).
+          </SheetDescription>
         </SheetHeader>
         <ScrollArea className="flex-1 px-6 pb-6">
           <p
             id="project-sheet-quick-menu-hint"
             className="text-xs text-muted-foreground mb-3 pr-2 leading-relaxed"
           >
-            The checkbox controls whether each project appears on the collapsed left bar (quick menu). Uncheck to
-            hide a project from the icon strip; you can still open it from this list.
+            The checkbox controls whether each project appears on the collapsed left bar (quick menu). Order only
+            applies to checked projects; unchecked ones are listed below in alphabetical order.
           </p>
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
             <SortableContext items={orderedIds} strategy={verticalListSortingStrategy}>

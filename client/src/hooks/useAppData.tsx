@@ -5,7 +5,11 @@ import type { User, Project, Channel, Task } from "@/lib/mockData";
 import { sanitizeProjectColor } from "@shared/projectColors";
 import { getEstimatedHoursFromTaskPayload, parseTaskHoursField } from "@/lib/taskHours";
 import { useAuth } from "@/hooks/useAuth";
-import { filterProjectsForQuickMenu, sortProjectsBySidebarOrder } from "@/lib/projectSidebarOrder";
+import {
+  filterProjectsForQuickMenu,
+  partitionProjectsCheckedFirst,
+  sortProjectsBySidebarOrder,
+} from "@/lib/projectSidebarOrder";
 
 /** Show as online only while lastSeenAt is within this window (matches client heartbeat). */
 const PRESENCE_TTL_MS = 90_000;
@@ -105,8 +109,9 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
 
   const projectsList = useMemo(() => {
     const list = (rawProjects || []).map(convertProject);
-    return sortProjectsBySidebarOrder(list, authUser?.projectSidebarOrder ?? null);
-  }, [rawProjects, authUser?.projectSidebarOrder]);
+    const ordered = sortProjectsBySidebarOrder(list, authUser?.projectSidebarOrder ?? null);
+    return partitionProjectsCheckedFirst(ordered, authUser?.projectQuickMenuIds ?? null);
+  }, [rawProjects, authUser?.projectSidebarOrder, authUser?.projectQuickMenuIds]);
   const quickMenuProjects = useMemo(
     () => filterProjectsForQuickMenu(projectsList, authUser?.projectQuickMenuIds ?? null),
     [projectsList, authUser?.projectQuickMenuIds],
