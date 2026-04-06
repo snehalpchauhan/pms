@@ -1,9 +1,8 @@
-import { useState, useEffect, useMemo, type ClipboardEvent } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -17,6 +16,10 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Switch } from "@/components/ui/switch";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  TaskDescriptionRichEditor,
+  type TaskDescriptionRichEditorHandle,
+} from "@/components/TaskDescriptionRichEditor";
 
 interface ProjectMemberRow {
   id: number;
@@ -75,35 +78,12 @@ function sanitizeEstimatedHoursInput(raw: string): string {
   return intPart + "." + afterDot;
 }
 
-/** Line breaks + Word/non‑breaking spaces for clean pastes into a plain textarea. */
-function normalizePastedPlainText(text: string): string {
-  return text
-    .replace(/\r\n/g, "\n")
-    .replace(/\r/g, "\n")
-    .replace(/\u00a0/g, " ")
-    .replace(/[\u200b\u200c\u200d\ufeff]/g, "");
-}
-
-/** Prefer clipboard plain text; if missing (some Word setups), strip HTML to text. */
-function readClipboardAsPlain(e: ClipboardEvent): string {
-  const plain = e.clipboardData.getData("text/plain");
-  if (plain !== "") return plain;
-  const html = e.clipboardData.getData("text/html");
-  if (!html) return "";
-  try {
-    const doc = new DOMParser().parseFromString(html, "text/html");
-    return doc.body?.textContent ?? "";
-  } catch {
-    return "";
-  }
-}
-
 export function NewTaskModal({ open, onOpenChange, project, membersProjectId, onSave, defaultStatus }: NewTaskModalProps) {
     const { user: authUser } = useAuth();
     const [startDate, setStartDate] = useState<Date>(new Date());
     const [endDate, setEndDate] = useState<Date>(new Date());
     const [title, setTitle] = useState("");
-    const [desc, setDesc] = useState("");
+    const descriptionEditorRef = useRef<TaskDescriptionRichEditorHandle>(null);
     const [priority, setPriority] = useState("medium");
     const [status, setStatus] = useState(defaultStatus || project.columns[0]?.id || "todo");
     
@@ -219,9 +199,11 @@ export function NewTaskModal({ open, onOpenChange, project, membersProjectId, on
             ? hoursParsed
             : undefined;
 
+        const descriptionMarkdown = descriptionEditorRef.current?.getMarkdown().trim() ?? "";
+
         onSave({
             title,
-            description: desc,
+            description: descriptionMarkdown,
             priority: priority as Task["priority"],
             status: status,
             startDate: startDate ? format(startDate, "yyyy-MM-dd") : undefined,
@@ -243,7 +225,7 @@ export function NewTaskModal({ open, onOpenChange, project, membersProjectId, on
         
         // Reset form
         setTitle("");
-        setDesc("");
+        descriptionEditorRef.current?.clear();
         setStartDate(new Date());
         setEndDate(new Date());
         setIsRecurring(false);
@@ -279,20 +261,10 @@ export function NewTaskModal({ open, onOpenChange, project, membersProjectId, on
 
     const daysOfWeek = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-    const handleDescriptionPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
-        const raw = readClipboardAsPlain(e);
-        if (raw === "") return;
-        e.preventDefault();
-        const ta = e.currentTarget;
-        const start = ta.selectionStart ?? 0;
-        const end = ta.selectionEnd ?? 0;
-        const normalized = normalizePastedPlainText(raw);
-        const next = desc.slice(0, start) + normalized + desc.slice(end);
-        setDesc(next);
-        queueMicrotask(() => {
-            ta.selectionStart = ta.selectionEnd = start + normalized.length;
-        });
-    };
+    const numericProjectId = useMemo(() => {
+        const n = Number(project.id);
+        return Number.isInteger(n) && n > 0 ? n : null;
+    }, [project.id]);
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
@@ -315,18 +287,14 @@ export function NewTaskModal({ open, onOpenChange, project, membersProjectId, on
                             />
                         </div>
 
-                        {/* 2. Description — same feel as task comments; plain-text paste from Word */}
+                        {/* 2. Description — rich editor like chat (Word + images, attachments) */}
                         <div className="space-y-2">
-                            <Label htmlFor="desc" className="text-xs uppercase font-semibold text-muted-foreground">
-                                Description
-                            </Label>
-                            <Textarea
-                                id="desc"
-                                placeholder="Add details… Paste from Word or email (plain text, line breaks kept)."
-                                className="min-h-[140px] resize-y bg-muted/20 focus:bg-background focus:ring-1 focus:ring-primary/20 border-border/60 shadow-sm p-3 text-sm rounded-lg transition-all font-sans whitespace-pre-wrap"
-                                value={desc}
-                                onChange={(e) => setDesc(e.target.value)}
-                                onPaste={handleDescriptionPaste}
+                            <Label className="text-xs uppercase font-semibold text-muted-foreground">Description</Label>
+                            <TaskDescriptionRichEditor
+                                ref={descriptionEditorRef}
+                                projectId={numericProjectId}
+                                modalOpen={open}
+                                placeholder="Add details… Paste from Word, attach images or PDFs."
                             />
                         </div>
 

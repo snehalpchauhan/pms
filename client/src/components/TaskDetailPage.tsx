@@ -47,6 +47,7 @@ import {
   parseWorkflowColumnId,
   resolveWorkflowStatusForProject,
 } from "@shared/workflowColumns";
+import { formatChatMarkdown } from "@/lib/chatMarkdown";
 
 const TASK_ATTACHMENT_MIMES = new Set([
   "image/png",
@@ -1569,7 +1570,11 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                      <div className="space-y-3">
                         <h3 className="text-sm font-semibold text-foreground">Description</h3>
                         <div className="prose prose-sm dark:prose-invert max-w-none text-foreground/90 leading-relaxed p-6 bg-background rounded-xl border border-border/50 shadow-sm min-h-[100px]">
-                          <p>{task.description?.trim() ? task.description : <span className="text-muted-foreground italic">No description</span>}</p>
+                          {task.description?.trim() ? (
+                            formatChatMarkdown(task.description)
+                          ) : (
+                            <span className="text-muted-foreground italic not-prose">No description</span>
+                          )}
                         </div>
                     </div>
 

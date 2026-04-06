@@ -50,14 +50,16 @@ export type TaskDescriptionRichEditorHandle = {
 
 export type TaskDescriptionRichEditorProps = {
   projectId: number | null;
-  /** When this toggles true, editor content is cleared (e.g. modal opened). */
-  resetSignal: boolean;
+  /** Clears the editor when the dialog opens (false → true). */
+  modalOpen: boolean;
   placeholder: string;
 };
 
 export const TaskDescriptionRichEditor = forwardRef<TaskDescriptionRichEditorHandle, TaskDescriptionRichEditorProps>(
-  function TaskDescriptionRichEditor({ projectId, resetSignal, placeholder }, ref) {
+  function TaskDescriptionRichEditor({ projectId, modalOpen, placeholder }, ref) {
     const { toast } = useToast();
+    const toastRef = useRef(toast);
+    toastRef.current = toast;
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [uploading, setUploading] = useState(false);
     const editorRef = useRef<Editor | null>(null);
@@ -113,7 +115,7 @@ export const TaskDescriptionRichEditor = forwardRef<TaskDescriptionRichEditorHan
         content: "",
         shouldRerenderOnTransaction: true,
         editorProps: {
-          handlePaste(view, event) {
+          handlePaste(_view, event) {
             const pid = projectIdRef.current;
             if (pid == null) return false;
             const cd = event.clipboardData;
@@ -131,7 +133,7 @@ export const TaskDescriptionRichEditor = forwardRef<TaskDescriptionRichEditorHan
                   const url = await uploadDataUrlRef.current(dataUrl);
                   ed.chain().focus().setImage({ src: url, alt: imageFile.name }).run();
                 } catch (err) {
-                  toast({
+                  toastRef.current({
                     title: "Paste failed",
                     description: err instanceof Error ? err.message : "Could not upload image.",
                     variant: "destructive",
@@ -151,7 +153,7 @@ export const TaskDescriptionRichEditor = forwardRef<TaskDescriptionRichEditorHan
                   const cleaned = await replaceDataImagesInHtml(html, (u) => uploadDataUrlRef.current(u));
                   ed.chain().focus().insertContent(cleaned).run();
                 } catch (err) {
-                  toast({
+                  toastRef.current({
                     title: "Paste failed",
                     description: err instanceof Error ? err.message : "Could not process pasted content.",
                     variant: "destructive",
@@ -174,20 +176,20 @@ export const TaskDescriptionRichEditor = forwardRef<TaskDescriptionRichEditorHan
           },
         },
       },
-      [placeholder, toast],
+      [placeholder],
     );
 
     useEffect(() => {
       editorRef.current = editor ?? null;
     }, [editor]);
 
-    const prevReset = useRef(resetSignal);
+    const prevModalOpen = useRef(modalOpen);
     useEffect(() => {
-      if (resetSignal && !prevReset.current) {
+      if (modalOpen && !prevModalOpen.current) {
         editor?.commands.clearContent();
       }
-      prevReset.current = resetSignal;
-    }, [resetSignal, editor]);
+      prevModalOpen.current = modalOpen;
+    }, [modalOpen, editor]);
 
     useImperativeHandle(
       ref,
