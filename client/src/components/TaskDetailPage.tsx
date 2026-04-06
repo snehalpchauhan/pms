@@ -1268,7 +1268,8 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                      </Dialog>
 
                      {/* Metadata Bar - Updated with Start/End Dates */}
-                     <div className="grid grid-cols-1 md:grid-cols-12 gap-6 p-5 bg-muted/20 border border-border/50 rounded-xl">
+                     <div className="bg-muted/20 border border-border/50 rounded-xl overflow-hidden">
+                     <div className="grid grid-cols-1 md:grid-cols-12 gap-x-6 gap-y-4 p-5 md:items-start">
                         {/* Assignees */}
                         <div className="space-y-2 md:col-span-3">
                              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Assignees</div>
@@ -1432,11 +1433,11 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                              </div>
                         </div>
 
-                        {/* Hours — estimate vs actual */}
-                        <div className="space-y-2 md:col-span-2">
+                        {/* Hours — estimate vs actual (over-estimate callout lives below the grid so row height stays even) */}
+                        <div className="space-y-2 md:col-span-2 min-w-0">
                           <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Hours</div>
-                          <div className="space-y-2">
-                            <div>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="min-w-0">
                               <div className="text-[10px] font-medium text-muted-foreground mb-1">Estimated</div>
                               {canEditTaskFields ? (
                                 <Input
@@ -1457,29 +1458,20 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                                   }}
                                 />
                               ) : (
-                                <div className="text-sm font-medium text-foreground">
+                                <div className="text-sm font-medium text-foreground tabular-nums">
                                   {estimatedHoursParsed != null ? `${estimatedHoursParsed.toFixed(1)}h` : "—"}
                                 </div>
                               )}
                             </div>
-                            <div>
-                              <div className="text-[10px] font-medium text-muted-foreground mb-1">Actual (logged)</div>
+                            <div className="min-w-0">
+                              <div className="text-[10px] font-medium text-muted-foreground mb-1">Actual</div>
                               <div className="text-sm font-medium tabular-nums text-foreground">
                                 {showActualHoursInHeader ? `${totalHours.toFixed(1)}h` : "—"}
                               </div>
                               {!showActualHoursInHeader && (
-                                <p className="text-[10px] text-muted-foreground mt-0.5">Hidden for your client role</p>
+                                <p className="text-[10px] text-muted-foreground mt-0.5 leading-tight">Hidden</p>
                               )}
                             </div>
-                            {taskOverInvested && (
-                              <div
-                                className="flex items-center gap-1.5 text-xs font-medium text-amber-700 dark:text-amber-400 bg-amber-500/10 border border-amber-500/30 rounded-md px-2 py-1.5"
-                                data-testid="banner-over-estimate"
-                              >
-                                <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                                Over estimate ({totalHours.toFixed(1)}h vs {estimatedHoursParsed!.toFixed(1)}h est.)
-                              </div>
-                            )}
                           </div>
                         </div>
 
@@ -1540,6 +1532,21 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                                 )}
                             </div>
                         </div>
+                     </div>
+
+                     {taskOverInvested && (
+                       <div
+                         className="flex items-center gap-2 px-5 py-2 border-t border-amber-500/25 bg-amber-500/10 text-xs text-amber-900 dark:text-amber-100"
+                         data-testid="banner-over-estimate"
+                       >
+                         <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
+                         <span className="min-w-0 leading-snug">
+                           <span className="font-medium">Over estimate:</span>{" "}
+                           <span className="tabular-nums">{totalHours.toFixed(1)}h</span> logged vs{" "}
+                           <span className="tabular-nums">{estimatedHoursParsed!.toFixed(1)}h</span> estimated
+                         </span>
+                       </div>
+                     )}
                      </div>
                      
                      {/* Attachments */}
