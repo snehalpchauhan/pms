@@ -103,6 +103,16 @@ function AuthenticatedApp() {
   }, [projects, currentProjectId]);
 
   useEffect(() => {
+    if (projects.length === 0) {
+      if (currentProjectId) setCurrentProjectId("");
+      return;
+    }
+    if (currentProjectId && !projects.some((p) => p.id === currentProjectId)) {
+      setCurrentProjectId(projects[0].id);
+    }
+  }, [projects, currentProjectId]);
+
+  useEffect(() => {
     if (appDataLoading || workspaceBootstrappedRef.current) return;
     workspaceBootstrappedRef.current = true;
     if (projects.length === 0 && user?.role === "admin") {

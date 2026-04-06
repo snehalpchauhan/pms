@@ -550,6 +550,8 @@ export async function registerRoutes(
   const patchProjectSchema = z.object({
     columns: z.array(projectColumnSchema).min(1).max(24).optional(),
     name: z.string().min(1).max(200).optional(),
+    color: z.string().min(1).max(80).optional(),
+    description: z.union([z.string().max(10_000), z.null()]).optional(),
   });
 
   const defaultProjectColumns = [
@@ -594,13 +596,24 @@ export async function registerRoutes(
     if (!parsed.success) {
       return res.status(400).json({ message: parsed.error.issues[0]?.message || "Invalid body" });
     }
-    if (parsed.data.name !== undefined) {
-      if (currentUser.role !== "admin" && currentUser.role !== "manager") {
-        return res.status(403).json({ message: "Only admins and managers can rename a project" });
-      }
-    }
     const projectRecord = await storage.getProject(projectId);
     if (!projectRecord) return res.status(404).json({ message: "Project not found" });
+
+    const wantsDetails =
+      parsed.data.name !== undefined ||
+      parsed.data.description !== undefined ||
+      parsed.data.color !== undefined;
+    if (wantsDetails) {
+      const isAdmin = currentUser.role === "admin";
+      const isManager = currentUser.role === "manager";
+      const isOwner =
+        projectRecord.ownerId != null && Number(projectRecord.ownerId) === Number(currentUser.id);
+      if (!isAdmin && !isManager && !isOwner) {
+        return res.status(403).json({
+          message: "Only administrators, managers, or the project owner can update project details.",
+        });
+      }
+    }
     if (parsed.data.columns !== undefined) {
       const isAdmin = currentUser.role === "admin";
       const isOwner =
@@ -611,8 +624,15 @@ export async function registerRoutes(
         });
       }
     }
-    const updates: { name?: string; columns?: unknown } = {};
+    const updates: {
+      name?: string;
+      color?: string;
+      description?: string | null;
+      columns?: unknown;
+    } = {};
     if (parsed.data.name !== undefined) updates.name = parsed.data.name;
+    if (parsed.data.color !== undefined) updates.color = parsed.data.color;
+    if (parsed.data.description !== undefined) updates.description = parsed.data.description;
     if (parsed.data.columns !== undefined) updates.columns = parsed.data.columns;
     if (Object.keys(updates).length === 0) {
       return res.status(400).json({ message: "No changes provided" });
@@ -620,6 +640,31 @@ export async function registerRoutes(
     const updated = await storage.updateProject(projectId, updates);
     if (!updated) return res.status(404).json({ message: "Project not found" });
     res.json(updated);
+  });
+
+  app.delete("/api/projects/:id", requireAuth, async (req, res) => {
+    const currentUser = req.user as any;
+    if (currentUser.role === "client") {
+      return res.status(403).json({ message: "Clients cannot delete projects" });
+    }
+    const projectId = Number(req.params.id);
+    if (!Number.isInteger(projectId) || projectId <= 0) {
+      return res.status(400).json({ message: "Invalid project id" });
+    }
+    const projectRecord = await storage.getProject(projectId);
+    if (!projectRecord) return res.status(404).json({ message: "Project not found" });
+
+    const isAdmin = currentUser.role === "admin";
+    const isOwner =
+      projectRecord.ownerId != null && Number(projectRecord.ownerId) === Number(currentUser.id);
+    if (!isAdmin && !isOwner) {
+      return res.status(403).json({
+        message: "Only the project owner or an administrator can delete this project.",
+      });
+    }
+
+    await storage.deleteProject(projectId);
+    res.status(204).end();
   });
 
   app.post("/api/projects/:id/direct-messages", requireAuth, async (req, res) => {

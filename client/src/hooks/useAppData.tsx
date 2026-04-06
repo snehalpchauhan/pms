@@ -49,8 +49,8 @@ function convertProject(p: any): Project {
   return {
     id: String(p.id),
     name: p.name,
-    color: p.color,
-    description: p.description,
+    color: typeof p.color === "string" && p.color.trim() ? p.color.trim() : "bg-blue-500",
+    description: p.description != null && p.description !== "" ? p.description : undefined,
     columns: (p.columns as any[]) || [],
     members: [],
     ownerId: p.ownerId != null ? String(p.ownerId) : undefined,

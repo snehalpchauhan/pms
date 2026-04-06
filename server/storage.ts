@@ -27,6 +27,7 @@ export interface IStorage {
     id: number,
     updates: Partial<{ name: string; color: string; description: string | null; columns: unknown }>,
   ): Promise<Project | undefined>;
+  deleteProject(id: number): Promise<void>;
   getProjectMembers(projectId: number): Promise<User[]>;
   getProjectMembersWithSettings(projectId: number): Promise<(User & { clientShowTimecards: boolean; clientTaskAccess: string })[]>;
   addProjectMember(projectId: number, userId: number): Promise<void>;
@@ -181,6 +182,10 @@ export class DatabaseStorage implements IStorage {
   ): Promise<Project | undefined> {
     const [updated] = await db.update(projects).set(updates).where(eq(projects.id, id)).returning();
     return updated;
+  }
+
+  async deleteProject(id: number): Promise<void> {
+    await db.delete(projects).where(eq(projects.id, id));
   }
 
   async getProjectMembers(projectId: number): Promise<User[]> {

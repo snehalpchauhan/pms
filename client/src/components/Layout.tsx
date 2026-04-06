@@ -1,4 +1,4 @@
-import { Plus, LayoutGrid, CheckSquare, Settings, Users, MessageSquare, Bell, Search, Hash, Lock, ListTodo, FolderKanban, LogOut, Briefcase, Building2, User, Shield, Key, Clock, LogIn } from "lucide-react";
+import { Plus, LayoutGrid, CheckSquare, Settings, Users, MessageSquare, Bell, Search, Hash, Lock, ListTodo, FolderKanban, LogOut, Briefcase, Building2, User, Shield, Key, Clock, LogIn, MoreVertical } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,6 +15,25 @@ import { Badge } from "@/components/ui/badge";
 import { CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { NotificationsPopover } from "@/components/NotificationsPopover";
 import type { ClientPermissions } from "@/App";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { EditProjectModal } from "@/components/EditProjectModal";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { toast } from "@/hooks/use-toast";
 
 interface SidebarProps {
     currentView: "tasks" | "messages" | "team" | "settings" | "profile" | "timecards";
@@ -55,6 +74,13 @@ function settingsSidebarTabFromHash(): (typeof SETTINGS_SIDEBAR_TABS)[number] {
     : "general";
 }
 
+/** Tailwind `bg-*` classes stored on the project; fall back so the rail always has a solid chip. */
+function projectRailColorClass(color: string | undefined): string {
+  const c = color?.trim();
+  if (c && /^bg-[a-z0-9-]+$/.test(c)) return c;
+  return "bg-blue-500";
+}
+
 export function Sidebar({ currentView, currentChannelId, onViewChange, currentProject, onProjectChange, onAddProject, onAddChannel, currentUserRole, clientPermissions }: SidebarProps) {
   const { users, projects, channels, usersArray } = useAppData();
   const { user: authUser, logout } = useAuth();
@@ -62,6 +88,9 @@ export function Sidebar({ currentView, currentChannelId, onViewChange, currentPr
   const sidebarAvatar = authUser?.avatar?.trim() || undefined;
   const [projectSearchOpen, setProjectSearchOpen] = useState(false);
   const [settingsSidebarTab, setSettingsSidebarTab] = useState(settingsSidebarTabFromHash);
+  const [editProjectOpen, setEditProjectOpen] = useState(false);
+  const [deleteProjectOpen, setDeleteProjectOpen] = useState(false);
+  const [deleteProjectLoading, setDeleteProjectLoading] = useState(false);
 
   useEffect(() => {
     const onHash = () => setSettingsSidebarTab(settingsSidebarTabFromHash());
@@ -80,6 +109,15 @@ export function Sidebar({ currentView, currentChannelId, onViewChange, currentPr
     return () => window.removeEventListener(COMPANY_SETTINGS_TAB_EVENT, onTab);
   }, []);
   const isClient = currentUserRole === "client";
+
+  const isProjectOwner =
+    currentProject?.ownerId != null && String(currentProject.ownerId) === String(authUser?.id);
+  const canEditProjectMeta =
+    !isClient &&
+    !!currentProject &&
+    (currentUserRole === "admin" || currentUserRole === "manager" || isProjectOwner);
+  const canDeleteProject =
+    !isClient && !!currentProject && (currentUserRole === "admin" || isProjectOwner);
 
   const projectChannels = currentProject
     ? channels.filter((c) => c.projectId === currentProject.id && c.type !== "direct")
@@ -131,15 +169,16 @@ export function Sidebar({ currentView, currentChannelId, onViewChange, currentPr
                                         if (isGlobalView) onViewChange("tasks");
                                     }}
                                     className={cn(
-                                        "w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-200 relative group",
+                                        "w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-200 relative group font-bold text-sm text-white shadow-md",
+                                        projectRailColorClass(project.color),
                                         !isGlobalView && currentProject?.id === project.id
-                                            ? "bg-primary text-primary-foreground shadow-md ring-2 ring-primary ring-offset-2 ring-offset-background" 
-                                            : "bg-muted hover:bg-muted-foreground/20 text-muted-foreground hover:text-foreground"
+                                            ? "ring-2 ring-white/90 ring-offset-2 ring-offset-background scale-105 opacity-100"
+                                            : "opacity-80 hover:opacity-100 hover:scale-[1.02]",
                                     )}
                                 >
-                                    <span className="font-bold text-sm">{project.name.substring(0, 2).toUpperCase()}</span>
+                                    <span>{project.name.substring(0, 2).toUpperCase()}</span>
                                     {!isGlobalView && currentProject?.id === project.id && (
-                                        <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-[18px] w-1 h-8 bg-primary rounded-r-full" />
+                                        <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-[18px] w-1 h-8 bg-white/90 rounded-r-full" />
                                     )}
                                 </button>
                             </TooltipTrigger>
@@ -357,13 +396,43 @@ export function Sidebar({ currentView, currentChannelId, onViewChange, currentPr
                 </div>
              ) : (
                  <>
-                    <div className="h-16 flex items-center px-5 border-b border-border/40 shrink-0">
-                        <div className="flex flex-col overflow-hidden">
+                    <div className="h-16 flex items-center gap-2 px-5 border-b border-border/40 shrink-0 min-w-0">
+                        <div className="flex flex-col overflow-hidden min-w-0 flex-1">
                             <h2 className="font-display font-bold text-lg truncate leading-tight">
                                 {currentProject.name}
                             </h2>
-                            <span className="text-xs text-muted-foreground truncate">{currentProject.description}</span>
+                            {currentProject.description ? (
+                                <span className="text-xs text-muted-foreground truncate">{currentProject.description}</span>
+                            ) : null}
                         </div>
+                        {canEditProjectMeta && (
+                            <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        className="shrink-0 h-8 w-8 text-muted-foreground hover:text-foreground"
+                                        aria-label="Project menu"
+                                    >
+                                        <MoreVertical className="h-4 w-4" />
+                                    </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end" className="w-48">
+                                    <DropdownMenuItem onSelect={() => setEditProjectOpen(true)}>
+                                        Edit project details
+                                    </DropdownMenuItem>
+                                    {canDeleteProject && (
+                                        <DropdownMenuItem
+                                            className="text-destructive focus:text-destructive"
+                                            onSelect={() => setDeleteProjectOpen(true)}
+                                        >
+                                            Delete project
+                                        </DropdownMenuItem>
+                                    )}
+                                </DropdownMenuContent>
+                            </DropdownMenu>
+                        )}
                     </div>
 
                     {showNewTask && (
@@ -534,6 +603,61 @@ export function Sidebar({ currentView, currentChannelId, onViewChange, currentPr
                 </CommandGroup>
             </CommandList>
         </CommandDialog>
+
+        <EditProjectModal
+            open={editProjectOpen}
+            onOpenChange={setEditProjectOpen}
+            project={currentProject}
+            onSave={async (updates) => {
+                if (!currentProject) return;
+                await apiRequest("PATCH", `/api/projects/${currentProject.id}`, updates);
+                await queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+                toast({ title: "Project updated" });
+            }}
+        />
+
+        <AlertDialog open={deleteProjectOpen} onOpenChange={(open) => !open && setDeleteProjectOpen(false)}>
+            <AlertDialogContent>
+                <AlertDialogHeader>
+                    <AlertDialogTitle>Delete this project?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                        This permanently removes {currentProject ? `“${currentProject.name}”` : "the project"}, including
+                        tasks, channels, and messages. This cannot be undone.
+                    </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                    <AlertDialogCancel disabled={deleteProjectLoading}>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        disabled={deleteProjectLoading}
+                        onClick={(e) => {
+                            e.preventDefault();
+                            if (!currentProject) return;
+                            setDeleteProjectLoading(true);
+                            void (async () => {
+                                try {
+                                    await apiRequest("DELETE", `/api/projects/${currentProject.id}`);
+                                    await queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+                                    await queryClient.invalidateQueries({ queryKey: ["/api/channels"] });
+                                    setDeleteProjectOpen(false);
+                                    toast({ title: "Project deleted" });
+                                } catch (err) {
+                                    toast({
+                                        title: "Could not delete project",
+                                        description: err instanceof Error ? err.message : "Try again.",
+                                        variant: "destructive",
+                                    });
+                                } finally {
+                                    setDeleteProjectLoading(false);
+                                }
+                            })();
+                        }}
+                    >
+                        {deleteProjectLoading ? "Deleting…" : "Delete"}
+                    </AlertDialogAction>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
     </div>
   );
 }

@@ -26,17 +26,29 @@ export function NewProjectModal({ open, onOpenChange, onSave }: NewProjectModalP
             columns: [
                 { id: "todo", title: "To Do", color: "bg-slate-500" },
                 { id: "in-progress", title: "In Progress", color: "bg-blue-500" },
+                { id: "review", title: "Review", color: "bg-orange-500" },
                 { id: "done", title: "Done", color: "bg-emerald-500" },
             ],
             members: ["u1"]
         });
         setName("");
         setDescription("");
+        setColor("bg-blue-500");
         onOpenChange(false);
     };
 
     return (
-        <Dialog open={open} onOpenChange={onOpenChange}>
+        <Dialog
+            open={open}
+            onOpenChange={(next) => {
+                if (!next) {
+                    setName("");
+                    setDescription("");
+                    setColor("bg-blue-500");
+                }
+                onOpenChange(next);
+            }}
+        >
             <DialogContent className="sm:max-w-[500px] bg-card/95 backdrop-blur-xl border-border/60">
                 <DialogHeader>
                     <DialogTitle className="font-display text-xl">Create New Project</DialogTitle>
