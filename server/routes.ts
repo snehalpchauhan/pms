@@ -235,6 +235,8 @@ export async function registerRoutes(
 
   const companyPatchSchema = z.object({
     companyName: z.string().min(1, "Company name is required").max(200).optional(),
+    /** Shown in the browser tab; empty string clears to app default */
+    browserTitle: z.string().max(200).optional(),
     workspaceSlug: z
       .string()
       .max(100)
@@ -264,6 +266,7 @@ export async function registerRoutes(
     const row = await storage.getCompanySettings();
     res.json({
       companyName: row.companyName || "",
+      browserTitle: row.browserTitle?.trim() ?? "",
       workspaceSlug: row.workspaceSlug ?? "",
       logoUrl: row.logoUrl ?? null,
       ms365Enabled: row.ms365Enabled ?? false,
@@ -293,6 +296,7 @@ export async function registerRoutes(
     const body = parsed.data;
     if (
       body.companyName === undefined &&
+      body.browserTitle === undefined &&
       body.workspaceSlug === undefined &&
       body.logoDataUrl === undefined &&
       body.ms365Enabled === undefined &&
@@ -310,6 +314,7 @@ export async function registerRoutes(
     const current = await storage.getCompanySettings();
     const updates: {
       companyName?: string;
+      browserTitle?: string | null;
       workspaceSlug?: string | null;
       logoUrl?: string | null;
       ms365Enabled?: boolean;
@@ -323,6 +328,9 @@ export async function registerRoutes(
     } = {};
 
     if (body.companyName !== undefined) updates.companyName = body.companyName;
+    if (body.browserTitle !== undefined) {
+      updates.browserTitle = body.browserTitle.trim() === "" ? null : body.browserTitle.trim();
+    }
     if (body.workspaceSlug !== undefined) {
       updates.workspaceSlug = body.workspaceSlug === "" ? null : body.workspaceSlug;
     }
@@ -380,6 +388,7 @@ export async function registerRoutes(
     }
     res.json({
       companyName: updated.companyName || "",
+      browserTitle: updated.browserTitle?.trim() ?? "",
       workspaceSlug: updated.workspaceSlug ?? "",
       logoUrl: updated.logoUrl ?? null,
       ms365Enabled: updated.ms365Enabled ?? false,

@@ -101,6 +101,7 @@ export interface IStorage {
   updateCompanySettings(
     updates: Partial<{
       companyName: string;
+      browserTitle: string | null;
       workspaceSlug: string | null;
       logoUrl: string | null;
       ms365Enabled: boolean;
@@ -110,6 +111,7 @@ export interface IStorage {
       ms365AllowedDomains: string | null;
       taskMarkCompleteStatus: string;
       taskClientReopenStatus: string;
+      timeLogMinDescriptionWords: number;
     }>,
   ): Promise<CompanySettings>;
 
@@ -626,6 +628,7 @@ export class DatabaseStorage implements IStorage {
   async updateCompanySettings(
     updates: Partial<{
       companyName: string;
+      browserTitle: string | null;
       workspaceSlug: string | null;
       logoUrl: string | null;
       ms365Enabled: boolean;

@@ -7,6 +7,8 @@ import { z } from "zod";
 export const companySettings = pgTable("company_settings", {
   id: serial("id").primaryKey(),
   companyName: text("company_name").notNull().default(""),
+  /** Shown in the browser tab when set; empty uses the app default. */
+  browserTitle: text("browser_title"),
   workspaceSlug: text("workspace_slug"),
   logoUrl: text("logo_url"),
   ms365Enabled: boolean("ms365_enabled").notNull().default(false),

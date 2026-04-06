@@ -50,6 +50,7 @@ function settingsTabFromHash(): SettingsTab {
 
 type CompanySettingsDto = {
     companyName: string;
+    browserTitle: string;
     workspaceSlug: string;
     logoUrl: string | null;
     ms365Enabled: boolean;
@@ -83,6 +84,7 @@ export default function CompanySettingsView() {
     });
 
     const [companyName, setCompanyName] = useState("");
+    const [browserTitle, setBrowserTitle] = useState("");
     const [searchTerm, setSearchTerm] = useState("");
     const [roleFilter, setRoleFilter] = useState<string>("all");
 
@@ -155,6 +157,7 @@ export default function CompanySettingsView() {
     useEffect(() => {
         if (!companyData) return;
         setCompanyName(companyData.companyName);
+        setBrowserTitle(companyData.browserTitle ?? "");
         setWorkspaceSlug(companyData.workspaceSlug);
         setPendingLogoDataUrl(null);
         setLogoRemoved(false);
@@ -177,6 +180,7 @@ export default function CompanySettingsView() {
         mutationFn: async () => {
             const body: Record<string, unknown> = {
                 companyName: companyName.trim(),
+                browserTitle: browserTitle.trim(),
                 workspaceSlug: workspaceSlug.trim().toLowerCase().replace(/[^a-z0-9-]/g, ""),
                 ms365Enabled,
                 ms365TenantId: ms365TenantId.trim(),
@@ -484,6 +488,19 @@ export default function CompanySettingsView() {
                                             onChange={(e) => setCompanyName(e.target.value)}
                                             disabled={!isAdmin || companyLoading}
                                         />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label>Title</Label>
+                                        <Input
+                                            value={browserTitle}
+                                            onChange={(e) => setBrowserTitle(e.target.value)}
+                                            placeholder="e.g. Acme — Workspace"
+                                            maxLength={200}
+                                            disabled={!isAdmin || companyLoading}
+                                        />
+                                        <p className="text-xs text-muted-foreground">
+                                            Shown in the browser tab and title bar for everyone in the workspace. Leave empty to use the default (TaskFlow).
+                                        </p>
                                     </div>
                                     <div className="space-y-2">
                                         <Label>Workspace URL slug</Label>

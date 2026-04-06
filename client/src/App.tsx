@@ -23,7 +23,7 @@ import type { CreateTaskInput, Task } from "@/lib/mockData";
 import { FolderKanban, Loader2 } from "lucide-react";
 import { taskMatchesSearch } from "@/lib/taskSearch";
 import { Button } from "@/components/ui/button";
-import { useCompanyFavicon } from "@/hooks/useCompanyFavicon";
+import { useCompanyBranding } from "@/hooks/useCompanyBranding";
 
 export interface ClientPermissions {
   role: string;
@@ -86,7 +86,7 @@ function NoProjectWorkspaceMain({
 function AuthenticatedApp() {
   const { user } = useAuth();
   const { projects, channels, isLoading: appDataLoading } = useAppData();
-  useCompanyFavicon();
+  useCompanyBranding();
 
   const [currentView, setCurrentView] = useState<"tasks" | "messages" | "team" | "settings" | "profile" | "timecards">("tasks");
   const [currentProjectId, setCurrentProjectId] = useState<string>("");

@@ -20,6 +20,7 @@ CREATE TABLE "channel_members" (
 CREATE TABLE "company_settings" (
 	"id" serial PRIMARY KEY,
 	"company_name" text DEFAULT '' NOT NULL,
+	"browser_title" text,
 	"workspace_slug" text,
 	"logo_url" text,
 	"ms365_enabled" boolean DEFAULT false NOT NULL,
