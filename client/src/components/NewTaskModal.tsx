@@ -11,6 +11,7 @@ import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { Task, Project, ChecklistItem, Recurrence, CreateTaskInput } from "@/lib/mockData";
 import { useAuth } from "@/hooks/useAuth";
+import { useToast } from "@/hooks/use-toast";
 import { getUserInitials } from "@/lib/utils";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Switch } from "@/components/ui/switch";
@@ -80,6 +81,7 @@ function sanitizeEstimatedHoursInput(raw: string): string {
 
 export function NewTaskModal({ open, onOpenChange, project, membersProjectId, onSave, defaultStatus }: NewTaskModalProps) {
     const { user: authUser } = useAuth();
+    const { toast } = useToast();
     const [startDate, setStartDate] = useState<Date>(new Date());
     const [endDate, setEndDate] = useState<Date>(new Date());
     const [title, setTitle] = useState("");
@@ -182,6 +184,15 @@ export function NewTaskModal({ open, onOpenChange, project, membersProjectId, on
     };
 
     const handleSave = () => {
+        if (!title.trim()) {
+            toast({
+                title: "Task title required",
+                description: "Enter a title before creating the task.",
+                variant: "destructive",
+            });
+            return;
+        }
+
         let recurrenceConfig: Recurrence | undefined = undefined;
         
         if (isRecurring) {
@@ -202,7 +213,7 @@ export function NewTaskModal({ open, onOpenChange, project, membersProjectId, on
         const descriptionMarkdown = descriptionEditorRef.current?.getMarkdown().trim() ?? "";
 
         onSave({
-            title,
+            title: title.trim(),
             description: descriptionMarkdown,
             priority: priority as Task["priority"],
             status: status,
@@ -266,6 +277,8 @@ export function NewTaskModal({ open, onOpenChange, project, membersProjectId, on
         return Number.isInteger(n) && n > 0 ? n : null;
     }, [project.id]);
 
+    const canCreate = title.trim().length > 0;
+
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="sm:max-w-[700px] bg-card/95 backdrop-blur-xl border-border/60 h-[90vh] overflow-hidden flex flex-col p-0 gap-0">
@@ -277,13 +290,18 @@ export function NewTaskModal({ open, onOpenChange, project, membersProjectId, on
                     <div className="p-6 grid gap-6">
                         {/* 1. Task Title */}
                         <div className="space-y-2">
-                            <Label htmlFor="title" className="text-xs uppercase font-semibold text-muted-foreground">Task Title</Label>
-                            <Input 
-                                id="title" 
-                                placeholder="What needs to be done?" 
-                                className="font-medium text-lg bg-background/50 border-border/50 h-11" 
+                            <Label htmlFor="title" className="text-xs uppercase font-semibold text-muted-foreground">
+                                Task title <span className="text-destructive">*</span>
+                            </Label>
+                            <Input
+                                id="title"
+                                placeholder="What needs to be done?"
+                                className="font-medium text-lg bg-background/50 border-border/50 h-11"
                                 value={title}
                                 onChange={(e) => setTitle(e.target.value)}
+                                required
+                                aria-required
+                                autoComplete="off"
                             />
                         </div>
 
@@ -681,7 +699,9 @@ export function NewTaskModal({ open, onOpenChange, project, membersProjectId, on
 
                 <DialogFooter className="p-4 border-t border-border/40 shrink-0 bg-muted/20">
                     <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-                    <Button onClick={handleSave}>Create Task</Button>
+                    <Button onClick={handleSave} disabled={!canCreate}>
+                        Create Task
+                    </Button>
                 </DialogFooter>
             </DialogContent>
         </Dialog>

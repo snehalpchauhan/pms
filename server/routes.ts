@@ -982,6 +982,11 @@ export async function registerRoutes(
         }
       }
     }
+    const titleStr = typeof taskData.title === "string" ? taskData.title.trim() : "";
+    if (!titleStr) {
+      return res.status(400).json({ message: "Task title is required" });
+    }
+    (taskData as { title: string }).title = titleStr;
     const est = (taskData as { estimatedHours?: unknown }).estimatedHours;
     if (est === null || est === undefined || est === "") {
       delete (taskData as { estimatedHours?: unknown }).estimatedHours;
