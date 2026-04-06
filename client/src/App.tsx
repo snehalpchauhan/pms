@@ -12,7 +12,7 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { useState, useEffect, useRef, createContext, useContext } from "react";
+import { useState, useEffect, useRef, createContext, useContext, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
@@ -21,6 +21,7 @@ import { getQueryFn } from "@/lib/queryClient";
 import LoginPage from "@/pages/LoginPage";
 import type { CreateTaskInput, Task } from "@/lib/mockData";
 import { FolderKanban, Loader2 } from "lucide-react";
+import { taskMatchesSearch } from "@/lib/taskSearch";
 import { Button } from "@/components/ui/button";
 
 export interface ClientPermissions {
@@ -93,6 +94,7 @@ function AuthenticatedApp() {
   const [newTaskDefaultStatus, setNewTaskDefaultStatus] = useState<string>("");
   const [isNewProjectOpen, setIsNewProjectOpen] = useState(false);
   const [isNewChannelOpen, setIsNewChannelOpen] = useState(false);
+  const [taskSearchQuery, setTaskSearchQuery] = useState("");
 
   const workspaceBootstrappedRef = useRef(false);
 
@@ -111,6 +113,10 @@ function AuthenticatedApp() {
       setCurrentProjectId(projects[0].id);
     }
   }, [projects, currentProjectId]);
+
+  useEffect(() => {
+    setTaskSearchQuery("");
+  }, [currentProjectId]);
 
   useEffect(() => {
     if (appDataLoading || workspaceBootstrappedRef.current) return;
@@ -148,6 +154,11 @@ function AuthenticatedApp() {
   });
 
   const tasks: Task[] = (rawTasks || []).map(convertTask);
+
+  const tasksMatchingSearch = useMemo(
+    () => tasks.filter((t) => taskMatchesSearch(t, taskSearchQuery)),
+    [tasks, taskSearchQuery],
+  );
 
   const isClient = user?.role === "client";
   const clientPermissions: ClientPermissions | null = permissionsData || null;
@@ -276,6 +287,8 @@ function AuthenticatedApp() {
                 view={currentView}
                 currentUserRole={currentUserRole}
                 onRoleChange={() => {}}
+                taskSearch={currentView === "tasks" ? taskSearchQuery : undefined}
+                onTaskSearchChange={currentView === "tasks" ? setTaskSearchQuery : undefined}
               />
             )}
 
@@ -308,7 +321,7 @@ function AuthenticatedApp() {
                 (currentProject ? (
                   <ProjectTasksView
                     project={currentProject}
-                    tasks={tasks}
+                    tasks={tasksMatchingSearch}
                     clientPermissions={effectivePermissions}
                   />
                 ) : (

@@ -1,4 +1,4 @@
-import { Plus, LayoutGrid, CheckSquare, Settings, Users, MessageSquare, Bell, Search, Hash, Lock, ListTodo, FolderKanban, LogOut, Briefcase, Building2, User, Shield, Key, Clock, LogIn, MoreVertical } from "lucide-react";
+import { Plus, LayoutGrid, CheckSquare, Settings, Users, MessageSquare, Bell, Search, Hash, Lock, ListTodo, FolderKanban, LogOut, Briefcase, Building2, User, Shield, Key, Clock, LogIn, MoreVertical, X } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -676,11 +676,16 @@ interface HeaderProps {
     view: string;
     currentUserRole: string;
     onRoleChange: (role: string) => void;
+    /** When provided, shows task search (title + description) for the board/list/calendar. */
+    taskSearch?: string;
+    onTaskSearchChange?: (query: string) => void;
 }
 
-export function Header({ title, view, currentUserRole, onRoleChange }: HeaderProps) {
+export function Header({ title, view, currentUserRole, onRoleChange, taskSearch, onTaskSearchChange }: HeaderProps) {
     const viewName = view === 'tasks' ? 'Tasks' : view.charAt(0).toUpperCase() + view.slice(1);
-    
+    const showTaskSearch = taskSearch !== undefined && onTaskSearchChange !== undefined;
+    const hasQuery = showTaskSearch && taskSearch.trim().length > 0;
+
   return (
     <header className="h-16 border-b border-border bg-background/80 backdrop-blur-md sticky top-0 z-10 px-6 flex items-center justify-between shrink-0">
       <div className="flex items-center gap-4">
@@ -691,15 +696,34 @@ export function Header({ title, view, currentUserRole, onRoleChange }: HeaderPro
       </div>
 
       <div className="flex items-center gap-3">
-        <div className="relative w-48 hidden lg:block">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input 
-                placeholder="Search..." 
-                className="pl-9 bg-background border-border/50 h-9 text-sm" 
-            />
-        </div>
-        
-        <Separator orientation="vertical" className="h-6 mx-2" />
+        {showTaskSearch ? (
+          <>
+            <div className="relative w-56 min-w-0 hidden lg:block">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={taskSearch}
+                onChange={(e) => onTaskSearchChange(e.target.value)}
+                placeholder="Search tasks…"
+                className={cn(
+                  "h-9 border-border/50 bg-background pl-9 text-sm",
+                  hasQuery ? "pr-9" : "pr-3",
+                )}
+                aria-label="Search tasks by title or description"
+              />
+              {hasQuery ? (
+                <button
+                  type="button"
+                  className="absolute right-1 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                  onClick={() => onTaskSearchChange("")}
+                  aria-label="Clear task search"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              ) : null}
+            </div>
+            <Separator orientation="vertical" className="h-6" />
+          </>
+        ) : null}
 
         <NotificationsPopover />
       </div>
