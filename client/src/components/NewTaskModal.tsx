@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,25 +8,34 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { CalendarIcon, User, Tag, Plus, Repeat, CheckSquare, Paperclip, X, Trash2 } from "lucide-react";
+import { CalendarIcon, Plus, Repeat, CheckSquare, Paperclip, X, Trash2, Clock, Users } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
-import { Task, Project, ChecklistItem, Recurrence } from "@/lib/mockData";
+import { Task, Project, ChecklistItem, Recurrence, CreateTaskInput } from "@/lib/mockData";
+import { useAuth } from "@/hooks/useAuth";
+import { getUserInitials } from "@/lib/utils";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
+
+interface ProjectMemberRow {
+  id: number;
+  name: string;
+  avatar?: string | null;
+  role?: string;
+}
 
 interface NewTaskModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   project: Project;
-  onSave: (task: Partial<Task>) => void;
+  onSave: (task: CreateTaskInput) => void;
   defaultStatus?: string;
 }
 
 export function NewTaskModal({ open, onOpenChange, project, onSave, defaultStatus }: NewTaskModalProps) {
+    const { user: authUser } = useAuth();
     const [startDate, setStartDate] = useState<Date>(new Date());
     const [endDate, setEndDate] = useState<Date>(new Date());
     const [title, setTitle] = useState("");
@@ -51,6 +61,40 @@ export function NewTaskModal({ open, onOpenChange, project, onSave, defaultStatu
     const [customUnit, setCustomUnit] = useState<"days" | "weeks" | "months" | "years">("weeks");
     const [selectedDays, setSelectedDays] = useState<number[]>([]);
 
+    const [selectedAssigneeIds, setSelectedAssigneeIds] = useState<Set<string>>(() => new Set());
+    const [initialHoursInput, setInitialHoursInput] = useState("");
+
+    const numericProjectId = Number(project.id);
+    const { data: projectMembers = [], isLoading: membersLoading } = useQuery<ProjectMemberRow[]>({
+      queryKey: ["/api/projects", numericProjectId, "members-with-settings"],
+      queryFn: async () => {
+        const res = await fetch(`/api/projects/${numericProjectId}/members`, { credentials: "include" });
+        if (!res.ok) throw new Error("Failed to load members");
+        return res.json();
+      },
+      enabled: open && !Number.isNaN(numericProjectId) && numericProjectId > 0,
+    });
+
+    const sortedMembers = useMemo(
+      () => [...projectMembers].sort((a, b) => a.name.localeCompare(b.name)),
+      [projectMembers],
+    );
+
+    useEffect(() => {
+      if (!open) return;
+      setSelectedAssigneeIds(new Set());
+      setInitialHoursInput("");
+    }, [open]);
+
+    const toggleAssignee = (userId: string) => {
+      setSelectedAssigneeIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(userId)) next.delete(userId);
+        else next.add(userId);
+        return next;
+      });
+    };
+
     const handleSave = () => {
         let recurrenceConfig: Recurrence | undefined = undefined;
         
@@ -63,17 +107,24 @@ export function NewTaskModal({ open, onOpenChange, project, onSave, defaultStatu
             };
         }
 
+        const hoursParsed = parseFloat(initialHoursInput.replace(",", "."));
+        const initialHours =
+          initialHoursInput.trim() !== "" && !Number.isNaN(hoursParsed) && hoursParsed > 0
+            ? hoursParsed
+            : undefined;
+
         onSave({
             title,
             description: desc,
-            priority: priority as any,
+            priority: priority as Task["priority"],
             status: status,
             startDate: startDate ? format(startDate, "yyyy-MM-dd") : undefined,
             dueDate: endDate ? format(endDate, "yyyy-MM-dd") : undefined,
             recurrence: recurrenceConfig,
             checklist: checklistItems,
             projectId: project.id,
-            assignees: [],
+            assignees: Array.from(selectedAssigneeIds),
+            initialHours,
             tags: ["New"],
             comments: [],
             attachments: attachments.map((f, i) => ({
@@ -93,6 +144,8 @@ export function NewTaskModal({ open, onOpenChange, project, onSave, defaultStatu
         setRecurrenceFreq("weekly");
         setChecklistItems([]);
         setAttachments([]);
+        setSelectedAssigneeIds(new Set());
+        setInitialHoursInput("");
         onOpenChange(false);
     };
 
@@ -236,6 +289,82 @@ export function NewTaskModal({ open, onOpenChange, project, onSave, defaultStatu
                                         ))}
                                     </SelectContent>
                                 </Select>
+                            </div>
+                        </div>
+
+                        {/* Assignees & optional initial hours */}
+                        <div className="space-y-4 rounded-lg border border-border/50 bg-muted/15 p-4">
+                            <div className="flex items-center gap-2">
+                                <Users className="h-4 w-4 text-muted-foreground" />
+                                <span className="text-sm font-medium">People & time</span>
+                            </div>
+                            <div className="space-y-2">
+                                <Label className="text-xs uppercase font-semibold text-muted-foreground">
+                                    Assignees (optional)
+                                </Label>
+                                {membersLoading ? (
+                                    <p className="text-xs text-muted-foreground">Loading project members…</p>
+                                ) : sortedMembers.length === 0 ? (
+                                    <p className="text-xs text-muted-foreground">No members on this project.</p>
+                                ) : (
+                                    <div className="max-h-40 space-y-1 overflow-y-auto rounded-md border border-border/40 bg-background/50 p-2">
+                                        {sortedMembers.map((m) => {
+                                            const id = String(m.id);
+                                            const checked = selectedAssigneeIds.has(id);
+                                            const isSelf = authUser?.id != null && String(authUser.id) === id;
+                                            return (
+                                                <label
+                                                    key={id}
+                                                    className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 hover:bg-muted/60"
+                                                >
+                                                    <Checkbox
+                                                        checked={checked}
+                                                        onCheckedChange={() => toggleAssignee(id)}
+                                                    />
+                                                    <Avatar className="h-7 w-7">
+                                                        <AvatarImage src={m.avatar?.trim() || undefined} />
+                                                        <AvatarFallback className="text-[10px]">
+                                                            {getUserInitials(m.name, undefined)}
+                                                        </AvatarFallback>
+                                                    </Avatar>
+                                                    <span className="flex-1 truncate text-sm">
+                                                        {m.name}
+                                                        {isSelf ? (
+                                                            <span className="text-muted-foreground"> (you)</span>
+                                                        ) : null}
+                                                    </span>
+                                                </label>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+                            <div className="space-y-2">
+                                <Label
+                                    htmlFor="initial-hours"
+                                    className="text-xs uppercase font-semibold text-muted-foreground"
+                                >
+                                    Initial hours (optional)
+                                </Label>
+                                <div className="flex items-start gap-2">
+                                    <Clock className="mt-2.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                                    <div className="flex-1 space-y-1">
+                                        <Input
+                                            id="initial-hours"
+                                            type="number"
+                                            min={0}
+                                            step={0.25}
+                                            placeholder="e.g. 1.5"
+                                            className="bg-background/50 border-border/50"
+                                            value={initialHoursInput}
+                                            onChange={(e) => setInitialHoursInput(e.target.value)}
+                                        />
+                                        <p className="text-[11px] text-muted-foreground">
+                                            Logs this time on the new task for you (today&apos;s date). Requires permission to
+                                            log time.
+                                        </p>
+                                    </div>
+                                </div>
                             </div>
                         </div>
 

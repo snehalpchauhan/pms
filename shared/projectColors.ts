@@ -1,16 +1,21 @@
-/** Preset Tailwind background classes for project chips (included in Tailwind build via usage). */
-export const PROJECT_COLOR_SWATCHES = [
-  "bg-slate-600",
-  "bg-blue-500",
-  "bg-indigo-500",
-  "bg-violet-500",
-  "bg-fuchsia-500",
-  "bg-rose-500",
-  "bg-orange-500",
-  "bg-amber-500",
-  "bg-emerald-500",
-  "bg-cyan-500",
+/**
+ * Preset project colors: Tailwind class stored in DB + matching hex for UI swatches
+ * (inline hex guarantees all presets render even if CSS purging misses a class).
+ */
+export const PROJECT_COLOR_PRESETS = [
+  { tw: "bg-slate-600", hex: "#475569" },
+  { tw: "bg-blue-500", hex: "#3b82f6" },
+  { tw: "bg-indigo-500", hex: "#6366f1" },
+  { tw: "bg-violet-500", hex: "#8b5cf6" },
+  { tw: "bg-fuchsia-500", hex: "#d946ef" },
+  { tw: "bg-rose-500", hex: "#f43f5e" },
+  { tw: "bg-orange-500", hex: "#f97316" },
+  { tw: "bg-amber-500", hex: "#f59e0b" },
+  { tw: "bg-emerald-500", hex: "#10b981" },
+  { tw: "bg-cyan-500", hex: "#06b6d4" },
 ] as const;
+
+export const PROJECT_COLOR_SWATCHES = PROJECT_COLOR_PRESETS.map((p) => p.tw);
 
 export type ProjectColorSwatch = (typeof PROJECT_COLOR_SWATCHES)[number];
 

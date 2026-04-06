@@ -19,8 +19,9 @@ import { toast } from "@/hooks/use-toast";
 import { AppDataProvider, useAppData, convertTask } from "@/hooks/useAppData";
 import { getQueryFn } from "@/lib/queryClient";
 import LoginPage from "@/pages/LoginPage";
-import type { Task } from "@/lib/mockData";
+import type { CreateTaskInput, Task } from "@/lib/mockData";
 import { FolderKanban, Loader2 } from "lucide-react";
+import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 
 export interface ClientPermissions {
@@ -171,9 +172,9 @@ function AuthenticatedApp() {
     return () => window.removeEventListener('openNewTaskModal', handleOpenNewTask);
   }, []);
 
-  const handleTaskCreate = async (newTask: Partial<Task>) => {
+  const handleTaskCreate = async (newTask: CreateTaskInput) => {
     try {
-      await apiRequest("POST", "/api/tasks", {
+      const res = await apiRequest("POST", "/api/tasks", {
         projectId: Number(currentProjectId),
         title: newTask.title,
         description: newTask.description,
@@ -185,6 +186,22 @@ function AuthenticatedApp() {
         coverImage: newTask.coverImage,
         assignees: (newTask.assignees || []).map(Number),
       });
+      const created = (await res.json()) as { id?: number };
+      const hrs = newTask.initialHours;
+      if (created?.id != null && hrs != null && Number(hrs) > 0) {
+        try {
+          await apiRequest("POST", `/api/tasks/${created.id}/time-entries`, {
+            hours: String(Number(hrs)),
+            logDate: format(new Date(), "yyyy-MM-dd"),
+            description: null,
+          });
+        } catch {
+          toast({
+            title: "Task created",
+            description: "Initial hours could not be logged (check time-tracking permissions).",
+          });
+        }
+      }
       queryClient.invalidateQueries({ queryKey: ["/api/projects", numericProjectId, "tasks"] });
     } catch (e) {
       console.error("Failed to create task:", e);

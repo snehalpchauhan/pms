@@ -1,6 +1,9 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
+/* Preset project chip classes from shared/projectColors.ts */
+@source "../../shared/**/*.ts";
+
 @plugin "tailwindcss-animate";
 
 @custom-variant dark (&:is(.dark *));

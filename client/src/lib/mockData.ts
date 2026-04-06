@@ -51,6 +51,9 @@ export interface Recurrence {
   customType?: "days" | "weeks" | "months" | "years";
 }
 
+/** Fields accepted when creating a task from the new-task dialog (includes optional initial time log). */
+export type CreateTaskInput = Partial<Task> & { initialHours?: number };
+
 export interface Task {
   id: string;
   /** Server user id of the creator; only they may delete the task (unless legacy null owner). */

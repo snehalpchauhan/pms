@@ -3,7 +3,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import {
-  PROJECT_COLOR_SWATCHES,
+  PROJECT_COLOR_PRESETS,
   normalizeHexColor,
   sanitizeProjectColor,
 } from "@shared/projectColors";
@@ -31,18 +31,18 @@ export function ProjectColorPicker({ value, onChange, idPrefix = "project-color"
   return (
     <div className="space-y-3">
       <Label className="text-xs uppercase font-semibold text-muted-foreground">Color</Label>
-      <div className="flex flex-wrap gap-2">
-        {PROJECT_COLOR_SWATCHES.map((c) => (
+      <div className="grid grid-cols-5 gap-2 w-full max-w-[220px] sm:max-w-none">
+        {PROJECT_COLOR_PRESETS.map(({ tw, hex }) => (
           <button
-            key={c}
+            key={tw}
             type="button"
-            aria-label={`Preset ${c}`}
+            aria-label={`Preset ${hex}`}
             className={cn(
-              "h-8 w-8 shrink-0 rounded-full transition-shadow",
-              c,
-              value === c ? "ring-2 ring-offset-2 ring-primary ring-offset-background" : "hover:ring-2 hover:ring-offset-1 hover:ring-muted-foreground/30",
+              "h-9 w-9 shrink-0 rounded-full border border-border/50 transition-shadow",
+              value === tw ? "ring-2 ring-offset-2 ring-primary ring-offset-background" : "hover:ring-2 hover:ring-offset-1 hover:ring-muted-foreground/30",
             )}
-            onClick={() => onChange(c)}
+            style={{ backgroundColor: hex }}
+            onClick={() => onChange(tw)}
           />
         ))}
       </div>
