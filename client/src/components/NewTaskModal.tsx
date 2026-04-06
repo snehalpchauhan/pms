@@ -55,6 +55,26 @@ function normalizeProjectMemberRows(data: unknown): ProjectMemberRow[] {
   return out;
 }
 
+/** Up to 4 digits before decimal, optional . and up to 2 fraction digits; strips other characters. */
+function sanitizeEstimatedHoursInput(raw: string): string {
+  const normalized = raw.replace(/,/g, ".");
+  let intPart = "";
+  let afterDot: string | null = null;
+  for (const ch of normalized) {
+    if (ch >= "0" && ch <= "9") {
+      if (afterDot !== null) {
+        if (afterDot.length < 2) afterDot += ch;
+      } else if (intPart.length < 4) {
+        intPart += ch;
+      }
+    } else if (ch === "." && afterDot === null) {
+      afterDot = "";
+    }
+  }
+  if (afterDot === null) return intPart;
+  return intPart + "." + afterDot;
+}
+
 export function NewTaskModal({ open, onOpenChange, project, membersProjectId, onSave, defaultStatus }: NewTaskModalProps) {
     const { user: authUser } = useAuth();
     const [startDate, setStartDate] = useState<Date>(new Date());
@@ -355,8 +375,8 @@ export function NewTaskModal({ open, onOpenChange, project, membersProjectId, on
                             </div>
                         </div>
 
-                        {/* Assignees & optional initial hours */}
-                        <div className="space-y-4 rounded-lg border border-border/50 bg-muted/15 p-4">
+                        {/* Assignees */}
+                        <div className="space-y-3 rounded-lg border border-border/50 bg-muted/15 p-4">
                             <div className="space-y-2">
                                 <Label className="text-xs uppercase font-semibold text-muted-foreground">
                                     Assignees (optional)
@@ -457,31 +477,33 @@ export function NewTaskModal({ open, onOpenChange, project, membersProjectId, on
                                     </div>
                                 )}
                             </div>
-                            <div className="space-y-2">
-                                <Label
-                                    htmlFor="estimated-hours"
-                                    className="text-xs uppercase font-semibold text-muted-foreground"
-                                >
-                                    Estimated hours (optional)
-                                </Label>
-                                <div className="flex items-start gap-2">
-                                    <Clock className="mt-2.5 h-4 w-4 shrink-0 text-muted-foreground" />
-                                    <div className="flex-1 space-y-1">
-                                        <Input
-                                            id="estimated-hours"
-                                            type="number"
-                                            min={0}
-                                            step={0.25}
-                                            placeholder="e.g. 4"
-                                            className="bg-background/50 border-border/50"
-                                            value={estimatedHoursInput}
-                                            onChange={(e) => setEstimatedHoursInput(e.target.value)}
-                                        />
-                                        <p className="text-[11px] text-muted-foreground">
-                                            Planned effort for this task. Actual time comes from logged time entries.
-                                        </p>
-                                    </div>
+                        </div>
+
+                        {/* Estimated hours — separate card; narrow text field (no number spinners) */}
+                        <div className="space-y-3 rounded-lg border border-border/50 bg-muted/15 p-4">
+                            <Label
+                                htmlFor="estimated-hours"
+                                className="text-xs uppercase font-semibold text-muted-foreground"
+                            >
+                                Estimated hours (optional)
+                            </Label>
+                            <div className="flex flex-wrap items-end gap-3">
+                                <div className="flex items-center gap-2">
+                                    <Clock className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+                                    <Input
+                                        id="estimated-hours"
+                                        type="text"
+                                        inputMode="decimal"
+                                        autoComplete="off"
+                                        placeholder="e.g. 4"
+                                        className="h-9 w-[5.5rem] tabular-nums bg-background/50 border-border/50 sm:w-24"
+                                        value={estimatedHoursInput}
+                                        onChange={(e) => setEstimatedHoursInput(sanitizeEstimatedHoursInput(e.target.value))}
+                                    />
                                 </div>
+                                <p className="text-[11px] text-muted-foreground min-w-0 flex-1 basis-full sm:basis-auto sm:pb-0.5">
+                                    Planned effort for this task. Actual time comes from logged time entries.
+                                </p>
                             </div>
                         </div>
 
