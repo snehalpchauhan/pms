@@ -1,5 +1,5 @@
 import { Project } from "@/lib/mockData";
-import { useAppData } from "@/hooks/useAppData";
+import { useAppData, effectivePresenceStatus } from "@/hooks/useAppData";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
@@ -29,6 +29,7 @@ interface MemberWithSettings {
   email?: string;
   avatar?: string;
   status?: string;
+  lastSeenAt?: string | Date | null;
   clientShowTimecards?: boolean;
   clientTaskAccess?: string;
 }
@@ -156,7 +157,9 @@ export default function TeamView({ project, currentUserRole }: TeamViewProps) {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {membersWithSettings.map(user => (
+            {membersWithSettings.map(user => {
+                const presence = effectivePresenceStatus(user.status, user.lastSeenAt);
+                return (
                 <div key={user.id} className="space-y-0">
                     <Card className={cn("hover:shadow-md transition-shadow border-border/60 relative group", user.role === 'client' && canManageTeam && "rounded-b-none border-b-0")}>
                         <CardHeader className="flex flex-row items-center gap-4 pb-2">
@@ -184,10 +187,10 @@ export default function TeamView({ project, currentUserRole }: TeamViewProps) {
                             <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-2">
                                     <div className={`w-2 h-2 rounded-full ${
-                                        user.status === 'online' ? 'bg-emerald-500' : 
-                                        user.status === 'busy' ? 'bg-red-500' : 'bg-slate-400'
+                                        presence === 'online' ? 'bg-emerald-500' :
+                                        presence === 'busy' ? 'bg-red-500' : 'bg-slate-400'
                                     }`} />
-                                    <span className="text-xs font-medium capitalize">{user.status}</span>
+                                    <span className="text-xs font-medium capitalize">{presence}</span>
                                 </div>
                                 
                                 {canManageTeam && (
@@ -237,7 +240,8 @@ export default function TeamView({ project, currentUserRole }: TeamViewProps) {
                         </div>
                     )}
                 </div>
-            ))}
+                );
+            })}
             
             {canManageTeam && (
                 <button onClick={() => setIsInviteOpen(true)} className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-border/50 rounded-xl hover:bg-muted/10 transition-colors h-full min-h-[160px] gap-2 group">

@@ -9,7 +9,8 @@ import type { Channel, Project } from "@/lib/mockData";
 import { useAppData } from "@/hooks/useAppData";
 import { useAuth } from "@/hooks/useAuth";
 import { cn, getUserInitials } from "@/lib/utils";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { COMPANY_SETTINGS_TAB_EVENT } from "@/lib/companySettingsNav";
 import { Badge } from "@/components/ui/badge";
 import { CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
@@ -122,15 +123,36 @@ export function Sidebar({ currentView, currentChannelId, onViewChange, currentPr
   const projectChannels = currentProject
     ? channels.filter((c) => c.projectId === currentProject.id && c.type !== "direct")
     : [];
-  const dmEligibleMembers = usersArray
-    .filter((u) => String(u.id) !== String(authUser?.id))
-    .sort((a, b) => a.name.localeCompare(b.name));
+
+  const dmMembersProjectId =
+    !isClient && currentProject ? Number(currentProject.id) : null;
+  const { data: projectMembersForDm = [] } = useQuery<Array<{ id: string | number }>>({
+    queryKey: ["/api/projects", dmMembersProjectId, "members-with-settings"],
+    queryFn: async () => {
+      const res = await fetch(`/api/projects/${dmMembersProjectId}/members`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch project members");
+      return res.json();
+    },
+    enabled: dmMembersProjectId != null && !Number.isNaN(dmMembersProjectId),
+  });
+
+  const projectMemberIdSet = useMemo(
+    () => new Set(projectMembersForDm.map((m) => String(m.id))),
+    [projectMembersForDm],
+  );
+
+  const dmEligibleMembers = useMemo(() => {
+    return usersArray
+      .filter((u) => String(u.id) !== String(authUser?.id))
+      .filter((u) => projectMemberIdSet.has(String(u.id)))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [usersArray, authUser?.id, projectMemberIdSet]);
+
   const showTimecards = !isClient || (clientPermissions?.clientShowTimecards === true);
   const showTeam = !isClient;
   const showSettings = !isClient && currentUserRole === "admin";
   const showNewProject = !isClient && (currentUserRole === "manager" || currentUserRole === "admin");
   const showNewChannel = !isClient;
-  const showNewTask = !isClient || (clientPermissions?.clientTaskAccess === "contribute" || clientPermissions?.clientTaskAccess === "full");
 
   // Determine if we're in a "Global" context (outside a project)
   const isGlobalView = currentView === "settings" || currentView === "profile" || currentView === "timecards";
@@ -434,17 +456,6 @@ export function Sidebar({ currentView, currentChannelId, onViewChange, currentPr
                             </DropdownMenu>
                         )}
                     </div>
-
-                    {showNewTask && (
-                        <div className="p-3">
-                            <Button className="w-full justify-start gap-2 shadow-sm" onClick={() => {
-                                const event = new CustomEvent('openNewTaskModal');
-                                window.dispatchEvent(event);
-                            }}>
-                                <Plus className="w-4 h-4" /> New Task
-                            </Button>
-                        </div>
-                    )}
 
                     <ScrollArea className="flex-1 px-3">
                         <div className="space-y-6 py-2">
