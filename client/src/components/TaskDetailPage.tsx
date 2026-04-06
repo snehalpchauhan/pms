@@ -271,23 +271,23 @@ function CommentItem({
             <>
               <button
                 type="button"
-                className="text-[10px] text-muted-foreground font-medium hover:underline cursor-pointer bg-transparent border-0 p-0 inline-flex items-center gap-0.5"
+                className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted/60 hover:text-foreground cursor-pointer bg-transparent border-0 p-0"
+                aria-label="Edit comment"
                 onClick={() => {
                   setEditDraft(comment.content);
                   setIsEditing(true);
                   setIsReplying(false);
                 }}
               >
-                <Pencil className="w-3 h-3" aria-hidden />
-                Edit
+                <Pencil className="w-3.5 h-3.5" aria-hidden />
               </button>
               <button
                 type="button"
-                className="text-[10px] text-muted-foreground font-medium hover:underline cursor-pointer bg-transparent border-0 p-0 inline-flex items-center gap-0.5"
+                className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted/60 hover:text-foreground cursor-pointer bg-transparent border-0 p-0"
+                aria-label="Delete comment"
                 onClick={() => setDeleteOpen(true)}
               >
-                <Trash2 className="w-3 h-3" aria-hidden />
-                Delete
+                <Trash2 className="w-3.5 h-3.5" aria-hidden />
               </button>
             </>
           ) : null}
