@@ -15,3 +15,4 @@ ALTER TABLE company_settings ADD COLUMN IF NOT EXISTS time_log_min_description_w
 ALTER TABLE company_settings ADD COLUMN IF NOT EXISTS browser_title text;
 
 ALTER TABLE users ADD COLUMN IF NOT EXISTS project_sidebar_order jsonb;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS project_quick_menu_ids jsonb;

@@ -78,7 +78,7 @@ function settingsSidebarTabFromHash(): (typeof SETTINGS_SIDEBAR_TABS)[number] {
 }
 
 export function Sidebar({ currentView, currentChannelId, onViewChange, currentProject, onProjectChange, onAddProject, onAddChannel, currentUserRole, clientPermissions }: SidebarProps) {
-  const { users, projects, channels, usersArray } = useAppData();
+  const { users, projects, quickMenuProjects, channels, usersArray } = useAppData();
   const { user: authUser, logout } = useAuth();
   const sidebarInitials = getUserInitials(authUser?.name, authUser?.username);
   const sidebarAvatar = authUser?.avatar?.trim() || undefined;
@@ -206,7 +206,7 @@ export function Sidebar({ currentView, currentChannelId, onViewChange, currentPr
              {/* Projects List */}
              <ScrollArea className="flex-1 w-full px-3 gap-3 flex flex-col items-center">
                  <div className="flex flex-col gap-3 items-center w-full py-2">
-                    {projects.map((project) => {
+                    {quickMenuProjects.map((project) => {
                         const chip = resolveProjectChipAppearance(project.color);
                         return (
                         <Tooltip key={project.id}>

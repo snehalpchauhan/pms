@@ -26,3 +26,28 @@ export function sortProjectsBySidebarOrder(
     .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
   return [...ordered, ...rest];
 }
+
+/**
+ * Collapsed rail chips: all projects when `quickMenuIds` is null/undefined; otherwise only listed ids (order follows `projects`).
+ */
+export function filterProjectsForQuickMenu(
+  projects: Project[],
+  quickMenuIds: number[] | null | undefined,
+): Project[] {
+  if (quickMenuIds == null) return projects;
+  const set = new Set(quickMenuIds.map(Number));
+  return projects.filter((p) => set.has(Number(p.id)));
+}
+
+/**
+ * Persist null when every project is on the quick menu; otherwise explicit numeric ids (may be empty).
+ */
+export function quickMenuPreferencePayload(
+  projects: Project[],
+  checkedProjectIds: Set<string>,
+): number[] | null {
+  const all = projects.map((p) => p.id);
+  if (all.length === 0) return null;
+  if (all.every((id) => checkedProjectIds.has(id))) return null;
+  return all.filter((id) => checkedProjectIds.has(id)).map((id) => Number(id));
+}

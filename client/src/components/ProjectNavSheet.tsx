@@ -22,22 +22,31 @@ import { resolveProjectChipAppearance } from "@shared/projectColors";
 import { cn, getUserInitials } from "@/lib/utils";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { toast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
+import { quickMenuPreferencePayload } from "@/lib/projectSidebarOrder";
 
 type MeUser = {
   id: number;
   projectSidebarOrder?: number[] | null;
+  projectQuickMenuIds?: number[] | null;
   [key: string]: unknown;
-};
+}
 
 function SortableProjectRow({
   project,
   isActive,
+  showOnQuickMenu,
+  onToggleQuickMenu,
   onSelect,
 }: {
   project: Project;
   isActive: boolean;
+  showOnQuickMenu: boolean;
+  onToggleQuickMenu: (checked: boolean) => void;
   onSelect: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
@@ -48,6 +57,7 @@ function SortableProjectRow({
     transform: CSS.Transform.toString(transform),
     transition,
   };
+  const quickId = `quick-menu-${project.id}`;
 
   return (
     <div
@@ -61,13 +71,28 @@ function SortableProjectRow({
     >
       <button
         type="button"
-        className="touch-none cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground p-1 rounded"
+        className="touch-none cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground p-1 rounded shrink-0"
         aria-label="Drag to reorder"
         {...attributes}
         {...listeners}
       >
         <GripVertical className="h-4 w-4" />
       </button>
+      <div
+        className="flex shrink-0 items-center gap-2"
+        onClick={(e) => e.stopPropagation()}
+        onPointerDown={(e) => e.stopPropagation()}
+      >
+        <Checkbox
+          id={quickId}
+          checked={showOnQuickMenu}
+          onCheckedChange={(v) => onToggleQuickMenu(v === true)}
+          aria-label="Show on quick menu"
+        />
+        <Label htmlFor={quickId} className="text-xs text-muted-foreground font-normal cursor-pointer whitespace-nowrap">
+          Quick menu
+        </Label>
+      </div>
       <button
         type="button"
         onClick={onSelect}
@@ -106,7 +131,9 @@ export function ProjectNavSheet({
   onSelectProject,
   leaveGlobalView,
 }: ProjectNavSheetProps) {
+  const { user: authUser } = useAuth();
   const [orderedIds, setOrderedIds] = useState<string[]>(() => projects.map((p) => p.id));
+  const [quickChecked, setQuickChecked] = useState<Set<string>>(() => new Set(projects.map((p) => p.id)));
 
   useLayoutEffect(() => {
     if (!open) return;
@@ -117,7 +144,14 @@ export function ProjectNavSheet({
       }
       return projects.map((p) => p.id);
     });
-  }, [open, projects]);
+    const qm = authUser?.projectQuickMenuIds;
+    if (qm == null) {
+      setQuickChecked(new Set(projects.map((p) => p.id)));
+    } else {
+      const set = new Set(qm.map((n) => String(n)));
+      setQuickChecked(new Set(projects.map((p) => p.id).filter((id) => set.has(id))));
+    }
+  }, [open, projects, authUser?.projectQuickMenuIds]);
 
   const idToProject = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects]);
 
@@ -126,19 +160,33 @@ export function ProjectNavSheet({
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
-  async function persistOrder(ids: string[]) {
+  function mergeMeCache(updated: MeUser) {
+    queryClient.setQueryData<MeUser | null>(["/api/auth/me"], (old) => {
+      if (!old) return old;
+      return { ...old, ...updated };
+    });
+  }
+
+  async function persistOrderOnly(ids: string[]) {
     const orderedProjectIds = ids.map((id) => Number(id)).filter((n) => Number.isInteger(n) && n > 0);
     if (orderedProjectIds.length !== projects.length) return;
     try {
       const res = await apiRequest("PUT", "/api/auth/me/project-sidebar-order", { orderedProjectIds });
-      const updated = (await res.json()) as MeUser;
-      queryClient.setQueryData<MeUser | null>(["/api/auth/me"], (old) => {
-        if (!old) return old;
-        return { ...old, projectSidebarOrder: updated.projectSidebarOrder ?? orderedProjectIds };
-      });
+      mergeMeCache((await res.json()) as MeUser);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : "Could not save order";
       toast({ title: "Could not save project order", description: msg, variant: "destructive" });
+    }
+  }
+
+  async function persistQuickMenuOnly(nextQuick: Set<string>) {
+    const quickMenuProjectIds = quickMenuPreferencePayload(projects, nextQuick);
+    try {
+      const res = await apiRequest("PUT", "/api/auth/me/project-sidebar-order", { quickMenuProjectIds });
+      mergeMeCache((await res.json()) as MeUser);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Could not save quick menu";
+      toast({ title: "Could not save quick menu", description: msg, variant: "destructive" });
     }
   }
 
@@ -150,15 +198,28 @@ export function ProjectNavSheet({
     if (oldIndex < 0 || newIndex < 0) return;
     const next = arrayMove(orderedIds, oldIndex, newIndex);
     setOrderedIds(next);
-    void persistOrder(next);
+    void persistOrderOnly(next);
+  }
+
+  function handleToggleQuick(projectId: string, checked: boolean) {
+    setQuickChecked((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(projectId);
+      else next.delete(projectId);
+      void persistQuickMenuOnly(next);
+      return next;
+    });
   }
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="left" className="w-full sm:max-w-sm flex flex-col gap-0 p-0">
+      <SheetContent side="left" className="w-full sm:max-w-md flex flex-col gap-0 p-0">
         <SheetHeader className="px-6 pt-6 pb-2 text-left space-y-1">
           <SheetTitle>Projects</SheetTitle>
-          <SheetDescription>Drag to reorder your sidebar. Only you see this order.</SheetDescription>
+          <SheetDescription>
+            Drag to reorder. Use <span className="font-medium text-foreground">Quick menu</span> to choose which
+            projects appear as icons on the collapsed left bar.
+          </SheetDescription>
         </SheetHeader>
         <ScrollArea className="flex-1 px-6 pb-6">
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
@@ -172,6 +233,8 @@ export function ProjectNavSheet({
                       key={id}
                       project={project}
                       isActive={currentProjectId === id}
+                      showOnQuickMenu={quickChecked.has(id)}
+                      onToggleQuickMenu={(checked) => handleToggleQuick(id, checked)}
                       onSelect={() => {
                         onSelectProject(id);
                         leaveGlobalView?.();

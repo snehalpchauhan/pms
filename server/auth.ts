@@ -28,7 +28,9 @@ declare global {
       status: string | null;
       email: string | null;
       lastSeenAt?: Date | null;
-      projectSidebarOrder?: number[] | null;
+      /** jsonb from DB; runtime is number[] | null */
+      projectSidebarOrder?: unknown;
+      projectQuickMenuIds?: unknown;
     }
   }
 }

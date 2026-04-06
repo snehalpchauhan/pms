@@ -13,6 +13,8 @@ type User = {
   lastSeenAt?: string | null;
   /** Numeric project ids in sidebar order (same as visible /api/projects). */
   projectSidebarOrder?: number[] | null;
+  /** Subset on collapsed rail; null = all projects. */
+  projectQuickMenuIds?: number[] | null;
 };
 
 type AuthContextType = {

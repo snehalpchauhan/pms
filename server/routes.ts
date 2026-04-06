@@ -231,32 +231,67 @@ export async function registerRoutes(
     }
   });
 
-  const putProjectSidebarOrderSchema = z.object({
-    orderedProjectIds: z.array(z.number().int().positive()),
-  });
+  const putProjectSidebarPrefsSchema = z
+    .object({
+      orderedProjectIds: z.array(z.number().int().positive()).optional(),
+      /** null = show all projects on the collapsed quick menu */
+      quickMenuProjectIds: z.union([z.array(z.number().int().positive()), z.null()]).optional(),
+    })
+    .refine((d) => d.orderedProjectIds !== undefined || d.quickMenuProjectIds !== undefined, {
+      message: "Provide orderedProjectIds and/or quickMenuProjectIds",
+    });
 
   app.put("/api/auth/me/project-sidebar-order", requireAuth, async (req, res) => {
-    const parsed = putProjectSidebarOrderSchema.safeParse(req.body);
+    const parsed = putProjectSidebarPrefsSchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({ message: parsed.error.issues[0]?.message ?? "Invalid body" });
     }
     const current = req.user as Express.User;
-    const incoming = parsed.data.orderedProjectIds;
     const allowedIds =
       current.role === "admin"
         ? new Set((await storage.getProjects()).map((p) => p.id))
         : new Set((await storage.getUserProjects(current.id)).map((p) => p.id));
-    if (incoming.length !== allowedIds.size) {
-      return res.status(400).json({ message: "Order must include each visible project exactly once" });
-    }
-    const seen = new Set<number>();
-    for (const id of incoming) {
-      if (!allowedIds.has(id) || seen.has(id)) {
-        return res.status(400).json({ message: "Invalid or duplicate project id in order" });
+
+    const updates: {
+      projectSidebarOrder?: number[];
+      projectQuickMenuIds?: number[] | null;
+    } = {};
+
+    if (parsed.data.orderedProjectIds !== undefined) {
+      const incoming = parsed.data.orderedProjectIds;
+      if (incoming.length !== allowedIds.size) {
+        return res.status(400).json({ message: "Order must include each visible project exactly once" });
       }
-      seen.add(id);
+      const seen = new Set<number>();
+      for (const id of incoming) {
+        if (!allowedIds.has(id) || seen.has(id)) {
+          return res.status(400).json({ message: "Invalid or duplicate project id in order" });
+        }
+        seen.add(id);
+      }
+      updates.projectSidebarOrder = incoming;
     }
-    const updated = await storage.updateUser(current.id, { projectSidebarOrder: incoming });
+
+    if (parsed.data.quickMenuProjectIds !== undefined) {
+      const q = parsed.data.quickMenuProjectIds;
+      if (q === null) {
+        updates.projectQuickMenuIds = null;
+      } else {
+        const seenQ = new Set<number>();
+        for (const id of q) {
+          if (!allowedIds.has(id)) {
+            return res.status(400).json({ message: "Quick menu contains a project you cannot access" });
+          }
+          if (seenQ.has(id)) {
+            return res.status(400).json({ message: "Duplicate project id in quick menu" });
+          }
+          seenQ.add(id);
+        }
+        updates.projectQuickMenuIds = q;
+      }
+    }
+
+    const updated = await storage.updateUser(current.id, updates);
     if (!updated) return res.status(404).json({ message: "User not found" });
     const { password, ...safe } = updated;
     res.json(safe);

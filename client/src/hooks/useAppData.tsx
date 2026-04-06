@@ -5,7 +5,7 @@ import type { User, Project, Channel, Task } from "@/lib/mockData";
 import { sanitizeProjectColor } from "@shared/projectColors";
 import { getEstimatedHoursFromTaskPayload, parseTaskHoursField } from "@/lib/taskHours";
 import { useAuth } from "@/hooks/useAuth";
-import { sortProjectsBySidebarOrder } from "@/lib/projectSidebarOrder";
+import { filterProjectsForQuickMenu, sortProjectsBySidebarOrder } from "@/lib/projectSidebarOrder";
 
 /** Show as online only while lastSeenAt is within this window (matches client heartbeat). */
 const PRESENCE_TTL_MS = 90_000;
@@ -28,6 +28,8 @@ interface AppDataContextType {
   users: Record<string, User>;
   usersArray: User[];
   projects: Project[];
+  /** Subset shown as icons on the collapsed left rail (per-user quick menu). */
+  quickMenuProjects: Project[];
   channels: Channel[];
   isLoading: boolean;
   refetchUsers: () => void;
@@ -105,6 +107,10 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     const list = (rawProjects || []).map(convertProject);
     return sortProjectsBySidebarOrder(list, authUser?.projectSidebarOrder ?? null);
   }, [rawProjects, authUser?.projectSidebarOrder]);
+  const quickMenuProjects = useMemo(
+    () => filterProjectsForQuickMenu(projectsList, authUser?.projectQuickMenuIds ?? null),
+    [projectsList, authUser?.projectQuickMenuIds],
+  );
   const channelsList = (rawChannels || []).map(convertChannel);
 
   return (
@@ -112,6 +118,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       users: usersMap,
       usersArray,
       projects: projectsList,
+      quickMenuProjects,
       channels: channelsList,
       isLoading: usersLoading || projectsLoading || channelsLoading,
       refetchUsers,
