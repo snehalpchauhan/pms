@@ -349,6 +349,7 @@ function AuthenticatedApp() {
               if (!open) setNewTaskDefaultStatus("");
             }}
             project={currentProject}
+            membersProjectId={currentProjectId}
             onSave={handleTaskCreate}
             defaultStatus={newTaskDefaultStatus}
           />

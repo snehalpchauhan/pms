@@ -1,5 +1,4 @@
 import { useState, useEffect, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,11 +29,33 @@ interface NewTaskModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   project: Project;
+  /** Must match the project the task is created in (used only for the assignee list API). */
+  membersProjectId: string;
   onSave: (task: CreateTaskInput) => void;
   defaultStatus?: string;
 }
 
-export function NewTaskModal({ open, onOpenChange, project, onSave, defaultStatus }: NewTaskModalProps) {
+function normalizeProjectMemberRows(data: unknown): ProjectMemberRow[] {
+  if (!Array.isArray(data)) return [];
+  const seen = new Set<number>();
+  const out: ProjectMemberRow[] = [];
+  for (const raw of data) {
+    if (raw == null || typeof raw !== "object") continue;
+    const id = Number((raw as { id?: unknown }).id);
+    if (!Number.isInteger(id) || id <= 0 || seen.has(id)) continue;
+    seen.add(id);
+    const name = String((raw as { name?: unknown }).name ?? "").trim() || `User ${id}`;
+    const avatar = (raw as { avatar?: unknown }).avatar;
+    out.push({
+      id,
+      name,
+      avatar: typeof avatar === "string" ? avatar : avatar == null ? null : String(avatar),
+    });
+  }
+  return out;
+}
+
+export function NewTaskModal({ open, onOpenChange, project, membersProjectId, onSave, defaultStatus }: NewTaskModalProps) {
     const { user: authUser } = useAuth();
     const [startDate, setStartDate] = useState<Date>(new Date());
     const [endDate, setEndDate] = useState<Date>(new Date());
@@ -64,16 +85,46 @@ export function NewTaskModal({ open, onOpenChange, project, onSave, defaultStatu
     const [selectedAssigneeIds, setSelectedAssigneeIds] = useState<Set<string>>(() => new Set());
     const [initialHoursInput, setInitialHoursInput] = useState("");
 
-    const numericProjectId = Number(project.id);
-    const { data: projectMembers = [], isLoading: membersLoading } = useQuery<ProjectMemberRow[]>({
-      queryKey: ["/api/projects", numericProjectId, "members-with-settings"],
-      queryFn: async () => {
-        const res = await fetch(`/api/projects/${numericProjectId}/members`, { credentials: "include" });
-        if (!res.ok) throw new Error("Failed to load members");
-        return res.json();
-      },
-      enabled: open && !Number.isNaN(numericProjectId) && numericProjectId > 0,
-    });
+    const [projectMembers, setProjectMembers] = useState<ProjectMemberRow[]>([]);
+    const [membersLoading, setMembersLoading] = useState(false);
+
+    useEffect(() => {
+      if (!open || !membersProjectId?.trim()) {
+        setProjectMembers([]);
+        setMembersLoading(false);
+        return;
+      }
+      const pid = membersProjectId.trim();
+      const n = Number(pid);
+      if (!Number.isInteger(n) || n <= 0) {
+        setProjectMembers([]);
+        setMembersLoading(false);
+        return;
+      }
+      let cancelled = false;
+      setMembersLoading(true);
+      void (async () => {
+        try {
+          const res = await fetch(`/api/projects/${encodeURIComponent(pid)}/members`, {
+            credentials: "include",
+          });
+          if (!res.ok) {
+            if (!cancelled) setProjectMembers([]);
+            return;
+          }
+          const json: unknown = await res.json();
+          const rows = normalizeProjectMemberRows(json);
+          if (!cancelled) setProjectMembers(rows);
+        } catch {
+          if (!cancelled) setProjectMembers([]);
+        } finally {
+          if (!cancelled) setMembersLoading(false);
+        }
+      })();
+      return () => {
+        cancelled = true;
+      };
+    }, [open, membersProjectId]);
 
     const sortedMembers = useMemo(
       () => [...projectMembers].sort((a, b) => a.name.localeCompare(b.name)),
@@ -302,6 +353,9 @@ export function NewTaskModal({ open, onOpenChange, project, onSave, defaultStatu
                                 <Label className="text-xs uppercase font-semibold text-muted-foreground">
                                     Assignees (optional)
                                 </Label>
+                                <p className="text-[11px] text-muted-foreground">
+                                  Only people added to this project under Members &amp; Access appear here.
+                                </p>
                                 {membersLoading ? (
                                     <p className="text-xs text-muted-foreground">Loading project members…</p>
                                 ) : sortedMembers.length === 0 ? (
