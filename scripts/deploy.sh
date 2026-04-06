@@ -224,7 +224,7 @@ deploy_db() {
 }
 
 deploy_code() {
-  echo "==> Code: git pull, npm ci, build, restart"
+  echo "==> Code: git pull, npm ci, db push, build, restart"
   cd "$DEPLOY_PATH"
   git fetch origin
   git checkout "$DEPLOY_BRANCH"
@@ -232,6 +232,8 @@ deploy_code() {
   unset NODE_ENV
   npm ci
   load_env
+  echo "==> Database: npm run db:push (applies schema; safe if already up to date)"
+  npm run db:push
   npm run build
   chown -R www-data:www-data "$DEPLOY_PATH"
   systemctl restart "$DEPLOY_SERVICE"

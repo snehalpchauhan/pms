@@ -104,4 +104,14 @@ app.use((req, res, next) => {
       log(`serving on port ${port}`);
     },
   );
-})();
+})().catch((err: unknown) => {
+  const msg = err instanceof Error ? err.message : String(err);
+  console.error(
+    "[FATAL] Server failed to start (upstream may show 503). If you deployed new code, run on the server:",
+    "cd /path/to/app && source .env && npm run db:push",
+    "\nUnderlying error:",
+    msg,
+    err,
+  );
+  process.exit(1);
+});

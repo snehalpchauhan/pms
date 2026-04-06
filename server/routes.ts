@@ -170,7 +170,15 @@ export async function registerRoutes(
 ): Promise<Server> {
   setupAuth(app);
   registerMicrosoftAuth(app);
-  await seedDatabase();
+  try {
+    await seedDatabase();
+  } catch (e) {
+    console.error(
+      "[startup] seedDatabase failed — often missing DB columns after a schema change. Run: npm run db:push",
+      e,
+    );
+    throw e;
+  }
 
   const uploadsDir = path.join(process.cwd(), "uploads");
   fs.mkdirSync(uploadsDir, { recursive: true });

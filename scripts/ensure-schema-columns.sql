@@ -1,0 +1,8 @@
+-- Run manually on PostgreSQL if `npm run db:push` is not available and the app fails at startup
+-- (e.g. "column last_seen_at does not exist" or "column owner_id does not exist").
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS last_seen_at timestamp;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS owner_id integer REFERENCES users(id);
+
+-- Optional: align defaults for new expectations (does not overwrite existing rows)
+ALTER TABLE users ALTER COLUMN status SET DEFAULT 'offline';
