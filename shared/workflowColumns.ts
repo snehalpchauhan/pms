@@ -11,10 +11,27 @@ export const WORKFLOW_COLUMN_PRESETS = [
 
 export type WorkflowColumnId = (typeof WORKFLOW_COLUMN_PRESETS)[number]["id"];
 
+/** Board / calendar status dot (Tailwind bg-*). Standard ids ignore stored JSON color so older DB rows still match the palette. */
+export const WORKFLOW_COLUMN_DOT_CLASS: Record<WorkflowColumnId, string> = {
+  todo: "bg-red-500",
+  "in-progress": "bg-blue-500",
+  review: "bg-yellow-500",
+  done: "bg-green-500",
+};
+
 const WORKFLOW_ID_SET = new Set<string>(WORKFLOW_COLUMN_PRESETS.map((c) => c.id));
 
 export function isWorkflowColumnId(id: string): id is WorkflowColumnId {
   return WORKFLOW_ID_SET.has(id);
+}
+
+/** Dot next to column title or on calendar chips: fixed colors for standard workflow columns. */
+export function boardColumnDotClass(columnId: string, storedColor?: string | null): string {
+  if (isWorkflowColumnId(columnId)) {
+    return WORKFLOW_COLUMN_DOT_CLASS[columnId];
+  }
+  const s = typeof storedColor === "string" ? storedColor.trim() : "";
+  return s || "bg-slate-500";
 }
 
 export function parseWorkflowColumnId(v: string | null | undefined): WorkflowColumnId | null {

@@ -28,7 +28,7 @@ import { cn } from "@/lib/utils";
 import { Plus, CheckCircle2, RotateCcw, GripVertical, Loader2, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { ClientPermissions } from "@/App";
-import { isWorkflowColumnId } from "@shared/workflowColumns";
+import { boardColumnDotClass, isWorkflowColumnId } from "@shared/workflowColumns";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -264,7 +264,12 @@ function Column({
               <GripVertical className="w-4 h-4" />
             </button>
           )}
-          <div className={cn("w-2.5 h-2.5 rounded-full ring-2 ring-offset-2 ring-offset-muted/30 shadow-sm shrink-0", color)} />
+          <div
+            className={cn(
+              "w-2.5 h-2.5 rounded-full ring-2 ring-offset-2 ring-offset-muted/30 shadow-sm shrink-0",
+              boardColumnDotClass(String(id), color),
+            )}
+          />
           <h3 className="font-display font-semibold text-sm text-foreground tracking-tight truncate pl-0.5">{title}</h3>
           <span className="ml-1 text-[10px] font-mono font-medium text-muted-foreground bg-background/50 border border-border px-1.5 py-0.5 rounded shadow-sm shrink-0">
             {tasks.length}

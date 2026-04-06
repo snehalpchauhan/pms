@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths, isToday, startOfDay, endOfDay, addWeeks, subWeeks, subDays, addDays } from "date-fns";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { boardColumnDotClass } from "@shared/workflowColumns";
 
 interface CalendarViewProps {
     project: Project;
@@ -158,7 +159,12 @@ export default function CalendarView({ project, tasks, onTaskClick }: CalendarVi
                                                     )}
                                                 >
                                                     <div className="flex items-center gap-1.5 overflow-hidden">
-                                                        <div className={cn("w-1.5 h-1.5 rounded-full shrink-0", column?.color)} />
+                                                        <div
+                                                          className={cn(
+                                                            "w-1.5 h-1.5 rounded-full shrink-0",
+                                                            boardColumnDotClass(column?.id ?? "", column?.color),
+                                                          )}
+                                                        />
                                                         <span className="truncate font-medium">{task.title}</span>
                                                     </div>
                                                     {viewMode !== 'month' && (
