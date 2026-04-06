@@ -187,17 +187,17 @@ export function Sidebar({ currentView, currentChannelId, onViewChange, currentPr
                                         if (isGlobalView) onViewChange("tasks");
                                     }}
                                     className={cn(
-                                        "w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-200 relative group font-bold text-sm text-white shadow-md",
+                                        "w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-200 relative group font-bold text-sm text-white shadow-md box-border",
                                         chip.tailwindClass || undefined,
                                         !isGlobalView && currentProject?.id === project.id
-                                            ? "ring-2 ring-white/90 ring-offset-2 ring-offset-background scale-105 opacity-100"
-                                            : "opacity-80 hover:opacity-100 hover:scale-[1.02]",
+                                            ? "ring-2 ring-neutral-950 dark:ring-neutral-100 ring-offset-2 ring-offset-background scale-105 opacity-100"
+                                            : "ring-2 ring-transparent ring-offset-2 ring-offset-background opacity-80 hover:opacity-100 hover:scale-[1.02]",
                                     )}
                                     style={chip.style}
                                 >
                                     <span>{getUserInitials(project.name, undefined)}</span>
                                     {!isGlobalView && currentProject?.id === project.id && (
-                                        <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-[18px] w-1 h-8 bg-white/90 rounded-r-full" />
+                                        <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-[18px] w-1 h-8 bg-neutral-950 dark:bg-neutral-100 rounded-r-full" />
                                     )}
                                 </button>
                             </TooltipTrigger>
