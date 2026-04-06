@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { CalendarIcon, Plus, Repeat, CheckSquare, Paperclip, X, Trash2, Clock, Users } from "lucide-react";
+import { CalendarIcon, Plus, Repeat, CheckSquare, Paperclip, X, Trash2, Clock } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { Task, Project, ChecklistItem, Recurrence, CreateTaskInput } from "@/lib/mockData";
@@ -129,6 +129,18 @@ export function NewTaskModal({ open, onOpenChange, project, membersProjectId, on
     const sortedMembers = useMemo(
       () => [...projectMembers].sort((a, b) => a.name.localeCompare(b.name)),
       [projectMembers],
+    );
+
+    const selectedMembersOrdered = useMemo(() => {
+      return Array.from(selectedAssigneeIds)
+        .map((id) => projectMembers.find((m) => String(m.id) === id))
+        .filter((m): m is ProjectMemberRow => m != null)
+        .sort((a, b) => a.name.localeCompare(b.name));
+    }, [selectedAssigneeIds, projectMembers]);
+
+    const assignableProjectMembers = useMemo(
+      () => sortedMembers.filter((m) => !selectedAssigneeIds.has(String(m.id))),
+      [sortedMembers, selectedAssigneeIds],
     );
 
     useEffect(() => {
@@ -345,51 +357,103 @@ export function NewTaskModal({ open, onOpenChange, project, membersProjectId, on
 
                         {/* Assignees & optional initial hours */}
                         <div className="space-y-4 rounded-lg border border-border/50 bg-muted/15 p-4">
-                            <div className="flex items-center gap-2">
-                                <Users className="h-4 w-4 text-muted-foreground" />
-                                <span className="text-sm font-medium">People & time</span>
-                            </div>
                             <div className="space-y-2">
                                 <Label className="text-xs uppercase font-semibold text-muted-foreground">
                                     Assignees (optional)
                                 </Label>
                                 <p className="text-[11px] text-muted-foreground">
-                                  Only people added to this project under Members &amp; Access appear here.
+                                  Only people on this project (Members &amp; Access). Use + to add more.
                                 </p>
                                 {membersLoading ? (
                                     <p className="text-xs text-muted-foreground">Loading project members…</p>
                                 ) : sortedMembers.length === 0 ? (
                                     <p className="text-xs text-muted-foreground">No members on this project.</p>
                                 ) : (
-                                    <div className="max-h-40 space-y-1 overflow-y-auto rounded-md border border-border/40 bg-background/50 p-2">
-                                        {sortedMembers.map((m) => {
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        {selectedMembersOrdered.map((m) => {
                                             const id = String(m.id);
-                                            const checked = selectedAssigneeIds.has(id);
                                             const isSelf = authUser?.id != null && String(authUser.id) === id;
                                             return (
-                                                <label
+                                                <div
                                                     key={id}
-                                                    className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 hover:bg-muted/60"
+                                                    className="flex items-center gap-2 bg-background border border-border/50 rounded-full pl-1 pr-2 py-1 shadow-sm"
                                                 >
-                                                    <Checkbox
-                                                        checked={checked}
-                                                        onCheckedChange={() => toggleAssignee(id)}
-                                                    />
-                                                    <Avatar className="h-7 w-7">
+                                                    <Avatar className="h-6 w-6">
                                                         <AvatarImage src={m.avatar?.trim() || undefined} />
                                                         <AvatarFallback className="text-[10px]">
                                                             {getUserInitials(m.name, undefined)}
                                                         </AvatarFallback>
                                                     </Avatar>
-                                                    <span className="flex-1 truncate text-sm">
+                                                    <span className="text-xs font-medium truncate max-w-[120px]">
                                                         {m.name}
                                                         {isSelf ? (
-                                                            <span className="text-muted-foreground"> (you)</span>
+                                                            <span className="text-muted-foreground font-normal"> (you)</span>
                                                         ) : null}
                                                     </span>
-                                                </label>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => toggleAssignee(id)}
+                                                        className="text-muted-foreground hover:text-destructive p-0.5 rounded"
+                                                        aria-label={`Remove ${m.name}`}
+                                                    >
+                                                        <X className="w-3 h-3" />
+                                                    </button>
+                                                </div>
                                             );
                                         })}
+                                        <Popover>
+                                            <PopoverTrigger asChild>
+                                                <Button
+                                                    type="button"
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="h-8 w-8 shrink-0 rounded-full border border-dashed border-border/50"
+                                                    aria-label="Add assignees"
+                                                >
+                                                    <Plus className="w-4 h-4" />
+                                                </Button>
+                                            </PopoverTrigger>
+                                            <PopoverContent className="w-60 p-2" align="start">
+                                                <div className="space-y-1">
+                                                    <div className="text-xs font-semibold text-muted-foreground px-2 py-1.5">
+                                                        Add assignee
+                                                    </div>
+                                                    <p className="px-2 pb-1 text-[10px] text-muted-foreground">
+                                                        Only people on this project can be assigned.
+                                                    </p>
+                                                    <div className="max-h-56 overflow-y-auto space-y-0.5">
+                                                        {assignableProjectMembers.map((m) => (
+                                                            <button
+                                                                key={m.id}
+                                                                type="button"
+                                                                onClick={() => toggleAssignee(String(m.id))}
+                                                                className="flex items-center gap-2 w-full px-2 py-1.5 hover:bg-muted rounded-md text-sm transition-colors text-left"
+                                                            >
+                                                                <Avatar className="h-6 w-6">
+                                                                    <AvatarImage src={m.avatar?.trim() || undefined} />
+                                                                    <AvatarFallback className="text-[10px]">
+                                                                        {getUserInitials(m.name, undefined)}
+                                                                    </AvatarFallback>
+                                                                </Avatar>
+                                                                <span className="truncate">
+                                                                    {m.name}
+                                                                    {authUser?.id != null && String(authUser.id) === String(m.id) ? (
+                                                                        <span className="text-muted-foreground"> (you)</span>
+                                                                    ) : null}
+                                                                </span>
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                    {assignableProjectMembers.length === 0 && (
+                                                        <div className="text-xs text-muted-foreground px-2 py-2 italic">
+                                                            {projectMembers.length === 0
+                                                                ? "No members on this project yet."
+                                                                : "Everyone on this project is already assigned."}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </PopoverContent>
+                                        </Popover>
                                     </div>
                                 )}
                             </div>
