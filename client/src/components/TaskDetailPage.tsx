@@ -184,13 +184,13 @@ function CommentItem({
           <div className="text-sm text-foreground/90 leading-snug whitespace-pre-wrap">{comment.content}</div>
         </div>
         <div className="flex items-center gap-3 pl-1 flex-wrap">
-          <span className="text-[10px] text-muted-foreground font-medium hover:underline cursor-pointer">Like</span>
-          <span
-            className="text-[10px] text-muted-foreground font-medium hover:underline cursor-pointer"
+          <button
+            type="button"
+            className="text-[10px] text-muted-foreground font-medium hover:underline cursor-pointer bg-transparent border-0 p-0"
             onClick={() => setIsReplying(!isReplying)}
           >
             Reply
-          </span>
+          </button>
           <span className="text-[10px] text-muted-foreground">{formattedDate}</span>
         </div>
         {comment.attachments && comment.attachments.length > 0 && (
