@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, type ClipboardEvent } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -73,6 +73,29 @@ function sanitizeEstimatedHoursInput(raw: string): string {
   }
   if (afterDot === null) return intPart;
   return intPart + "." + afterDot;
+}
+
+/** Line breaks + Word/non‑breaking spaces for clean pastes into a plain textarea. */
+function normalizePastedPlainText(text: string): string {
+  return text
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .replace(/\u00a0/g, " ")
+    .replace(/[\u200b\u200c\u200d\ufeff]/g, "");
+}
+
+/** Prefer clipboard plain text; if missing (some Word setups), strip HTML to text. */
+function readClipboardAsPlain(e: ClipboardEvent): string {
+  const plain = e.clipboardData.getData("text/plain");
+  if (plain !== "") return plain;
+  const html = e.clipboardData.getData("text/html");
+  if (!html) return "";
+  try {
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    return doc.body?.textContent ?? "";
+  } catch {
+    return "";
+  }
 }
 
 export function NewTaskModal({ open, onOpenChange, project, membersProjectId, onSave, defaultStatus }: NewTaskModalProps) {
@@ -256,6 +279,21 @@ export function NewTaskModal({ open, onOpenChange, project, membersProjectId, on
 
     const daysOfWeek = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
+    const handleDescriptionPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
+        const raw = readClipboardAsPlain(e);
+        if (raw === "") return;
+        e.preventDefault();
+        const ta = e.currentTarget;
+        const start = ta.selectionStart ?? 0;
+        const end = ta.selectionEnd ?? 0;
+        const normalized = normalizePastedPlainText(raw);
+        const next = desc.slice(0, start) + normalized + desc.slice(end);
+        setDesc(next);
+        queueMicrotask(() => {
+            ta.selectionStart = ta.selectionEnd = start + normalized.length;
+        });
+    };
+
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="sm:max-w-[700px] bg-card/95 backdrop-blur-xl border-border/60 h-[90vh] overflow-hidden flex flex-col p-0 gap-0">
@@ -277,15 +315,18 @@ export function NewTaskModal({ open, onOpenChange, project, membersProjectId, on
                             />
                         </div>
 
-                        {/* 2. Description */}
+                        {/* 2. Description — same feel as task comments; plain-text paste from Word */}
                         <div className="space-y-2">
-                            <Label htmlFor="desc" className="text-xs uppercase font-semibold text-muted-foreground">Description</Label>
-                            <Textarea 
-                                id="desc" 
-                                placeholder="Add details about this task..." 
-                                className="min-h-[100px] resize-none bg-background/50 border-border/50 font-sans" 
+                            <Label htmlFor="desc" className="text-xs uppercase font-semibold text-muted-foreground">
+                                Description
+                            </Label>
+                            <Textarea
+                                id="desc"
+                                placeholder="Add details… Paste from Word or email (plain text, line breaks kept)."
+                                className="min-h-[140px] resize-y bg-muted/20 focus:bg-background focus:ring-1 focus:ring-primary/20 border-border/60 shadow-sm p-3 text-sm rounded-lg transition-all font-sans whitespace-pre-wrap"
                                 value={desc}
                                 onChange={(e) => setDesc(e.target.value)}
+                                onPaste={handleDescriptionPaste}
                             />
                         </div>
 
