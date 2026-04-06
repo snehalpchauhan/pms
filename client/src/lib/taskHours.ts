@@ -6,6 +6,13 @@ export function parseTaskHoursField(v: unknown): number | undefined {
   return n;
 }
 
+/** Read estimate from a task JSON row (camelCase or snake_case). */
+export function getEstimatedHoursFromTaskPayload(t: unknown): number | undefined {
+  if (t == null || typeof t !== "object") return undefined;
+  const o = t as Record<string, unknown>;
+  return parseTaskHoursField(o.estimatedHours ?? o.estimated_hours);
+}
+
 /** True when actual logged time exceeds a positive estimate (small tolerance for floats). */
 export function isTaskOverInvested(estimatedHours: number | undefined, actualHours: number): boolean {
   if (estimatedHours == null || estimatedHours <= 0) return false;

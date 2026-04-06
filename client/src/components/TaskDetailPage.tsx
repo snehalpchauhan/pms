@@ -27,7 +27,8 @@ import { useAppData } from "@/hooks/useAppData";
 import { useAuth } from "@/hooks/useAuth";
 import { apiRequest } from "@/lib/queryClient";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
-import { Calendar, Paperclip, Tag, User as UserIcon, CheckCircle2, MessageSquare, Plus, X, Reply, Clock, History, FileText, Activity, Repeat, CalendarCheck, ArrowRight, CheckSquare, Trash2, Download, Lock, RotateCcw } from "lucide-react";
+import { Calendar, Paperclip, Tag, User as UserIcon, CheckCircle2, MessageSquare, Plus, X, Reply, Clock, History, FileText, Activity, Repeat, CalendarCheck, ArrowRight, CheckSquare, Trash2, Download, Lock, RotateCcw, AlertTriangle } from "lucide-react";
+import { getEstimatedHoursFromTaskPayload, isTaskOverInvested, parseTaskHoursField } from "@/lib/taskHours";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn, getUserInitials } from "@/lib/utils";
 import { useState, useEffect, useMemo, useRef } from "react";
@@ -342,6 +343,10 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
   const [startDatePopoverOpen, setStartDatePopoverOpen] = useState(false);
   const [dueDatePopoverOpen, setDueDatePopoverOpen] = useState(false);
   const [timelineSaving, setTimelineSaving] = useState(false);
+  const [estimatedHoursInput, setEstimatedHoursInput] = useState(() =>
+    task.estimatedHours != null ? String(task.estimatedHours) : "",
+  );
+  const [estimatedHoursSaving, setEstimatedHoursSaving] = useState(false);
 
   const isClient = currentUser?.role === "client";
   const isFullAccess = isClient && clientPermissions?.clientTaskAccess === "full";
@@ -393,6 +398,26 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
       .filter((m) => !assignees.includes(String(m.id)))
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [projectMembers, assignees]);
+
+  const { data: liveTask } = useQuery({
+    queryKey: ["/api/tasks", task.id],
+    queryFn: async () => {
+      const res = await fetch(`/api/tasks/${task.id}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load task");
+      return res.json();
+    },
+    enabled: Number.isInteger(numericTaskId) && numericTaskId > 0,
+  });
+
+  const estimatedHoursParsed = useMemo(() => {
+    const fromLive = liveTask != null ? getEstimatedHoursFromTaskPayload(liveTask) : undefined;
+    if (fromLive !== undefined) return fromLive;
+    return parseTaskHoursField(task.estimatedHours);
+  }, [liveTask, task.estimatedHours]);
+
+  useEffect(() => {
+    setEstimatedHoursInput(estimatedHoursParsed != null ? String(estimatedHoursParsed) : "");
+  }, [task.id, estimatedHoursParsed]);
 
   useEffect(() => {
     setComments(task.comments || []);
@@ -452,6 +477,38 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
       toast({ title: "Could not update priority", variant: "destructive" });
     } finally {
       setPrioritySaving(false);
+    }
+  };
+
+  const commitEstimatedHours = async () => {
+    if (!canEditTaskFields || !Number.isInteger(numericTaskId) || numericTaskId <= 0) return;
+    const resolvedEstimate = getEstimatedHoursFromTaskPayload(liveTask) ?? parseTaskHoursField(task.estimatedHours);
+    const trimmed = estimatedHoursInput.trim();
+    let payload: number | null;
+    if (trimmed === "") {
+      payload = null;
+    } else {
+      const n = parseFloat(trimmed.replace(",", "."));
+      if (Number.isNaN(n) || n < 0) {
+        toast({ title: "Invalid estimated hours", description: "Use a non-negative number.", variant: "destructive" });
+        setEstimatedHoursInput(resolvedEstimate != null ? String(resolvedEstimate) : "");
+        return;
+      }
+      payload = Math.round(n * 100) / 100;
+    }
+    const current = resolvedEstimate;
+    const unchanged =
+      (payload === null && current === undefined) ||
+      (payload !== null && current !== undefined && Math.abs(payload - current) < 0.001);
+    if (unchanged) return;
+    setEstimatedHoursSaving(true);
+    try {
+      await patchTask({ estimatedHours: payload });
+    } catch {
+      setEstimatedHoursInput(resolvedEstimate != null ? String(resolvedEstimate) : "");
+      toast({ title: "Could not update estimated hours", variant: "destructive" });
+    } finally {
+      setEstimatedHoursSaving(false);
     }
   };
 
@@ -673,6 +730,9 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
   });
 
   const totalHours = timeEntries.reduce((sum: number, e: any) => sum + parseFloat(e.hours || "0"), 0);
+  const showActualHoursInHeader = !isClient || clientPermissions?.clientShowTimecards === true;
+  const taskOverInvested =
+    showActualHoursInHeader && isTaskOverInvested(estimatedHoursParsed, totalHours);
 
   const handleLogTime = async () => {
     if (!timeHours || isNaN(Number(timeHours)) || Number(timeHours) <= 0) return;
@@ -783,16 +843,6 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
   const currentUserId = currentUser ? String(currentUser.id) : "";
 
   const isSystemLogType = (c: { type?: string }) => String(c.type ?? "").toLowerCase() === "system";
-
-  const { data: liveTask } = useQuery({
-    queryKey: ["/api/tasks", task.id],
-    queryFn: async () => {
-      const res = await fetch(`/api/tasks/${task.id}`, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to load task");
-      return res.json();
-    },
-    enabled: Number.isInteger(numericTaskId) && numericTaskId > 0,
-  });
 
   useEffect(() => {
     const list = liveTask?.comments as
@@ -1218,9 +1268,9 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                      </Dialog>
 
                      {/* Metadata Bar - Updated with Start/End Dates */}
-                     <div className="grid grid-cols-1 md:grid-cols-4 gap-6 p-5 bg-muted/20 border border-border/50 rounded-xl">
+                     <div className="grid grid-cols-1 md:grid-cols-12 gap-6 p-5 bg-muted/20 border border-border/50 rounded-xl">
                         {/* Assignees */}
-                        <div className="space-y-2">
+                        <div className="space-y-2 md:col-span-3">
                              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Assignees</div>
                              <div className="flex flex-wrap gap-2">
                                 {assignees.map(id => {
@@ -1286,7 +1336,7 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                         </div>
 
                         {/* Dates - Start & Due */}
-                        <div className="space-y-2 md:col-span-2">
+                        <div className="space-y-2 md:col-span-4">
                              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Timeline</div>
                              <div className="flex items-center gap-2 flex-wrap">
                                  {(!isClient || isFullAccess) ? (
@@ -1382,8 +1432,59 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                              </div>
                         </div>
 
+                        {/* Hours — estimate vs actual */}
+                        <div className="space-y-2 md:col-span-2">
+                          <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Hours</div>
+                          <div className="space-y-2">
+                            <div>
+                              <div className="text-[10px] font-medium text-muted-foreground mb-1">Estimated</div>
+                              {canEditTaskFields ? (
+                                <Input
+                                  type="number"
+                                  min={0}
+                                  step={0.25}
+                                  placeholder="—"
+                                  className="h-8 text-sm bg-background border-border/50"
+                                  value={estimatedHoursInput}
+                                  disabled={estimatedHoursSaving}
+                                  onChange={(e) => setEstimatedHoursInput(e.target.value)}
+                                  onBlur={() => void commitEstimatedHours()}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") {
+                                      e.preventDefault();
+                                      (e.target as HTMLInputElement).blur();
+                                    }
+                                  }}
+                                />
+                              ) : (
+                                <div className="text-sm font-medium text-foreground">
+                                  {estimatedHoursParsed != null ? `${estimatedHoursParsed.toFixed(1)}h` : "—"}
+                                </div>
+                              )}
+                            </div>
+                            <div>
+                              <div className="text-[10px] font-medium text-muted-foreground mb-1">Actual (logged)</div>
+                              <div className="text-sm font-medium tabular-nums text-foreground">
+                                {showActualHoursInHeader ? `${totalHours.toFixed(1)}h` : "—"}
+                              </div>
+                              {!showActualHoursInHeader && (
+                                <p className="text-[10px] text-muted-foreground mt-0.5">Hidden for your client role</p>
+                              )}
+                            </div>
+                            {taskOverInvested && (
+                              <div
+                                className="flex items-center gap-1.5 text-xs font-medium text-amber-700 dark:text-amber-400 bg-amber-500/10 border border-amber-500/30 rounded-md px-2 py-1.5"
+                                data-testid="banner-over-estimate"
+                              >
+                                <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                                Over estimate ({totalHours.toFixed(1)}h vs {estimatedHoursParsed!.toFixed(1)}h est.)
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
                          {/* Tags */}
-                         <div className="space-y-2">
+                         <div className="space-y-2 md:col-span-3">
                              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Tags</div>
                              <div className="flex flex-wrap gap-2">
                                 {tags.map((tag) => (
@@ -1622,13 +1723,27 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                         </div>
 
                         <TabsContent value="time" className="space-y-6 mt-0">
+                            {taskOverInvested && (
+                              <div className="flex items-start gap-2 p-3 rounded-lg border border-amber-500/40 bg-amber-500/10 text-sm text-amber-900 dark:text-amber-100">
+                                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                                <span>
+                                  Logged time ({totalHours.toFixed(1)}h) exceeds the estimate ({estimatedHoursParsed!.toFixed(1)}h).
+                                </span>
+                              </div>
+                            )}
                             {/* Time total */}
-                            <div className="flex items-center gap-3 p-4 bg-primary/5 border border-primary/20 rounded-xl">
-                                <Clock className="w-5 h-5 text-primary" />
-                                <div>
-                                    <div className="text-sm font-semibold text-foreground">Total Time Logged</div>
-                                    <div className="text-2xl font-bold text-primary">{totalHours.toFixed(1)}h</div>
+                            <div className="flex flex-wrap items-center gap-4 p-4 bg-primary/5 border border-primary/20 rounded-xl">
+                                <Clock className="w-5 h-5 text-primary shrink-0" />
+                                <div className="min-w-0 flex-1">
+                                    <div className="text-sm font-semibold text-foreground">Total time logged</div>
+                                    <div className="text-2xl font-bold text-primary tabular-nums">{totalHours.toFixed(1)}h</div>
                                 </div>
+                                {estimatedHoursParsed != null && (
+                                  <div className="text-sm text-muted-foreground border-l border-border/60 pl-4">
+                                    <div className="font-medium text-foreground">Estimated</div>
+                                    <div className="tabular-nums">{estimatedHoursParsed.toFixed(1)}h</div>
+                                  </div>
+                                )}
                             </div>
 
                             {/* Log time form — hidden for non-full clients */}

@@ -2,7 +2,8 @@ import { Task, Project, Status } from "@/lib/mockData";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { CheckCircle2, Circle, Clock, MoreHorizontal, Calendar, ChevronDown, Timer } from "lucide-react";
+import { CheckCircle2, Circle, Clock, MoreHorizontal, Calendar, ChevronDown, Timer, AlertTriangle } from "lucide-react";
+import { isTaskOverInvested, parseTaskHoursField } from "@/lib/taskHours";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 import { isToday, isTomorrow, isThisWeek, isFuture, isPast, parseISO } from "date-fns";
@@ -120,10 +121,17 @@ export default function TaskListView({ tasks, project, onTaskClick }: TaskListVi
                             )}
 
                             <div className="divide-y divide-border/50">
-                                {groupTasks.map(task => (
+                                {groupTasks.map(task => {
+                                    const estimated = parseTaskHoursField(task.estimatedHours);
+                                    const actual = task.totalHours ?? 0;
+                                    const overInvested = isTaskOverInvested(estimated, actual);
+                                    return (
                                     <div 
                                         key={task.id} 
-                                        className="grid grid-cols-12 gap-4 p-4 items-center hover:bg-muted/20 transition-colors cursor-pointer group"
+                                        className={cn(
+                                          "grid grid-cols-12 gap-4 p-4 items-center hover:bg-muted/20 transition-colors cursor-pointer group",
+                                          overInvested && "bg-amber-500/5 border-l-2 border-l-amber-500",
+                                        )}
                                         onClick={() => onTaskClick && onTaskClick(task)}
                                     >
                                         <div className="col-span-6 flex items-center gap-3">
@@ -150,11 +158,12 @@ export default function TaskListView({ tasks, project, onTaskClick }: TaskListVi
                                                 <span className="text-muted-foreground/50">-</span>
                                             )}
                                         </div>
-                                        <div className="col-span-2 flex items-center justify-between gap-2">
-                                            <div className="flex items-center gap-2">
+                                        <div className="col-span-2 flex items-center justify-between gap-2 min-w-0">
+                                            <div className="flex flex-col gap-1 min-w-0">
+                                                <div className="flex items-center gap-2 flex-wrap">
                                                 <Badge 
                                                     className={cn(
-                                                        "text-[10px] uppercase font-bold border-none",
+                                                        "text-[10px] uppercase font-bold border-none shrink-0",
                                                         task.priority === 'high' ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" :
                                                         task.priority === 'medium' ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" :
                                                         "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
@@ -162,19 +171,35 @@ export default function TaskListView({ tasks, project, onTaskClick }: TaskListVi
                                                 >
                                                     {task.priority}
                                                 </Badge>
-                                                {(task.totalHours ?? 0) > 0 && (
-                                                    <span className="flex items-center gap-1 text-xs text-primary/70 font-medium" data-testid={`text-list-hours-${task.id}`}>
-                                                        <Timer className="w-3 h-3" />
-                                                        {(task.totalHours ?? 0).toFixed(1)}h
+                                                {overInvested && (
+                                                    <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-400 shrink-0" title="Over estimate">
+                                                        <AlertTriangle className="w-3 h-3" />
+                                                        Over
+                                                    </span>
+                                                )}
+                                                </div>
+                                                {(estimated != null || actual > 0) && (
+                                                    <span
+                                                        className={cn(
+                                                          "flex items-center gap-1 text-xs font-medium tabular-nums truncate",
+                                                          overInvested ? "text-amber-700 dark:text-amber-400" : "text-primary/70",
+                                                        )}
+                                                        data-testid={`text-list-hours-${task.id}`}
+                                                    >
+                                                        <Timer className="w-3 h-3 shrink-0" />
+                                                        {estimated != null ? `${estimated.toFixed(1)}h est` : null}
+                                                        {estimated != null && actual > 0 ? " · " : null}
+                                                        {actual > 0 ? `${actual.toFixed(1)}h act` : null}
                                                     </span>
                                                 )}
                                             </div>
-                                            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground opacity-0 group-hover:opacity-100">
+                                            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground opacity-0 group-hover:opacity-100 shrink-0">
                                                 <MoreHorizontal className="w-4 h-4" />
                                             </Button>
                                         </div>
                                     </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         </div>
                     </div>

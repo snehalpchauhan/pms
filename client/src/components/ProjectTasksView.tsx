@@ -40,6 +40,8 @@ export default function ProjectTasksView({ project, tasks, clientPermissions }: 
             fresh.startDate === selectedTask.startDate &&
             fresh.priority === selectedTask.priority &&
             fresh.boardOrder === selectedTask.boardOrder &&
+            fresh.estimatedHours === selectedTask.estimatedHours &&
+            (fresh.totalHours ?? 0) === (selectedTask.totalHours ?? 0) &&
             JSON.stringify(fresh.tags ?? []) === JSON.stringify(selectedTask.tags ?? []) &&
             JSON.stringify(fresh.assignees ?? []) === JSON.stringify(selectedTask.assignees ?? []);
         if (same) return;

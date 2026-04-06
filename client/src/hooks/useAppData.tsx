@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { getQueryFn } from "@/lib/queryClient";
 import type { User, Project, Channel, Task } from "@/lib/mockData";
 import { sanitizeProjectColor } from "@shared/projectColors";
-import { parseTaskHoursField } from "@/lib/taskHours";
+import { getEstimatedHoursFromTaskPayload, parseTaskHoursField } from "@/lib/taskHours";
 
 /** Show as online only while lastSeenAt is within this window (matches client heartbeat). */
 const PRESENCE_TTL_MS = 90_000;
@@ -177,7 +177,7 @@ export function convertTask(t: any): Task {
       completed: ci.completed,
     })),
     attachments: taskLevelAttachments,
-    estimatedHours: parseTaskHoursField(t.estimatedHours),
+    estimatedHours: getEstimatedHoursFromTaskPayload(t),
     totalHours: parseTaskHoursField(t.totalHours) ?? 0,
   };
 }
