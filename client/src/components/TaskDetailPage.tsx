@@ -1278,7 +1278,7 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                  {(!isClient || isFullAccess) &&
                    (isDoneStatusBadge ? (
                      <span
-                       className="inline-flex items-center gap-1.5 h-9 px-3 rounded-md text-sm font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-900/35 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800/50"
+                       className="inline-flex items-center gap-1.5 h-9 px-3 rounded-md text-sm font-medium bg-green-100 text-green-800 dark:bg-green-900/35 dark:text-green-300 border border-green-200/80 dark:border-green-800/50"
                        role="status"
                        aria-label="Task completed"
                      >
@@ -1289,7 +1289,7 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                      <Button
                        type="button"
                        size="sm"
-                       className="bg-primary text-primary-foreground"
+                       className="bg-green-600 text-white hover:bg-green-700"
                        onClick={() => void handleMarkComplete()}
                        disabled={statusSaving}
                      >
@@ -1335,20 +1335,20 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                         <div className="flex flex-wrap items-center gap-3">
                             {isClient && !isFullAccess ? (
                                 <Badge className={cn("h-8 px-3 border-none font-medium max-w-[200px] truncate",
-                                    isDoneStatusBadge ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" :
+                                    isDoneStatusBadge ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400" :
                                     isInProgressStatusBadge ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400" :
-                                    isReviewStatusBadge ? "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400" :
-                                    "bg-slate-100 text-slate-700 dark:bg-slate-800/50 dark:text-slate-400"
+                                    isReviewStatusBadge ? "bg-yellow-100 text-yellow-900 dark:bg-yellow-900/35 dark:text-yellow-200" :
+                                    "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400"
                                 )} title={statusTitleFor(statusStr)}>
                                     {statusTitleFor(statusStr)}
                                 </Badge>
                             ) : (
                                 <Select value={statusStr} onValueChange={(v) => void handleStatusChange(v)} disabled={statusSaving}>
                                     <SelectTrigger className={cn("min-w-[140px] max-w-[220px] h-8 border-none font-medium transition-colors", 
-                                        isDoneStatusBadge ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" :
+                                        isDoneStatusBadge ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400" :
                                         isInProgressStatusBadge ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400" :
-                                        isReviewStatusBadge ? "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400" :
-                                        "bg-slate-100 text-slate-700 dark:bg-slate-800/50 dark:text-slate-400"
+                                        isReviewStatusBadge ? "bg-yellow-100 text-yellow-900 dark:bg-yellow-900/35 dark:text-yellow-200" :
+                                        "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400"
                                     )}>
                                         <SelectValue placeholder="Status" />
                                     </SelectTrigger>
@@ -1430,15 +1430,15 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
 
                      {/* Client Action Banner: Approve / Request Revision */}
                      {canDoClientActions && isReviewStatus && (
-                         <div className="flex items-center gap-3 p-4 bg-violet-50 dark:bg-violet-950/20 border border-violet-200 dark:border-violet-800 rounded-xl">
+                         <div className="flex items-center gap-3 p-4 bg-yellow-50 dark:bg-yellow-950/25 border border-yellow-200 dark:border-yellow-800/80 rounded-xl">
                              <div className="flex-1">
-                                 <div className="text-sm font-semibold text-violet-900 dark:text-violet-200">This task is ready for your review</div>
-                                 <div className="text-xs text-violet-700 dark:text-violet-400 mt-0.5">Please approve or request changes.</div>
+                                 <div className="text-sm font-semibold text-yellow-950 dark:text-yellow-100">This task is ready for your review</div>
+                                 <div className="text-xs text-yellow-800 dark:text-yellow-300/90 mt-0.5">Please approve or request changes.</div>
                              </div>
                              <div className="flex gap-2">
                                  <Button
                                      size="sm"
-                                     className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5"
+                                     className="bg-green-600 hover:bg-green-700 text-white gap-1.5"
                                      onClick={handleApprove}
                                      disabled={clientActionLoading}
                                      data-testid={`button-approve-task-${task.id}`}

@@ -66,10 +66,11 @@ export default function TaskListView({ tasks, project, onTaskClick }: TaskListVi
 
     const getStatusIcon = (status: Status) => {
         switch(status) {
-            case 'done': return <CheckCircle2 className="w-4 h-4 text-emerald-500" />;
+            case 'done': return <CheckCircle2 className="w-4 h-4 text-green-500" />;
             case 'in-progress': return <Circle className="w-4 h-4 text-blue-500 fill-blue-500/20" />;
-            case 'todo': return <Circle className="w-4 h-4 text-slate-400" />;
-            default: return <Circle className="w-4 h-4 text-orange-500" />;
+            case 'todo': return <Circle className="w-4 h-4 text-red-500 fill-red-500/20" />;
+            case 'review': return <Circle className="w-4 h-4 text-yellow-500 fill-yellow-500/25" />;
+            default: return <Circle className="w-4 h-4 text-muted-foreground" />;
         }
     };
 

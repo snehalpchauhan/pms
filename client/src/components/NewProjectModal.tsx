@@ -25,10 +25,10 @@ export function NewProjectModal({ open, onOpenChange, onSave }: NewProjectModalP
       description,
       color: sanitizeProjectColor(color),
       columns: [
-        { id: "todo", title: "To Do", color: "bg-slate-500" },
+        { id: "todo", title: "To Do", color: "bg-red-500" },
         { id: "in-progress", title: "In Progress", color: "bg-blue-500" },
-        { id: "review", title: "Review", color: "bg-orange-500" },
-        { id: "done", title: "Done", color: "bg-emerald-500" },
+        { id: "review", title: "Review", color: "bg-yellow-500" },
+        { id: "done", title: "Done", color: "bg-green-500" },
       ],
       members: ["u1"],
     });
