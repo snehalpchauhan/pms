@@ -62,6 +62,13 @@ type CompanySettingsDto = {
     taskClientReopenStatus: WorkflowColumnId;
 };
 
+/** Mirrors server `ms365FullyConfigured` for UI (tenant, client id, secret). */
+function isMs365FullyConfigured(c: CompanySettingsDto | undefined): boolean {
+    if (!c?.ms365Enabled) return false;
+    if (!c.ms365TenantId?.trim() || !c.ms365ClientId?.trim()) return false;
+    return Boolean(c.ms365ClientSecretConfigured || c.ms365ClientSecretFromEnv);
+}
+
 export default function CompanySettingsView() {
     const { usersArray, refetchUsers } = useAppData();
     const { user: currentUser } = useAuth();
@@ -239,13 +246,29 @@ export default function CompanySettingsView() {
 
     async function handleAddUser() {
         setAddError("");
-        if (!addForm.name.trim() || !addForm.email.trim() || !addForm.username.trim() || !addForm.password.trim()) {
-            setAddError("Name, email, username, and password are required.");
+        const ms365Staff =
+            isMs365FullyConfigured(companyData) &&
+            (addForm.role === "employee" || addForm.role === "manager");
+        if (!addForm.name.trim() || !addForm.email.trim()) {
+            setAddError("Name and email are required.");
+            return;
+        }
+        if (!ms365Staff && (!addForm.username.trim() || !addForm.password.trim())) {
+            setAddError("Username and password are required.");
             return;
         }
         setAddLoading(true);
         try {
-            await apiRequest("POST", "/api/users", addForm);
+            const payload = ms365Staff
+                ? { name: addForm.name.trim(), email: addForm.email.trim(), role: addForm.role }
+                : {
+                    name: addForm.name.trim(),
+                    email: addForm.email.trim(),
+                    username: addForm.username.trim(),
+                    password: addForm.password,
+                    role: addForm.role,
+                };
+            await apiRequest("POST", "/api/users", payload);
             refetchUsers();
             setShowAddDialog(false);
             setAddForm({ name: "", email: "", username: "", password: "", role: "employee" });
@@ -261,12 +284,15 @@ export default function CompanySettingsView() {
         const name = editUser.name.trim();
         const username = editUser.username.trim();
         const email = editUser.email.trim();
+        const editMs365Staff =
+            isMs365FullyConfigured(companyData) &&
+            (editUser.role === "employee" || editUser.role === "manager");
         setEditUserError("");
         if (!name) {
             setEditUserError("Name is required.");
             return;
         }
-        if (!username) {
+        if (!editMs365Staff && !username) {
             setEditUserError("Username is required.");
             return;
         }
@@ -275,7 +301,8 @@ export default function CompanySettingsView() {
             return;
         }
         const isSelf = String(currentUser?.id) === editUser.id;
-        const body: { name: string; username: string; email?: string; role?: UserRole } = { name, username };
+        const body: { name: string; username?: string; email?: string; role?: UserRole } = { name };
+        if (!editMs365Staff) body.username = username;
         if (email) body.email = email;
         if (!isSelf) body.role = editUser.role;
         setEditUserLoading(true);
@@ -318,6 +345,23 @@ export default function CompanySettingsView() {
         typeof window !== "undefined"
             ? `${window.location.origin}/api/auth/microsoft/callback`
             : "";
+
+    const addMs365StaffMode =
+        isMs365FullyConfigured(companyData) &&
+        (addForm.role === "employee" || addForm.role === "manager");
+
+    const editMs365Staff =
+        !!editUser &&
+        isMs365FullyConfigured(companyData) &&
+        (editUser.role === "employee" || editUser.role === "manager");
+
+    function previewUsernameFromEmail(raw: string): string {
+        const t = raw.trim().toLowerCase();
+        const at = t.indexOf("@");
+        const local = at > 0 ? t.slice(0, at) : t;
+        const base = local.replace(/[^a-z0-9._-]/g, "") || "user";
+        return base.length > 80 ? base.slice(0, 80) : base;
+    }
 
     return (
         <div className="h-full bg-background flex flex-col overflow-hidden animate-in fade-in duration-300">
@@ -827,27 +871,11 @@ export default function CompanySettingsView() {
                                 value={addForm.email}
                                 onChange={e => setAddForm(f => ({ ...f, email: e.target.value }))}
                             />
-                        </div>
-                        <div className="space-y-1.5">
-                            <Label htmlFor="add-username">Username <span className="text-destructive">*</span></Label>
-                            <Input
-                                id="add-username"
-                                data-testid="input-add-username"
-                                placeholder="janedoe"
-                                value={addForm.username}
-                                onChange={e => setAddForm(f => ({ ...f, username: e.target.value }))}
-                            />
-                        </div>
-                        <div className="space-y-1.5">
-                            <Label htmlFor="add-password">Password <span className="text-destructive">*</span></Label>
-                            <Input
-                                id="add-password"
-                                data-testid="input-add-password"
-                                type="password"
-                                placeholder="••••••••"
-                                value={addForm.password}
-                                onChange={e => setAddForm(f => ({ ...f, password: e.target.value }))}
-                            />
+                            {addMs365StaffMode && (
+                                <p className="text-xs text-muted-foreground">
+                                    Must match the person&apos;s Microsoft work email for Sign in with Microsoft.
+                                </p>
+                            )}
                         </div>
                         <div className="space-y-1.5">
                             <Label>Role <span className="text-destructive">*</span></Label>
@@ -862,6 +890,48 @@ export default function CompanySettingsView() {
                                 </SelectContent>
                             </Select>
                         </div>
+                        {addMs365StaffMode ? (
+                            <div className="rounded-md border border-border/60 bg-muted/30 px-3 py-2.5 space-y-1">
+                                <p className="text-xs font-medium text-foreground">Microsoft 365 sign-in</p>
+                                <p className="text-xs text-muted-foreground">
+                                    Username is created from the email (part before @), with a numeric suffix if that name is
+                                    already taken. A random password is stored; employees and managers sign in with Microsoft
+                                    only.
+                                </p>
+                                {addForm.email.includes("@") && (
+                                    <p className="text-xs text-muted-foreground pt-1">
+                                        Example login id:{" "}
+                                        <span className="font-mono text-foreground">{previewUsernameFromEmail(addForm.email)}</span>
+                                        {" "}(may become <span className="font-mono text-foreground">…-1</span>, etc. if
+                                        needed)
+                                    </p>
+                                )}
+                            </div>
+                        ) : (
+                            <>
+                                <div className="space-y-1.5">
+                                    <Label htmlFor="add-username">Username <span className="text-destructive">*</span></Label>
+                                    <Input
+                                        id="add-username"
+                                        data-testid="input-add-username"
+                                        placeholder="janedoe"
+                                        value={addForm.username}
+                                        onChange={e => setAddForm(f => ({ ...f, username: e.target.value }))}
+                                    />
+                                </div>
+                                <div className="space-y-1.5">
+                                    <Label htmlFor="add-password">Password <span className="text-destructive">*</span></Label>
+                                    <Input
+                                        id="add-password"
+                                        data-testid="input-add-password"
+                                        type="password"
+                                        placeholder="••••••••"
+                                        value={addForm.password}
+                                        onChange={e => setAddForm(f => ({ ...f, password: e.target.value }))}
+                                    />
+                                </div>
+                            </>
+                        )}
                         {addError && <p className="text-sm text-destructive">{addError}</p>}
                     </div>
                     <DialogFooter>
@@ -901,20 +971,38 @@ export default function CompanySettingsView() {
                             />
                         </div>
                         <div className="space-y-1.5">
-                            <Label htmlFor="edit-user-username">Username <span className="text-destructive">*</span></Label>
-                            <Input
-                                id="edit-user-username"
-                                data-testid="input-edit-user-username"
-                                autoComplete="off"
-                                value={editUser?.username ?? ""}
-                                onChange={(e) =>
-                                    setEditUser((prev) => (prev ? { ...prev, username: e.target.value } : prev))
-                                }
-                                placeholder="janedoe"
-                            />
-                            <p className="text-xs text-muted-foreground">
-                                Used to sign in. Must be unique in this workspace.
-                            </p>
+                            <Label htmlFor="edit-user-username">Username</Label>
+                            {editMs365Staff ? (
+                                <>
+                                    <Input
+                                        id="edit-user-username"
+                                        data-testid="input-edit-user-username"
+                                        readOnly
+                                        className="bg-muted/50"
+                                        value={editUser?.username ?? ""}
+                                    />
+                                    <p className="text-xs text-muted-foreground">
+                                        Microsoft sign-in uses email; this username stays for internal records and is not
+                                        edited here.
+                                    </p>
+                                </>
+                            ) : (
+                                <>
+                                    <Input
+                                        id="edit-user-username"
+                                        data-testid="input-edit-user-username"
+                                        autoComplete="off"
+                                        value={editUser?.username ?? ""}
+                                        onChange={(e) =>
+                                            setEditUser((prev) => (prev ? { ...prev, username: e.target.value } : prev))
+                                        }
+                                        placeholder="janedoe"
+                                    />
+                                    <p className="text-xs text-muted-foreground">
+                                        Used to sign in. Must be unique in this workspace.
+                                    </p>
+                                </>
+                            )}
                         </div>
                         <div className="space-y-1.5">
                             <Label htmlFor="edit-user-email">Email</Label>

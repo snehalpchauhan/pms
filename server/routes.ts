@@ -7,7 +7,12 @@ import { z } from "zod";
 import { notifyChannelMessages } from "./realtime";
 import { storage } from "./storage";
 import { setupAuth, requireAuth } from "./auth";
-import { registerMicrosoftAuth, clearMicrosoftOidcCache, ms365ClientSecretFromEnv } from "./microsoftAuth";
+import {
+  registerMicrosoftAuth,
+  clearMicrosoftOidcCache,
+  ms365ClientSecretFromEnv,
+  ms365FullyConfigured,
+} from "./microsoftAuth";
 import { seedDatabase } from "./seed";
 import {
   DEFAULT_TASK_CLIENT_REOPEN_STATUS,
@@ -365,8 +370,8 @@ export async function registerRoutes(
   const createUserSchema = z.object({
     name: z.string().min(1, "Name is required"),
     email: z.string().email("Valid email is required"),
-    username: z.string().min(1, "Username is required"),
-    password: z.string().min(1, "Password is required"),
+    username: z.string().optional(),
+    password: z.string().optional(),
     role: z.enum(["admin", "manager", "employee", "client"], { errorMap: () => ({ message: "Invalid role" }) }),
   });
 
@@ -383,9 +388,33 @@ export async function registerRoutes(
     if (currentUser.role !== "admin") return res.status(403).json({ message: "Only admins can create users" });
     const parsed = createUserSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: parsed.error.issues[0].message });
-    const { name, email, username, password, role } = parsed.data;
-    const existing = await storage.getUserByUsername(username);
-    if (existing) return res.status(409).json({ message: "Username already taken" });
+    const { name, email, role } = parsed.data;
+    const settings = await storage.getCompanySettings();
+    const ms365Staff =
+      ms365FullyConfigured(settings) && (role === "employee" || role === "manager");
+
+    let username: string;
+    let password: string;
+
+    if (ms365Staff) {
+      const dupEmail = await storage.getUserByEmailIgnoreCase(email);
+      if (dupEmail) {
+        return res.status(409).json({ message: "A user with this email already exists" });
+      }
+      username = await storage.allocateUniqueUsernameFromEmail(email);
+      password = crypto.randomBytes(32).toString("hex");
+    } else {
+      const u = parsed.data.username?.trim();
+      const p = parsed.data.password?.trim();
+      if (!u || !p) {
+        return res.status(400).json({ message: "Username and password are required" });
+      }
+      const existing = await storage.getUserByUsername(u);
+      if (existing) return res.status(409).json({ message: "Username already taken" });
+      username = u;
+      password = p;
+    }
+
     const created = await storage.createUser({ name, email, username, password, role, status: "online" });
     const { password: _pw, ...safe } = created;
     res.status(201).json(safe);
@@ -422,6 +451,19 @@ export async function registerRoutes(
         }
       }
       updates.username = trimmed;
+    }
+
+    const companySettingsRow = await storage.getCompanySettings();
+    if (
+      updates.username !== undefined &&
+      ms365FullyConfigured(companySettingsRow) &&
+      (target.role === "employee" || target.role === "manager") &&
+      updates.username !== target.username
+    ) {
+      return res.status(400).json({
+        message:
+          "Username cannot be changed for employees and managers while Microsoft 365 sign-in is configured.",
+      });
     }
 
     if (Object.keys(updates).length === 0) {
