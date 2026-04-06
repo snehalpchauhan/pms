@@ -2,6 +2,7 @@ import { createContext, useContext, ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { getQueryFn } from "@/lib/queryClient";
 import type { User, Project, Channel, Task } from "@/lib/mockData";
+import { sanitizeProjectColor } from "@shared/projectColors";
 
 /** Show as online only while lastSeenAt is within this window (matches client heartbeat). */
 const PRESENCE_TTL_MS = 90_000;
@@ -49,7 +50,7 @@ function convertProject(p: any): Project {
   return {
     id: String(p.id),
     name: p.name,
-    color: typeof p.color === "string" && p.color.trim() ? p.color.trim() : "bg-blue-500",
+    color: sanitizeProjectColor(typeof p.color === "string" ? p.color : ""),
     description: p.description != null && p.description !== "" ? p.description : undefined,
     columns: (p.columns as any[]) || [],
     members: [],

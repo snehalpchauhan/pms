@@ -20,6 +20,7 @@ import {
   parseWorkflowColumnId,
   resolveWorkflowStatusForProject,
 } from "@shared/workflowColumns";
+import { isValidProjectColor, sanitizeProjectColor } from "@shared/projectColors";
 
 const MAX_COMPANY_LOGO_BYTES = 2 * 1024 * 1024;
 
@@ -540,9 +541,15 @@ export async function registerRoutes(
     color: z.string().min(1).max(80),
   });
 
+  const projectAccentColorSchema = z
+    .string()
+    .min(1)
+    .max(80)
+    .refine((s) => isValidProjectColor(s), { message: "Invalid project color" });
+
   const createProjectSchema = z.object({
     name: z.string().min(1).max(200),
-    color: z.string().min(1).max(80).optional(),
+    color: projectAccentColorSchema.optional(),
     description: z.string().max(10_000).nullable().optional(),
     columns: z.array(projectColumnSchema).min(1).max(24).optional(),
   });
@@ -550,7 +557,7 @@ export async function registerRoutes(
   const patchProjectSchema = z.object({
     columns: z.array(projectColumnSchema).min(1).max(24).optional(),
     name: z.string().min(1).max(200).optional(),
-    color: z.string().min(1).max(80).optional(),
+    color: projectAccentColorSchema.optional(),
     description: z.union([z.string().max(10_000), z.null()]).optional(),
   });
 
@@ -568,7 +575,7 @@ export async function registerRoutes(
     if (!parsed.success) return res.status(400).json({ message: parsed.error.issues[0].message });
     const project = await storage.createProject({
       name: parsed.data.name,
-      color: parsed.data.color ?? "bg-blue-500",
+      color: sanitizeProjectColor(parsed.data.color ?? "bg-blue-500"),
       description: parsed.data.description ?? null,
       columns: parsed.data.columns ?? [...defaultProjectColumns],
       ownerId: currentUser.id,
@@ -631,7 +638,7 @@ export async function registerRoutes(
       columns?: unknown;
     } = {};
     if (parsed.data.name !== undefined) updates.name = parsed.data.name;
-    if (parsed.data.color !== undefined) updates.color = parsed.data.color;
+    if (parsed.data.color !== undefined) updates.color = sanitizeProjectColor(parsed.data.color);
     if (parsed.data.description !== undefined) updates.description = parsed.data.description;
     if (parsed.data.columns !== undefined) updates.columns = parsed.data.columns;
     if (Object.keys(updates).length === 0) {

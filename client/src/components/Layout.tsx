@@ -35,6 +35,7 @@ import {
 import { EditProjectModal } from "@/components/EditProjectModal";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { toast } from "@/hooks/use-toast";
+import { resolveProjectChipAppearance } from "@shared/projectColors";
 
 interface SidebarProps {
     currentView: "tasks" | "messages" | "team" | "settings" | "profile" | "timecards";
@@ -73,13 +74,6 @@ function settingsSidebarTabFromHash(): (typeof SETTINGS_SIDEBAR_TABS)[number] {
   return SETTINGS_SIDEBAR_TABS.includes(h as (typeof SETTINGS_SIDEBAR_TABS)[number])
     ? (h as (typeof SETTINGS_SIDEBAR_TABS)[number])
     : "general";
-}
-
-/** Tailwind `bg-*` classes stored on the project; fall back so the rail always has a solid chip. */
-function projectRailColorClass(color: string | undefined): string {
-  const c = color?.trim();
-  if (c && /^bg-[a-z0-9-]+$/.test(c)) return c;
-  return "bg-blue-500";
 }
 
 export function Sidebar({ currentView, currentChannelId, onViewChange, currentProject, onProjectChange, onAddProject, onAddChannel, currentUserRole, clientPermissions }: SidebarProps) {
@@ -182,7 +176,9 @@ export function Sidebar({ currentView, currentChannelId, onViewChange, currentPr
              {/* Projects List */}
              <ScrollArea className="flex-1 w-full px-3 gap-3 flex flex-col items-center">
                  <div className="flex flex-col gap-3 items-center w-full py-2">
-                    {projects.map(project => (
+                    {projects.map((project) => {
+                        const chip = resolveProjectChipAppearance(project.color);
+                        return (
                         <Tooltip key={project.id}>
                             <TooltipTrigger asChild>
                                 <button
@@ -192,11 +188,12 @@ export function Sidebar({ currentView, currentChannelId, onViewChange, currentPr
                                     }}
                                     className={cn(
                                         "w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-200 relative group font-bold text-sm text-white shadow-md",
-                                        projectRailColorClass(project.color),
+                                        chip.tailwindClass || undefined,
                                         !isGlobalView && currentProject?.id === project.id
                                             ? "ring-2 ring-white/90 ring-offset-2 ring-offset-background scale-105 opacity-100"
                                             : "opacity-80 hover:opacity-100 hover:scale-[1.02]",
                                     )}
+                                    style={chip.style}
                                 >
                                     <span>{getUserInitials(project.name, undefined)}</span>
                                     {!isGlobalView && currentProject?.id === project.id && (
@@ -208,7 +205,8 @@ export function Sidebar({ currentView, currentChannelId, onViewChange, currentPr
                                 <p>{project.name}</p>
                             </TooltipContent>
                         </Tooltip>
-                    ))}
+                        );
+                    })}
                     
                     {showNewProject && (
                         <Tooltip>

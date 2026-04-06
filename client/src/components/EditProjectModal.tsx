@@ -5,14 +5,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useEffect, useState } from "react";
 import type { Project } from "@/lib/mockData";
-
-const COLOR_SWATCHES = ["bg-blue-500", "bg-orange-500", "bg-emerald-500", "bg-purple-500", "bg-pink-500"] as const;
-
-function normalizeProjectColor(color: string | undefined): string {
-  const c = color?.trim();
-  if (c && /^bg-[a-z0-9-]+$/.test(c)) return c;
-  return "bg-blue-500";
-}
+import { ProjectColorPicker } from "@/components/ProjectColorPicker";
+import { sanitizeProjectColor } from "@shared/projectColors";
 
 interface EditProjectModalProps {
   open: boolean;
@@ -31,7 +25,7 @@ export function EditProjectModal({ open, onOpenChange, project, onSave }: EditPr
     if (!open || !project) return;
     setName(project.name);
     setDescription(project.description ?? "");
-    setColor(normalizeProjectColor(project.color));
+    setColor(sanitizeProjectColor(project.color ?? ""));
   }, [open, project?.id, project?.name, project?.description, project?.color]);
 
   const handleSave = async () => {
@@ -42,7 +36,7 @@ export function EditProjectModal({ open, onOpenChange, project, onSave }: EditPr
       await onSave({
         name: trimmed,
         description: description.trim() === "" ? null : description.trim(),
-        color,
+        color: sanitizeProjectColor(color),
       });
       onOpenChange(false);
     } finally {
@@ -82,20 +76,7 @@ export function EditProjectModal({ open, onOpenChange, project, onSave }: EditPr
             />
           </div>
 
-          <div className="space-y-2">
-            <Label className="text-xs uppercase font-semibold text-muted-foreground">Color</Label>
-            <div className="flex gap-2">
-              {COLOR_SWATCHES.map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  aria-label={`Select ${c}`}
-                  className={`w-8 h-8 rounded-full ${c} ${color === c ? "ring-2 ring-offset-2 ring-primary" : ""}`}
-                  onClick={() => setColor(c)}
-                />
-              ))}
-            </div>
-          </div>
+          <ProjectColorPicker idPrefix="edit-project" value={color} onChange={setColor} />
         </div>
 
         <DialogFooter>
