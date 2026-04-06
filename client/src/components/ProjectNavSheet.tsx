@@ -23,7 +23,6 @@ import { cn, getUserInitials } from "@/lib/utils";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Label } from "@/components/ui/label";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
@@ -57,8 +56,6 @@ function SortableProjectRow({
     transform: CSS.Transform.toString(transform),
     transition,
   };
-  const quickId = `quick-menu-${project.id}`;
-
   return (
     <div
       ref={setNodeRef}
@@ -79,19 +76,16 @@ function SortableProjectRow({
         <GripVertical className="h-4 w-4" />
       </button>
       <div
-        className="flex shrink-0 items-center gap-2"
+        className="flex shrink-0 items-center"
         onClick={(e) => e.stopPropagation()}
         onPointerDown={(e) => e.stopPropagation()}
       >
         <Checkbox
-          id={quickId}
           checked={showOnQuickMenu}
           onCheckedChange={(v) => onToggleQuickMenu(v === true)}
-          aria-label="Show on quick menu"
+          aria-label={`Show ${project.name} on collapsed sidebar`}
+          aria-describedby="project-sheet-quick-menu-hint"
         />
-        <Label htmlFor={quickId} className="text-xs text-muted-foreground font-normal cursor-pointer whitespace-nowrap">
-          Quick menu
-        </Label>
       </div>
       <button
         type="button"
@@ -216,12 +210,16 @@ export function ProjectNavSheet({
       <SheetContent side="left" className="w-full sm:max-w-md flex flex-col gap-0 p-0">
         <SheetHeader className="px-6 pt-6 pb-2 text-left space-y-1">
           <SheetTitle>Projects</SheetTitle>
-          <SheetDescription>
-            Drag to reorder. Use <span className="font-medium text-foreground">Quick menu</span> to choose which
-            projects appear as icons on the collapsed left bar.
-          </SheetDescription>
+          <SheetDescription>Drag rows to change the order of your projects.</SheetDescription>
         </SheetHeader>
         <ScrollArea className="flex-1 px-6 pb-6">
+          <p
+            id="project-sheet-quick-menu-hint"
+            className="text-xs text-muted-foreground mb-3 pr-2 leading-relaxed"
+          >
+            The checkbox controls whether each project appears on the collapsed left bar (quick menu). Uncheck to
+            hide a project from the icon strip; you can still open it from this list.
+          </p>
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
             <SortableContext items={orderedIds} strategy={verticalListSortingStrategy}>
               <div className="flex flex-col gap-2 pr-2">
