@@ -28,6 +28,7 @@ declare global {
       status: string | null;
       email: string | null;
       lastSeenAt?: Date | null;
+      projectSidebarOrder?: number[] | null;
     }
   }
 }

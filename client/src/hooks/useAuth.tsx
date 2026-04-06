@@ -11,6 +11,8 @@ type User = {
   status: string | null;
   email: string | null;
   lastSeenAt?: string | null;
+  /** Numeric project ids in sidebar order (same as visible /api/projects). */
+  projectSidebarOrder?: number[] | null;
 };
 
 type AuthContextType = {

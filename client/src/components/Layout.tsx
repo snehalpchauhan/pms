@@ -1,4 +1,4 @@
-import { Plus, LayoutGrid, CheckSquare, Settings, Users, MessageSquare, Bell, Search, Hash, Lock, ListTodo, FolderKanban, LogOut, Briefcase, Building2, User, Shield, Key, Clock, LogIn, MoreVertical, X } from "lucide-react";
+import { Plus, LayoutGrid, CheckSquare, Settings, Users, MessageSquare, Bell, Search, Hash, Lock, ListTodo, FolderKanban, LogOut, Briefcase, Building2, User, Shield, Key, Clock, LogIn, MoreVertical, X, Menu } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,6 +36,7 @@ import { EditProjectModal } from "@/components/EditProjectModal";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { toast } from "@/hooks/use-toast";
 import { resolveProjectChipAppearance } from "@shared/projectColors";
+import { ProjectNavSheet } from "@/components/ProjectNavSheet";
 
 interface SidebarProps {
     currentView: "tasks" | "messages" | "team" | "settings" | "profile" | "timecards";
@@ -82,6 +83,7 @@ export function Sidebar({ currentView, currentChannelId, onViewChange, currentPr
   const sidebarInitials = getUserInitials(authUser?.name, authUser?.username);
   const sidebarAvatar = authUser?.avatar?.trim() || undefined;
   const [projectSearchOpen, setProjectSearchOpen] = useState(false);
+  const [projectNavOpen, setProjectNavOpen] = useState(false);
   const [settingsSidebarTab, setSettingsSidebarTab] = useState(settingsSidebarTabFromHash);
   const [editProjectOpen, setEditProjectOpen] = useState(false);
   const [deleteProjectOpen, setDeleteProjectOpen] = useState(false);
@@ -172,6 +174,34 @@ export function Sidebar({ currentView, currentChannelId, onViewChange, currentPr
              </Tooltip>
 
              <Separator className="w-8" />
+
+             {projects.length > 0 && (
+               <>
+                 <Tooltip>
+                   <TooltipTrigger asChild>
+                     <button
+                       type="button"
+                       onClick={() => setProjectNavOpen(true)}
+                       className="w-10 h-10 rounded-xl bg-muted/50 hover:bg-muted text-muted-foreground hover:text-primary transition-all flex items-center justify-center"
+                       aria-label="Projects menu and order"
+                     >
+                       <Menu className="w-5 h-5" />
+                     </button>
+                   </TooltipTrigger>
+                   <TooltipContent side="right">Projects list & order</TooltipContent>
+                 </Tooltip>
+                 <ProjectNavSheet
+                   open={projectNavOpen}
+                   onOpenChange={setProjectNavOpen}
+                   projects={projects}
+                   currentProjectId={currentProject?.id}
+                   onSelectProject={onProjectChange}
+                   leaveGlobalView={
+                     isGlobalView ? () => onViewChange("tasks") : undefined
+                   }
+                 />
+               </>
+             )}
 
              {/* Projects List */}
              <ScrollArea className="flex-1 w-full px-3 gap-3 flex flex-col items-center">

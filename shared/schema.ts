@@ -39,6 +39,8 @@ export const users = pgTable("users", {
   lastSeenAt: timestamp("last_seen_at"),
   status: text("status").default("offline"),
   email: text("email"),
+  /** Per-user order of project ids for the left sidebar (same ids as visible projects API). */
+  projectSidebarOrder: jsonb("project_sidebar_order"),
 });
 
 export const projects = pgTable("projects", {
@@ -172,7 +174,7 @@ export const expressSession = pgTable(
 );
 
 // Insert schemas
-export const insertUserSchema = createInsertSchema(users).omit({ id: true });
+export const insertUserSchema = createInsertSchema(users).omit({ id: true, projectSidebarOrder: true });
 export const insertProjectSchema = createInsertSchema(projects).omit({ id: true });
 export const insertTaskSchema = createInsertSchema(tasks).omit({ id: true, createdAt: true });
 export const insertChecklistItemSchema = createInsertSchema(checklistItems).omit({ id: true });

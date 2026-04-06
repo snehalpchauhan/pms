@@ -1,9 +1,11 @@
-import { createContext, useContext, ReactNode } from "react";
+import { createContext, useContext, ReactNode, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { getQueryFn } from "@/lib/queryClient";
 import type { User, Project, Channel, Task } from "@/lib/mockData";
 import { sanitizeProjectColor } from "@shared/projectColors";
 import { getEstimatedHoursFromTaskPayload, parseTaskHoursField } from "@/lib/taskHours";
+import { useAuth } from "@/hooks/useAuth";
+import { sortProjectsBySidebarOrder } from "@/lib/projectSidebarOrder";
 
 /** Show as online only while lastSeenAt is within this window (matches client heartbeat). */
 const PRESENCE_TTL_MS = 90_000;
@@ -78,6 +80,7 @@ function convertChannel(c: any): Channel {
 }
 
 export function AppDataProvider({ children }: { children: ReactNode }) {
+  const { user: authUser } = useAuth();
   const { data: rawUsers, isLoading: usersLoading, refetch: refetchUsers } = useQuery<any[]>({
     queryKey: ["/api/users"],
     queryFn: getQueryFn({ on401: "throw" }),
@@ -98,7 +101,10 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const usersMap: Record<string, User> = {};
   usersArray.forEach(u => { usersMap[u.id] = u; });
 
-  const projectsList = (rawProjects || []).map(convertProject);
+  const projectsList = useMemo(() => {
+    const list = (rawProjects || []).map(convertProject);
+    return sortProjectsBySidebarOrder(list, authUser?.projectSidebarOrder ?? null);
+  }, [rawProjects, authUser?.projectSidebarOrder]);
   const channelsList = (rawChannels || []).map(convertChannel);
 
   return (
