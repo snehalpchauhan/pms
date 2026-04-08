@@ -104,20 +104,24 @@ function AuthenticatedApp() {
   const workspaceBootstrappedRef = useRef(false);
 
   useEffect(() => {
+    if (appDataLoading) return;
     if (projects.length > 0 && !currentProjectId) {
       setCurrentProjectId(projects[0].id);
     }
-  }, [projects, currentProjectId]);
+  }, [projects, currentProjectId, appDataLoading]);
 
   useEffect(() => {
+    // While app data is loading, `projects` is empty — do not clear URL-derived project id.
+    if (appDataLoading) return;
     if (projects.length === 0) {
       if (currentProjectId) setCurrentProjectId("");
       return;
     }
-    if (currentProjectId && !projects.some((p) => p.id === currentProjectId)) {
+    const projectIds = new Set(projects.map((p) => String(p.id)));
+    if (currentProjectId && !projectIds.has(String(currentProjectId))) {
       setCurrentProjectId(projects[0].id);
     }
-  }, [projects, currentProjectId]);
+  }, [projects, currentProjectId, appDataLoading]);
 
   useEffect(() => {
     setTaskSearchQuery("");
