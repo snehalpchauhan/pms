@@ -6,7 +6,13 @@ import TaskListView from "./TaskListView";
 import CalendarView from "./CalendarView";
 import { FolderKanban, ListTodo, Filter, Calendar } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import {
+    getSearchParams,
+    parseTaskTab,
+    updateUrlParams,
+    type TaskWorkspaceTab,
+} from "@/lib/workspaceUrl";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { TaskDetailPage } from "./TaskDetailPage";
 import { isPast, isToday } from "date-fns";
@@ -24,11 +30,54 @@ interface ProjectTasksViewProps {
     clientPermissions?: ClientPermissions;
 }
 
+const VALID_FILTERS = new Set(["all", "mine", "overdue", "completed"]);
+
 export default function ProjectTasksView({ project, tasks, clientPermissions }: ProjectTasksViewProps) {
     const { user } = useAuth();
     const currentUserId = user ? String(user.id) : "";
-    const [filter, setFilter] = useState("all");
+    const [taskTab, setTaskTab] = useState<TaskWorkspaceTab>(() =>
+        parseTaskTab(typeof window !== "undefined" ? getSearchParams().get("taskTab") : null),
+    );
+    const [filter, setFilter] = useState(() => {
+        const f = typeof window !== "undefined" ? getSearchParams().get("taskFilter") : null;
+        return f && VALID_FILTERS.has(f) ? f : "all";
+    });
     const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+    const prevProjectIdRef = useRef<string | null>(null);
+
+    const openTask = useCallback((t: Task) => {
+        setSelectedTask(t);
+        updateUrlParams({ task: String(t.id) });
+    }, []);
+
+    const closeTask = useCallback(() => {
+        setSelectedTask(null);
+        updateUrlParams({ task: null });
+    }, []);
+
+    useEffect(() => {
+        if (prevProjectIdRef.current === null) {
+            prevProjectIdRef.current = project.id;
+            return;
+        }
+        if (prevProjectIdRef.current === project.id) return;
+        prevProjectIdRef.current = project.id;
+        setSelectedTask(null);
+        updateUrlParams({ task: null });
+    }, [project.id]);
+
+    useEffect(() => {
+        const id = getSearchParams().get("task");
+        if (!id) {
+            return;
+        }
+        const t = tasks.find((x) => String(x.id) === id);
+        if (t) {
+            setSelectedTask(t);
+        } else if (tasks.length > 0) {
+            updateUrlParams({ task: null });
+        }
+    }, [tasks, project.id]);
 
     useEffect(() => {
         if (!selectedTask) return;
@@ -90,9 +139,24 @@ export default function ProjectTasksView({ project, tasks, clientPermissions }: 
         return true;
     });
 
+    const handleTaskTabChange = (v: string) => {
+        const tab = parseTaskTab(v);
+        setTaskTab(tab);
+        updateUrlParams({ taskTab: tab });
+    };
+
+    const handleFilterChange = (v: string) => {
+        setFilter(v);
+        updateUrlParams({ taskFilter: v === "all" ? null : v });
+    };
+
     return (
         <div className="h-full flex flex-col overflow-hidden relative">
-            <Tabs defaultValue="board" className="flex-1 flex flex-col h-full overflow-hidden">
+            <Tabs
+                value={taskTab}
+                onValueChange={handleTaskTabChange}
+                className="flex-1 flex flex-col h-full overflow-hidden"
+            >
                 <div className="px-6 py-4 border-b border-border/40 flex items-center justify-between shrink-0 bg-background/50 backdrop-blur-sm z-10">
                     <TabsList className="grid w-[300px] grid-cols-3">
                         <TabsTrigger value="board">
@@ -110,7 +174,7 @@ export default function ProjectTasksView({ project, tasks, clientPermissions }: 
                     </TabsList>
 
                     <div className="flex items-center gap-3">
-                        <Select value={filter} onValueChange={setFilter}>
+                        <Select value={filter} onValueChange={handleFilterChange}>
                             <SelectTrigger className="w-[140px] h-9 text-xs">
                                 <Filter className="w-3.5 h-3.5 mr-2 text-muted-foreground" />
                                 <SelectValue placeholder="Filter" />
@@ -131,7 +195,7 @@ export default function ProjectTasksView({ project, tasks, clientPermissions }: 
                             <Board 
                                 project={project} 
                                 tasks={filteredTasks} 
-                                onTaskClick={setSelectedTask}
+                                onTaskClick={openTask}
                                 onAddTask={(status) => {
                                     if (isClient && clientPermissions?.clientTaskAccess !== "contribute" && clientPermissions?.clientTaskAccess !== "full") return;
                                     const event = new CustomEvent('openNewTaskModal', { detail: { status } });
@@ -146,14 +210,14 @@ export default function ProjectTasksView({ project, tasks, clientPermissions }: 
                             project={project}
                             tasks={filteredTasks}
                             completeColumnId={resolvedCompleteColumnId}
-                            onTaskClick={setSelectedTask}
+                            onTaskClick={openTask}
                         />
                     </TabsContent>
                     <TabsContent value="calendar" className="h-full m-0 data-[state=active]:flex flex-col overflow-hidden">
                         <CalendarView 
                             project={project} 
                             tasks={filteredTasks} 
-                            onTaskClick={setSelectedTask} 
+                            onTaskClick={openTask} 
                         />
                     </TabsContent>
                 </div>
@@ -162,7 +226,7 @@ export default function ProjectTasksView({ project, tasks, clientPermissions }: 
             {selectedTask && (
                 <TaskDetailPage 
                     task={selectedTask} 
-                    onClose={() => setSelectedTask(null)}
+                    onClose={closeTask}
                     clientPermissions={clientPermissions}
                 />
             )}

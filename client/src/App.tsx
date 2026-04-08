@@ -24,6 +24,7 @@ import { FolderKanban, Loader2 } from "lucide-react";
 import { taskMatchesSearch } from "@/lib/taskSearch";
 import { Button } from "@/components/ui/button";
 import { useCompanyBranding } from "@/hooks/useCompanyBranding";
+import { readInitialWorkspaceFromUrl, updateUrlParams, type WorkspaceView } from "@/lib/workspaceUrl";
 
 export interface ClientPermissions {
   role: string;
@@ -88,9 +89,11 @@ function AuthenticatedApp() {
   const { projects, channels, isLoading: appDataLoading } = useAppData();
   useCompanyBranding();
 
-  const [currentView, setCurrentView] = useState<"tasks" | "messages" | "team" | "settings" | "profile" | "timecards">("tasks");
-  const [currentProjectId, setCurrentProjectId] = useState<string>("");
-  const [currentChannelId, setCurrentChannelId] = useState<string | undefined>(undefined);
+  const [currentView, setCurrentView] = useState<WorkspaceView>(() => readInitialWorkspaceFromUrl().view);
+  const [currentProjectId, setCurrentProjectId] = useState<string>(() => readInitialWorkspaceFromUrl().projectId);
+  const [currentChannelId, setCurrentChannelId] = useState<string | undefined>(
+    () => readInitialWorkspaceFromUrl().channelId,
+  );
 
   const [isNewTaskOpen, setIsNewTaskOpen] = useState(false);
   const [newTaskDefaultStatus, setNewTaskDefaultStatus] = useState<string>("");
@@ -119,6 +122,14 @@ function AuthenticatedApp() {
   useEffect(() => {
     setTaskSearchQuery("");
   }, [currentProjectId]);
+
+  useEffect(() => {
+    updateUrlParams({
+      view: currentView,
+      project: currentProjectId || null,
+      channel: currentView === "messages" ? currentChannelId || null : null,
+    });
+  }, [currentView, currentProjectId, currentChannelId]);
 
   useEffect(() => {
     if (appDataLoading || workspaceBootstrappedRef.current) return;
@@ -247,9 +258,9 @@ function AuthenticatedApp() {
     }
   };
 
-  const handleViewChange = (view: "tasks" | "messages" | "team" | "settings" | "profile" | "timecards", channelId?: string) => {
+  const handleViewChange = (view: WorkspaceView, channelId?: string) => {
     setCurrentView(view);
-    if (channelId) {
+    if (channelId !== undefined) {
       setCurrentChannelId(channelId);
     }
   };
