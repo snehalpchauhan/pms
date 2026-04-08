@@ -13,13 +13,17 @@ export type TimeEntryExportRow = {
 };
 
 export type TimecardsExportMeta = {
-  /** Main title on PDF / first line of CSV */
+  /** Main title on PDF / Excel cover row (staff: "TIME REPORT") */
   documentTitle: string;
   /** Secondary lines (filters, project context) */
   subtitleLines: string[];
   totalHours: number;
   entryCount: number;
-  /** e.g. "Generated April 6, 2026 · Task Board Flow" */
+  /** Shown after "Generated …" in footer (company name from settings, e.g. VNNOVATE PMS) */
+  organizationName: string;
+  /** Client vs staff layout (PDF header differs) */
+  isClient: boolean;
+  /** e.g. "Generated April 6, 2026 · VNNOVATE PMS" */
   footerAttribution: string;
 };
 
@@ -77,6 +81,8 @@ async function loadLogoDataUrl(logoUrl: string | null): Promise<{ dataUrl: strin
 export function buildTimecardsExportMeta(params: {
   isClient: boolean;
   projectName?: string;
+  /** Company / product name from Company Settings (footer attribution) */
+  organizationName?: string;
   totalHours: number;
   entryCount: number;
   filterUserLabel?: string;
@@ -88,6 +94,7 @@ export function buildTimecardsExportMeta(params: {
   const {
     isClient,
     projectName,
+    organizationName,
     totalHours,
     entryCount,
     filterUserLabel,
@@ -97,7 +104,8 @@ export function buildTimecardsExportMeta(params: {
     filterEndDate,
   } = params;
 
-  const documentTitle = isClient ? `Hours shared with you — ${projectName || "Project"}` : "Time report";
+  const org = organizationName?.trim() || "Company";
+  const documentTitle = isClient ? `Hours shared with you — ${projectName || "Project"}` : "TIME REPORT";
 
   const subtitleLines: string[] = [];
   if (filterUserLabel) subtitleLines.push(`Member: ${filterUserLabel}`);
@@ -114,21 +122,17 @@ export function buildTimecardsExportMeta(params: {
     );
   }
 
-  const footerAttribution = `Generated ${format(new Date(), "MMMM d, yyyy")} · Task Board Flow`;
+  const footerAttribution = `Generated ${format(new Date(), "MMMM d, yyyy")} · ${org}`;
 
   return {
     documentTitle,
     subtitleLines,
     totalHours,
     entryCount,
+    organizationName: org,
+    isClient,
     footerAttribution,
   };
-}
-
-function csvEscape(cell: string): string {
-  const s = String(cell ?? "");
-  if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
-  return s;
 }
 
 export function buildExportRows(
@@ -158,47 +162,6 @@ export function buildExportRows(
   });
 }
 
-export function downloadTimecardsCsv(
-  rows: TimeEntryExportRow[],
-  includeUserColumn: boolean,
-  filenameBase: string,
-  meta: TimecardsExportMeta,
-) {
-  const headers = includeUserColumn
-    ? ["Date", "Member", "Task", "Project", "Work type & description", "Hours"]
-    : ["Date", "Task", "Project", "Work type & description", "Hours"];
-
-  const preamble = [
-    csvEscape(meta.documentTitle),
-    ...meta.subtitleLines.map((l) => csvEscape(l)),
-    csvEscape(meta.footerAttribution),
-    "",
-  ];
-
-  const lines = [
-    ...preamble,
-    headers.join(","),
-    ...rows.map((r) => {
-      const cells = includeUserColumn
-        ? [r.logDate, r.userName, r.taskTitle, r.projectName, r.description, r.hours]
-        : [r.logDate, r.taskTitle, r.projectName, r.description, r.hours];
-      return cells.map(csvEscape).join(",");
-    }),
-    "",
-    ["Total hours", meta.totalHours.toFixed(1)].map(csvEscape).join(","),
-    ["Entries", String(meta.entryCount)].map(csvEscape).join(","),
-  ];
-
-  const bom = "\uFEFF";
-  const blob = new Blob([bom + lines.join("\n")], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `${filenameBase}-${format(new Date(), "yyyy-MM-dd")}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
 export async function downloadTimecardsPdf(
   rows: TimeEntryExportRow[],
   includeUserColumn: boolean,
@@ -210,6 +173,8 @@ export async function downloadTimecardsPdf(
   const pageH = doc.internal.pageSize.getHeight();
   const margin = PDF_MARGIN_MM;
   const contentW = pageW - margin * 2;
+
+  doc.setFont("helvetica", "normal");
 
   const companyName = branding.companyName?.trim() || "Company";
   const logoBox = 11;
@@ -225,6 +190,7 @@ export async function downloadTimecardsPdf(
     }
   }
 
+  doc.setFont("helvetica", "normal");
   doc.setFontSize(13);
   doc.setTextColor(PDF_BLUE_MUTED[0], PDF_BLUE_MUTED[1], PDF_BLUE_MUTED[2]);
   const nameX = margin + (loaded ? logoBox + 4 : 0);
@@ -234,22 +200,41 @@ export async function downloadTimecardsPdf(
   doc.setDrawColor(PDF_BLUE_HEADER[0], PDF_BLUE_HEADER[1], PDF_BLUE_HEADER[2]);
   doc.setLineWidth(0.35);
   doc.line(margin, y, pageW - margin, y);
-  y += 5;
 
-  doc.setFontSize(14);
-  doc.setTextColor(17, 24, 39);
-  doc.text(meta.documentTitle, margin, y);
+  /* Extra space below rule before main report title (staff: TIME REPORT) */
   y += 7;
 
-  doc.setFontSize(8.5);
+  if (meta.isClient) {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(13);
+    doc.setTextColor(17, 24, 39);
+    const titleParts = doc.splitTextToSize(meta.documentTitle, contentW);
+    doc.text(titleParts, margin, y);
+    y += titleParts.length * 5 + 2;
+  } else {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(17);
+    doc.setTextColor(17, 24, 39);
+    doc.text("TIME REPORT", margin, y);
+    doc.setFont("helvetica", "normal");
+    y += 10;
+
+    doc.setFontSize(11);
+    doc.setTextColor(PDF_BLUE_MUTED[0], PDF_BLUE_MUTED[1], PDF_BLUE_MUTED[2]);
+    doc.text(`Total hours: ${meta.totalHours.toFixed(1)} h  ·  ${meta.entryCount} entries`, margin, y);
+    y += 7;
+  }
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
   doc.setTextColor(PDF_BLUE_MUTED[0], PDF_BLUE_MUTED[1], PDF_BLUE_MUTED[2]);
   for (const line of meta.subtitleLines) {
     const split = doc.splitTextToSize(line, contentW);
     doc.text(split, margin, y);
-    y += split.length * 3.6 + 1;
+    y += split.length * 4 + 1.2;
   }
   doc.text(meta.footerAttribution, margin, y);
-  y += 6;
+  y += 7;
 
   doc.setTextColor(0, 0, 0);
 
@@ -263,22 +248,23 @@ export async function downloadTimecardsPdf(
       : [r.logDate, r.taskTitle, r.projectName, r.description, r.hours],
   );
 
-  // Explicit widths so the table always spans `contentW`; description gets all remaining mm (long notes wrap with linebreak)
+  // Explicit widths spanning `contentW`; wider task column, description reduced by the same amount
+  const TASK_EXTRA_MM = 10;
   const wDate = 17;
   const wMember = 24;
-  const wTask = 34;
+  const wTask = 34 + TASK_EXTRA_MM;
   const wProj = 28;
   const wHrs = 13;
   const wDescMember = Math.max(
-    48,
+    40,
     contentW - wDate - wMember - wTask - wProj - wHrs - 1,
   );
 
   const wDateS = 18;
-  const wTaskS = 36;
+  const wTaskS = 36 + TASK_EXTRA_MM;
   const wProjS = 30;
   const wHrsS = 14;
-  const wDescSolo = Math.max(52, contentW - wDateS - wTaskS - wProjS - wHrsS - 1);
+  const wDescSolo = Math.max(44, contentW - wDateS - wTaskS - wProjS - wHrsS - 1);
 
   const narrow = includeUserColumn
     ? {
@@ -303,21 +289,24 @@ export async function downloadTimecardsPdf(
     body,
     tableWidth: contentW,
     styles: {
-      fontSize: 7,
-      cellPadding: 1.2,
+      font: "helvetica",
+      fontSize: 8.5,
+      cellPadding: 1.35,
       overflow: "linebreak",
       textColor: [17, 24, 39],
       lineColor: [191, 219, 254],
       lineWidth: 0.1,
     },
     headStyles: {
+      font: "helvetica",
+      fontSize: 8.5,
       fillColor: PDF_BLUE_HEADER,
       textColor: 255,
       fontStyle: "bold",
       halign: "left",
     },
     alternateRowStyles: { fillColor: PDF_BLUE_ZEBRA },
-    columnStyles: narrow,
+    columnStyles: narrow as Record<string, { cellWidth: number }>,
     margin: { left: margin, right: margin, bottom: 18 },
     showHead: "everyPage",
   });
@@ -327,12 +316,13 @@ export async function downloadTimecardsPdf(
 
   for (let i = 1; i <= totalPages; i++) {
     doc.setPage(i);
-    doc.setFontSize(7.5);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
     doc.setTextColor(PDF_BLUE_MUTED[0], PDF_BLUE_MUTED[1], PDF_BLUE_MUTED[2]);
     doc.text(summaryLine, margin, pageH - 10);
     const pageLabel = `Page ${i} of ${totalPages}`;
     doc.text(pageLabel, pageW - margin - doc.getTextWidth(pageLabel), pageH - 10);
-    doc.setFontSize(6.5);
+    doc.setFontSize(7);
     doc.text(meta.footerAttribution, margin, pageH - 5);
   }
 

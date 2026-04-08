@@ -16,7 +16,6 @@ import { parseTimeEntryDescription } from "@/lib/timeEntryDescription";
 import {
   buildExportRows,
   buildTimecardsExportMeta,
-  downloadTimecardsCsv,
   downloadTimecardsPdf,
 } from "@/lib/timecardsExport";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -268,6 +267,7 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
       buildTimecardsExportMeta({
         isClient,
         projectName: currentProject?.name,
+        organizationName: companySettingsForTime?.companyName,
         totalHours,
         entryCount: entries.length,
         filterUserLabel:
@@ -297,13 +297,23 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
       taskFilterOptions,
       filterStartDate,
       filterEndDate,
+      companySettingsForTime?.companyName,
     ],
   );
 
-  const handleExportCsv = () => {
-    const rows = buildExportRows(entries, projectMap, showMemberColumn);
-    downloadTimecardsCsv(rows, showMemberColumn, "timecards", exportMeta);
-    toast({ title: "Download started", description: "Spreadsheet includes totals and matches your filters." });
+  const handleExportExcel = async () => {
+    try {
+      const rows = buildExportRows(entries, projectMap, showMemberColumn);
+      const { downloadTimecardsXlsx } = await import("@/lib/timecardsExportExcel");
+      await downloadTimecardsXlsx(rows, showMemberColumn, "timecards", exportMeta);
+      toast({ title: "Download started", description: "Excel file includes formatting and matches your filters." });
+    } catch (e) {
+      toast({
+        title: "Excel export failed",
+        description: e instanceof Error ? e.message : "Try again.",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleExportPdf = async () => {
@@ -361,9 +371,9 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
               </div>
               {entries.length > 0 && (
                 <>
-                  <Button variant="outline" size="sm" className="h-9 gap-1.5" onClick={handleExportCsv} data-testid="button-export-csv-client">
+                  <Button variant="outline" size="sm" className="h-9 gap-1.5" onClick={handleExportExcel} data-testid="button-export-xlsx-client">
                     <FileSpreadsheet className="w-3.5 h-3.5" />
-                    Excel (CSV)
+                    Excel
                   </Button>
                   <Button variant="outline" size="sm" className="h-9 gap-1.5" onClick={handleExportPdf} data-testid="button-export-pdf-client">
                     <FileDown className="w-3.5 h-3.5" />
@@ -504,9 +514,9 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
           <div className="flex flex-wrap items-center justify-end gap-2">
             {entries.length > 0 && (
               <>
-                <Button variant="outline" size="sm" className="h-9 gap-1.5" onClick={handleExportCsv} data-testid="button-export-csv">
+                <Button variant="outline" size="sm" className="h-9 gap-1.5" onClick={handleExportExcel} data-testid="button-export-xlsx">
                   <FileSpreadsheet className="w-3.5 h-3.5" />
-                  Excel (CSV)
+                  Excel
                 </Button>
                 <Button variant="outline" size="sm" className="h-9 gap-1.5" onClick={handleExportPdf} data-testid="button-export-pdf">
                   <FileDown className="w-3.5 h-3.5" />
