@@ -77,12 +77,15 @@ export default function ProjectTasksView({ project, tasks, clientPermissions }: 
         "markComplete",
     );
 
-    const filteredTasks = tasks.filter(t => {
+    const filteredTasks = tasks.filter((t) => {
         if (filter === "mine") return t.assignees.includes(currentUserId);
         if (filter === "overdue") {
             if (!t.dueDate) return false;
             const isDone = String(t.status) === String(resolvedCompleteColumnId);
             return isPast(new Date(t.dueDate)) && !isToday(new Date(t.dueDate)) && !isDone;
+        }
+        if (filter === "completed") {
+            return String(t.status) === String(resolvedCompleteColumnId);
         }
         return true;
     });
@@ -116,6 +119,7 @@ export default function ProjectTasksView({ project, tasks, clientPermissions }: 
                                 <SelectItem value="all">All Tasks</SelectItem>
                                 {!isClient && <SelectItem value="mine">My Tasks</SelectItem>}
                                 <SelectItem value="overdue">Overdue</SelectItem>
+                                <SelectItem value="completed">Completed</SelectItem>
                             </SelectContent>
                         </Select>
                     </div>
@@ -138,10 +142,11 @@ export default function ProjectTasksView({ project, tasks, clientPermissions }: 
                         </div>
                     </TabsContent>
                     <TabsContent value="list" className="h-full m-0 data-[state=active]:flex flex-col overflow-y-auto">
-                        <TaskListView 
-                            project={project} 
-                            tasks={filteredTasks} 
-                            onTaskClick={setSelectedTask} 
+                        <TaskListView
+                            project={project}
+                            tasks={filteredTasks}
+                            completeColumnId={resolvedCompleteColumnId}
+                            onTaskClick={setSelectedTask}
                         />
                     </TabsContent>
                     <TabsContent value="calendar" className="h-full m-0 data-[state=active]:flex flex-col overflow-hidden">
