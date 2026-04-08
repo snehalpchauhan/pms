@@ -8,11 +8,12 @@ import { FolderKanban, ListTodo, Filter, Calendar } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
-    getSearchParams,
+    getPersistedTaskId,
     parseTaskTab,
-    updateUrlParams,
+    persistWorkspaceState,
+    readTaskWorkspaceSnapshot,
     type TaskWorkspaceTab,
-} from "@/lib/workspaceUrl";
+} from "@/lib/workspacePersistence";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { TaskDetailPage } from "./TaskDetailPage";
 import { isPast, isToday } from "date-fns";
@@ -30,29 +31,22 @@ interface ProjectTasksViewProps {
     clientPermissions?: ClientPermissions;
 }
 
-const VALID_FILTERS = new Set(["all", "mine", "overdue", "completed"]);
-
 export default function ProjectTasksView({ project, tasks, clientPermissions }: ProjectTasksViewProps) {
     const { user } = useAuth();
     const currentUserId = user ? String(user.id) : "";
-    const [taskTab, setTaskTab] = useState<TaskWorkspaceTab>(() =>
-        parseTaskTab(typeof window !== "undefined" ? getSearchParams().get("taskTab") : null),
-    );
-    const [filter, setFilter] = useState(() => {
-        const f = typeof window !== "undefined" ? getSearchParams().get("taskFilter") : null;
-        return f && VALID_FILTERS.has(f) ? f : "all";
-    });
+    const [taskTab, setTaskTab] = useState<TaskWorkspaceTab>(() => readTaskWorkspaceSnapshot().taskTab);
+    const [filter, setFilter] = useState(() => readTaskWorkspaceSnapshot().taskFilter);
     const [selectedTask, setSelectedTask] = useState<Task | null>(null);
     const prevProjectIdRef = useRef<string | null>(null);
 
     const openTask = useCallback((t: Task) => {
         setSelectedTask(t);
-        updateUrlParams({ task: String(t.id) });
+        persistWorkspaceState({ taskId: String(t.id) });
     }, []);
 
     const closeTask = useCallback(() => {
         setSelectedTask(null);
-        updateUrlParams({ task: null });
+        persistWorkspaceState({ taskId: null });
     }, []);
 
     useEffect(() => {
@@ -63,11 +57,11 @@ export default function ProjectTasksView({ project, tasks, clientPermissions }: 
         if (prevProjectIdRef.current === project.id) return;
         prevProjectIdRef.current = project.id;
         setSelectedTask(null);
-        updateUrlParams({ task: null });
+        persistWorkspaceState({ taskId: null });
     }, [project.id]);
 
     useEffect(() => {
-        const id = getSearchParams().get("task");
+        const id = getPersistedTaskId();
         if (!id) {
             return;
         }
@@ -75,7 +69,7 @@ export default function ProjectTasksView({ project, tasks, clientPermissions }: 
         if (t) {
             setSelectedTask(t);
         } else if (tasks.length > 0) {
-            updateUrlParams({ task: null });
+            persistWorkspaceState({ taskId: null });
         }
     }, [tasks, project.id]);
 
@@ -142,12 +136,12 @@ export default function ProjectTasksView({ project, tasks, clientPermissions }: 
     const handleTaskTabChange = (v: string) => {
         const tab = parseTaskTab(v);
         setTaskTab(tab);
-        updateUrlParams({ taskTab: tab });
+        persistWorkspaceState({ taskTab: tab });
     };
 
     const handleFilterChange = (v: string) => {
         setFilter(v);
-        updateUrlParams({ taskFilter: v === "all" ? null : v });
+        persistWorkspaceState({ taskFilter: v === "all" ? null : v });
     };
 
     return (

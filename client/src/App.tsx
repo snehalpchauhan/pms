@@ -24,7 +24,7 @@ import { FolderKanban, Loader2 } from "lucide-react";
 import { taskMatchesSearch } from "@/lib/taskSearch";
 import { Button } from "@/components/ui/button";
 import { useCompanyBranding } from "@/hooks/useCompanyBranding";
-import { readInitialWorkspaceFromUrl, updateUrlParams, type WorkspaceView } from "@/lib/workspaceUrl";
+import { readInitialWorkspaceState, persistWorkspaceState, type WorkspaceView } from "@/lib/workspacePersistence";
 
 export interface ClientPermissions {
   role: string;
@@ -89,10 +89,10 @@ function AuthenticatedApp() {
   const { projects, channels, isLoading: appDataLoading } = useAppData();
   useCompanyBranding();
 
-  const [currentView, setCurrentView] = useState<WorkspaceView>(() => readInitialWorkspaceFromUrl().view);
-  const [currentProjectId, setCurrentProjectId] = useState<string>(() => readInitialWorkspaceFromUrl().projectId);
+  const [currentView, setCurrentView] = useState<WorkspaceView>(() => readInitialWorkspaceState().view);
+  const [currentProjectId, setCurrentProjectId] = useState<string>(() => readInitialWorkspaceState().projectId);
   const [currentChannelId, setCurrentChannelId] = useState<string | undefined>(
-    () => readInitialWorkspaceFromUrl().channelId,
+    () => readInitialWorkspaceState().channelId,
   );
 
   const [isNewTaskOpen, setIsNewTaskOpen] = useState(false);
@@ -128,10 +128,10 @@ function AuthenticatedApp() {
   }, [currentProjectId]);
 
   useEffect(() => {
-    updateUrlParams({
+    persistWorkspaceState({
       view: currentView,
-      project: currentProjectId || null,
-      channel: currentView === "messages" ? currentChannelId || null : null,
+      projectId: currentProjectId || null,
+      channelId: currentView === "messages" ? currentChannelId || null : null,
     });
   }, [currentView, currentProjectId, currentChannelId]);
 
