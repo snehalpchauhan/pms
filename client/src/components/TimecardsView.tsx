@@ -142,6 +142,8 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
   const clientTimecardsEnabled = !isClient && (logProjectClientTimecardsData?.hasClientTimecards === true);
 
   const { data: companySettingsForTime } = useQuery<{
+    companyName?: string;
+    logoUrl?: string | null;
     timeLogMinDescriptionWords?: number;
     timeLogMaxHoursPerEntry?: number | null;
   }>({
@@ -304,10 +306,14 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
     toast({ title: "Download started", description: "Spreadsheet includes totals and matches your filters." });
   };
 
-  const handleExportPdf = () => {
+  const handleExportPdf = async () => {
+    const branding = {
+      companyName: companySettingsForTime?.companyName?.trim() || "Company",
+      logoUrl: companySettingsForTime?.logoUrl?.trim() || null,
+    };
     try {
       const rows = buildExportRows(entries, projectMap, showMemberColumn);
-      downloadTimecardsPdf(rows, showMemberColumn, exportMeta);
+      await downloadTimecardsPdf(rows, showMemberColumn, exportMeta, branding);
       toast({ title: "PDF ready", description: "Includes totals and all rows matching your filters." });
     } catch (e) {
       toast({

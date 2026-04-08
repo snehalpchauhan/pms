@@ -23,6 +23,57 @@ export type TimecardsExportMeta = {
   footerAttribution: string;
 };
 
+export type TimecardsPdfBranding = {
+  companyName: string;
+  logoUrl: string | null;
+};
+
+/** Typical print margin (mm) for A4 — balances readability and table width */
+const PDF_MARGIN_MM = 15;
+
+/** Blue palette (replaces gray): header ~ blue-600, zebra ~ blue-50 */
+const PDF_BLUE_HEADER: [number, number, number] = [37, 99, 235];
+const PDF_BLUE_ZEBRA: [number, number, number] = [239, 246, 255];
+const PDF_BLUE_MUTED: [number, number, number] = [30, 64, 175];
+
+function absoluteAssetUrl(pathOrUrl: string): string {
+  const t = pathOrUrl.trim();
+  if (t.startsWith("http://") || t.startsWith("https://")) return t;
+  if (typeof window === "undefined") return t;
+  const path = t.startsWith("/") ? t : `/${t}`;
+  return `${window.location.origin}${path}`;
+}
+
+/**
+ * Load company logo for jsPDF (same-origin /uploads with cookies).
+ * Returns data URL + format hint, or null.
+ */
+async function loadLogoDataUrl(logoUrl: string | null): Promise<{ dataUrl: string; format: string } | null> {
+  if (!logoUrl?.trim()) return null;
+  try {
+    const url = absoluteAssetUrl(logoUrl);
+    const res = await fetch(url, { credentials: "include" });
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    if (!blob.size) return null;
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(r.result as string);
+      r.onerror = () => reject(new Error("read failed"));
+      r.readAsDataURL(blob);
+    });
+    const mime = blob.type.toLowerCase();
+    let fmt = "PNG";
+    if (mime.includes("jpeg") || mime.includes("jpg")) fmt = "JPEG";
+    else if (mime.includes("webp")) fmt = "WEBP";
+    else if (mime.includes("png")) fmt = "PNG";
+    else if (mime.includes("gif")) fmt = "GIF";
+    return { dataUrl, format: fmt };
+  } catch {
+    return null;
+  }
+}
+
 export function buildTimecardsExportMeta(params: {
   isClient: boolean;
   projectName?: string;
@@ -148,22 +199,52 @@ export function downloadTimecardsCsv(
   URL.revokeObjectURL(url);
 }
 
-export function downloadTimecardsPdf(rows: TimeEntryExportRow[], includeUserColumn: boolean, meta: TimecardsExportMeta) {
+export async function downloadTimecardsPdf(
+  rows: TimeEntryExportRow[],
+  includeUserColumn: boolean,
+  meta: TimecardsExportMeta,
+  branding: TimecardsPdfBranding,
+): Promise<void> {
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
-  const margin = 12;
-  let y = 12;
+  const margin = PDF_MARGIN_MM;
+  const contentW = pageW - margin * 2;
 
-  doc.setFontSize(15);
-  doc.setTextColor(30, 30, 30);
+  const companyName = branding.companyName?.trim() || "Company";
+  const logoBox = 11;
+  let y = margin;
+
+  const loaded = await loadLogoDataUrl(branding.logoUrl);
+
+  if (loaded) {
+    try {
+      doc.addImage(loaded.dataUrl, loaded.format, margin, y, logoBox, logoBox);
+    } catch {
+      /* unsupported image type — continue without logo */
+    }
+  }
+
+  doc.setFontSize(13);
+  doc.setTextColor(PDF_BLUE_MUTED[0], PDF_BLUE_MUTED[1], PDF_BLUE_MUTED[2]);
+  const nameX = margin + (loaded ? logoBox + 4 : 0);
+  doc.text(companyName, nameX, y + logoBox * 0.55);
+
+  y += Math.max(logoBox, 12) + 3;
+  doc.setDrawColor(PDF_BLUE_HEADER[0], PDF_BLUE_HEADER[1], PDF_BLUE_HEADER[2]);
+  doc.setLineWidth(0.35);
+  doc.line(margin, y, pageW - margin, y);
+  y += 5;
+
+  doc.setFontSize(14);
+  doc.setTextColor(17, 24, 39);
   doc.text(meta.documentTitle, margin, y);
   y += 7;
 
   doc.setFontSize(8.5);
-  doc.setTextColor(75, 85, 99);
+  doc.setTextColor(PDF_BLUE_MUTED[0], PDF_BLUE_MUTED[1], PDF_BLUE_MUTED[2]);
   for (const line of meta.subtitleLines) {
-    const split = doc.splitTextToSize(line, pageW - margin * 2);
+    const split = doc.splitTextToSize(line, contentW);
     doc.text(split, margin, y);
     y += split.length * 3.6 + 1;
   }
@@ -182,30 +263,62 @@ export function downloadTimecardsPdf(rows: TimeEntryExportRow[], includeUserColu
       : [r.logDate, r.taskTitle, r.projectName, r.description, r.hours],
   );
 
+  // Explicit widths so the table always spans `contentW`; description gets all remaining mm (long notes wrap with linebreak)
+  const wDate = 17;
+  const wMember = 24;
+  const wTask = 34;
+  const wProj = 28;
+  const wHrs = 13;
+  const wDescMember = Math.max(
+    48,
+    contentW - wDate - wMember - wTask - wProj - wHrs - 1,
+  );
+
+  const wDateS = 18;
+  const wTaskS = 36;
+  const wProjS = 30;
+  const wHrsS = 14;
+  const wDescSolo = Math.max(52, contentW - wDateS - wTaskS - wProjS - wHrsS - 1);
+
+  const narrow = includeUserColumn
+    ? {
+        0: { cellWidth: wDate },
+        1: { cellWidth: wMember },
+        2: { cellWidth: wTask },
+        3: { cellWidth: wProj },
+        4: { cellWidth: wDescMember },
+        5: { cellWidth: wHrs },
+      }
+    : {
+        0: { cellWidth: wDateS },
+        1: { cellWidth: wTaskS },
+        2: { cellWidth: wProjS },
+        3: { cellWidth: wDescSolo },
+        4: { cellWidth: wHrsS },
+      };
+
   autoTable(doc, {
     startY: y,
     head,
     body,
-    styles: { fontSize: 7, cellPadding: 1.1, overflow: "linebreak", textColor: [30, 30, 30] },
-    headStyles: { fillColor: [55, 65, 81], textColor: 255, fontStyle: "bold" },
-    alternateRowStyles: { fillColor: [249, 250, 251] },
-    columnStyles: includeUserColumn
-      ? {
-          0: { cellWidth: 22 },
-          1: { cellWidth: 28 },
-          2: { cellWidth: 38 },
-          3: { cellWidth: 30 },
-          4: { cellWidth: 82 },
-          5: { cellWidth: 14 },
-        }
-      : {
-          0: { cellWidth: 24 },
-          1: { cellWidth: 44 },
-          2: { cellWidth: 32 },
-          3: { cellWidth: 90 },
-          4: { cellWidth: 16 },
-        },
-    margin: { left: margin, right: margin, bottom: 16 },
+    tableWidth: contentW,
+    styles: {
+      fontSize: 7,
+      cellPadding: 1.2,
+      overflow: "linebreak",
+      textColor: [17, 24, 39],
+      lineColor: [191, 219, 254],
+      lineWidth: 0.1,
+    },
+    headStyles: {
+      fillColor: PDF_BLUE_HEADER,
+      textColor: 255,
+      fontStyle: "bold",
+      halign: "left",
+    },
+    alternateRowStyles: { fillColor: PDF_BLUE_ZEBRA },
+    columnStyles: narrow,
+    margin: { left: margin, right: margin, bottom: 18 },
     showHead: "everyPage",
   });
 
@@ -215,9 +328,10 @@ export function downloadTimecardsPdf(rows: TimeEntryExportRow[], includeUserColu
   for (let i = 1; i <= totalPages; i++) {
     doc.setPage(i);
     doc.setFontSize(7.5);
-    doc.setTextColor(75, 85, 99);
+    doc.setTextColor(PDF_BLUE_MUTED[0], PDF_BLUE_MUTED[1], PDF_BLUE_MUTED[2]);
     doc.text(summaryLine, margin, pageH - 10);
-    doc.text(`Page ${i} of ${totalPages}`, pageW - margin - doc.getTextWidth(`Page ${i} of ${totalPages}`), pageH - 10);
+    const pageLabel = `Page ${i} of ${totalPages}`;
+    doc.text(pageLabel, pageW - margin - doc.getTextWidth(pageLabel), pageH - 10);
     doc.setFontSize(6.5);
     doc.text(meta.footerAttribution, margin, pageH - 5);
   }
