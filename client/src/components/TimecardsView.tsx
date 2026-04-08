@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { useAppData } from "@/hooks/useAppData";
@@ -10,6 +10,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/SearchableSelect";
+import { parseTimeEntryDescription } from "@/lib/timeEntryDescription";
+import {
+  buildExportRows,
+  downloadTimecardsCsv,
+  downloadTimecardsPdf,
+} from "@/lib/timecardsExport";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -20,7 +27,23 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { Clock, Trash2, Filter, Plus, ChevronDown, ChevronUp, Timer, Users, User, Folder, Tag, Lock } from "lucide-react";
+import {
+  Clock,
+  Trash2,
+  Filter,
+  Plus,
+  ChevronDown,
+  ChevronUp,
+  Timer,
+  Users,
+  Folder,
+  Tag,
+  Lock,
+  FileSpreadsheet,
+  FileDown,
+  ChevronLeft,
+  ChevronRight,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
@@ -31,6 +54,28 @@ import {
   buildStoredTimeDescription,
   countWordsInText,
 } from "@shared/timeLogDescription";
+
+const PAGE_SIZE = 25;
+
+function WorkDescriptionCell({ description }: { description: string | null | undefined }) {
+  const { workType, note, fullText } = parseTimeEntryDescription(description);
+  if (!description?.trim()) {
+    return <span className="text-xs text-muted-foreground">—</span>;
+  }
+  if (workType) {
+    return (
+      <div className="space-y-1.5 min-w-0 max-w-md" title={fullText}>
+        <Badge variant="outline" className="text-[10px] font-medium border-primary/30 text-primary bg-primary/5 shrink-0">
+          {workType}
+        </Badge>
+        {note ? (
+          <p className="text-xs text-muted-foreground whitespace-pre-wrap break-words leading-relaxed">{note}</p>
+        ) : null}
+      </div>
+    );
+  }
+  return <p className="text-xs text-muted-foreground whitespace-pre-wrap break-words max-w-md">{fullText}</p>;
+}
 
 interface TimecardsViewProps {
   currentUserRole: string;
@@ -60,9 +105,11 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
 
   const [filterUserId, setFilterUserId] = useState<string>("all");
   const [filterProjectId, setFilterProjectId] = useState<string>("all");
+  const [filterTaskId, setFilterTaskId] = useState<string>("all");
   const [filterStartDate, setFilterStartDate] = useState<string>("");
   const [filterEndDate, setFilterEndDate] = useState<string>("");
   const [summaryExpanded, setSummaryExpanded] = useState(true);
+  const [page, setPage] = useState(1);
 
   const [logOpen, setLogOpen] = useState(false);
   const [logProjectId, setLogProjectId] = useState<string>(numericProjectId ? String(numericProjectId) : "");
@@ -91,6 +138,9 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
   const queryParams = new URLSearchParams();
   if (isManagerOrAdmin && filterUserId !== "all") queryParams.set("userId", filterUserId);
   if (filterProjectId !== "all") queryParams.set("projectId", filterProjectId);
+  if (!isClient && filterProjectId !== "all" && filterTaskId !== "all") {
+    queryParams.set("taskId", filterTaskId);
+  }
   if (filterStartDate) queryParams.set("startDate", filterStartDate);
   if (filterEndDate) queryParams.set("endDate", filterEndDate);
   // For clients, also pass their current project
@@ -121,7 +171,16 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
   const logHoursInputMax = maxHoursPerEntryCap != null ? Math.min(24, maxHoursPerEntryCap) : 24;
 
   const { data: entries = [], isLoading } = useQuery<any[]>({
-    queryKey: ["/api/time-entries", filterUserId, filterProjectId, filterStartDate, filterEndDate, currentUserRole, numericProjectId],
+    queryKey: [
+      "/api/time-entries",
+      filterUserId,
+      filterProjectId,
+      filterTaskId,
+      filterStartDate,
+      filterEndDate,
+      currentUserRole,
+      numericProjectId,
+    ],
     queryFn: async () => {
       const res = await fetch(`/api/time-entries?${queryParams.toString()}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch time entries");
@@ -244,12 +303,87 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
     return m;
   }, [projects]);
 
+  const memberFilterOptions = useMemo(
+    () => [
+      { value: "all", label: "All members" },
+      ...usersArray.map((u) => ({ value: String(u.id), label: u.name })),
+    ],
+    [usersArray],
+  );
+
+  const projectFilterOptions = useMemo(
+    () => [
+      { value: "all", label: "All projects" },
+      ...projects.map((p) => ({ value: p.id, label: p.name })),
+    ],
+    [projects],
+  );
+
+  const taskFilterOptions = useMemo(() => {
+    if (filterProjectId === "all") {
+      return [{ value: "all", label: "Select a project first" }];
+    }
+    const inProject = allTasks.filter((t) => String(t.projectId) === filterProjectId);
+    return [
+      { value: "all", label: "All tasks in project" },
+      ...inProject.map((t) => ({
+        value: String(t.id),
+        label: (t.title || `Task ${t.id}`).slice(0, 120),
+      })),
+    ];
+  }, [allTasks, filterProjectId]);
+
+  useEffect(() => {
+    setFilterTaskId("all");
+  }, [filterProjectId]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [filterUserId, filterProjectId, filterTaskId, filterStartDate, filterEndDate]);
+
+  const totalPages = Math.max(1, Math.ceil(entries.length / PAGE_SIZE));
+  const paginatedEntries = useMemo(() => {
+    const start = (page - 1) * PAGE_SIZE;
+    return entries.slice(start, start + PAGE_SIZE);
+  }, [entries, page]);
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
+
+  const showMemberColumn = isClient || isManagerOrAdmin;
+
+  const handleExportCsv = () => {
+    const rows = buildExportRows(entries, projectMap, showMemberColumn);
+    downloadTimecardsCsv(rows, showMemberColumn, "timecards");
+    toast({ title: "Download started", description: "CSV includes all rows matching your filters." });
+  };
+
+  const handleExportPdf = () => {
+    try {
+      const rows = buildExportRows(entries, projectMap, showMemberColumn);
+      downloadTimecardsPdf(rows, showMemberColumn, "Timecards — filtered export");
+      toast({ title: "PDF ready", description: "Includes all rows matching your filters." });
+    } catch (e) {
+      toast({
+        title: "PDF export failed",
+        description: e instanceof Error ? e.message : "Try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
   const filteredTasksForLog = useMemo(() => {
     if (!logProjectId) return allTasks.filter(t => t.title.trim());
     return allTasks.filter(t => String(t.projectId) === logProjectId && t.title.trim());
   }, [allTasks, logProjectId]);
 
-  const hasActiveFilters = filterUserId !== "all" || filterProjectId !== "all" || filterStartDate || filterEndDate;
+  const hasActiveFilters =
+    filterUserId !== "all" ||
+    filterProjectId !== "all" ||
+    filterTaskId !== "all" ||
+    filterStartDate ||
+    filterEndDate;
 
   // Client view: read-only table
   if (isClient) {
@@ -265,14 +399,28 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
                 Time entries shared by the team for <span className="font-medium text-foreground">{projectName}</span>
               </p>
             </div>
-            {totalHours > 0 && (
-              <div className="ml-auto flex items-center gap-2 bg-primary/5 border border-primary/20 rounded-lg px-4 py-2">
-                <Timer className="w-4 h-4 text-primary" />
-                <span className="text-sm font-semibold text-primary" data-testid="text-total-hours">
-                  {totalHours.toFixed(1)}h total
-                </span>
-              </div>
-            )}
+            <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+              {totalHours > 0 && (
+                <div className="flex items-center gap-2 bg-primary/5 border border-primary/20 rounded-lg px-4 py-2">
+                  <Timer className="w-4 h-4 text-primary" />
+                  <span className="text-sm font-semibold text-primary" data-testid="text-total-hours">
+                    {totalHours.toFixed(1)}h total
+                  </span>
+                </div>
+              )}
+              {entries.length > 0 && (
+                <>
+                  <Button variant="outline" size="sm" className="h-9 gap-1.5" onClick={handleExportCsv} data-testid="button-export-csv-client">
+                    <FileSpreadsheet className="w-3.5 h-3.5" />
+                    Excel (CSV)
+                  </Button>
+                  <Button variant="outline" size="sm" className="h-9 gap-1.5" onClick={handleExportPdf} data-testid="button-export-pdf-client">
+                    <FileDown className="w-3.5 h-3.5" />
+                    PDF
+                  </Button>
+                </>
+              )}
+            </div>
           </div>
         </div>
 
@@ -291,49 +439,80 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
                 </div>
               </div>
             ) : (
-              <div className="bg-background border border-border/50 rounded-xl overflow-hidden shadow-sm">
-                <table className="w-full text-sm" data-testid="table-client-time-log">
-                  <thead>
-                    <tr className="border-b border-border/50 bg-muted/30">
-                      <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Date</th>
-                      <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Member</th>
-                      <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Task</th>
-                      <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Work Type</th>
-                      <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Hours</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {entries.map((entry: any) => (
-                      <tr key={entry.id} className="border-b border-border/30 last:border-0 hover:bg-muted/20 transition-colors" data-testid={`row-client-time-entry-${entry.id}`}>
-                        <td className="px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">{entry.logDate}</td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-2">
-                            <Avatar className="h-5 w-5 shrink-0">
-                              <AvatarFallback className="text-[9px]">{(entry.userName || "?")[0]}</AvatarFallback>
-                            </Avatar>
-                            <span className="text-xs whitespace-nowrap">{entry.userName}</span>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 font-medium max-w-[200px] truncate" title={entry.taskTitle}>{entry.taskTitle}</td>
-                        <td className="px-4 py-3 max-w-[220px]">
-                          {entry.description ? (() => {
-                            const match = entry.description.match(/^\[([^\]]+)\](.*)/);
-                            if (match) {
-                              return (
-                                <div className="flex items-center gap-1.5 flex-wrap">
-                                  <Badge variant="outline" className="text-[10px] font-medium shrink-0 border-primary/30 text-primary bg-primary/5">{match[1]}</Badge>
-                                  {match[2].trim() && <span className="text-xs text-muted-foreground truncate">{match[2].trim()}</span>}
-                                </div>
-                              );
-                            }
-                            return <span className="text-xs text-muted-foreground italic truncate">{entry.description}</span>;
-                          })() : <span className="text-xs text-muted-foreground">—</span>}
-                        </td>
-                        <td className="px-4 py-3 text-right font-semibold text-primary whitespace-nowrap">{parseFloat(entry.hours).toFixed(1)}h</td>
+              <div className="space-y-3">
+                <div className="bg-background border border-border/50 rounded-xl overflow-hidden shadow-sm">
+                  <table className="w-full text-sm" data-testid="table-client-time-log">
+                    <thead>
+                      <tr className="border-b border-border/50 bg-muted/30">
+                        <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Date</th>
+                        <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Member</th>
+                        <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Task</th>
+                        <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Work Type</th>
+                        <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Hours</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {paginatedEntries.map((entry: any) => (
+                        <tr key={entry.id} className="border-b border-border/30 last:border-0 hover:bg-muted/20 transition-colors" data-testid={`row-client-time-entry-${entry.id}`}>
+                          <td className="px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">{entry.logDate}</td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-2">
+                              <Avatar className="h-5 w-5 shrink-0">
+                                <AvatarFallback className="text-[9px]">{(entry.userName || "?")[0]}</AvatarFallback>
+                              </Avatar>
+                              <span className="text-xs whitespace-nowrap">{entry.userName}</span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 font-medium max-w-[220px] align-top">
+                            <span className="block whitespace-pre-wrap break-words" title={entry.taskTitle}>
+                              {entry.taskTitle}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 align-top min-w-[12rem] max-w-md">
+                            <WorkDescriptionCell description={entry.description} />
+                          </td>
+                          <td className="px-4 py-3 text-right font-semibold text-primary whitespace-nowrap align-top">{parseFloat(entry.hours).toFixed(1)}h</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {entries.length > 0 ? (
+                  <div className="flex flex-wrap items-center justify-between gap-3 px-1">
+                    <p className="text-xs text-muted-foreground">
+                      Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, entries.length)} of {entries.length}
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 gap-1"
+                        disabled={page <= 1}
+                        onClick={() => setPage((p) => Math.max(1, p - 1))}
+                        data-testid="button-client-timecards-prev"
+                      >
+                        <ChevronLeft className="w-3.5 h-3.5" />
+                        Previous
+                      </Button>
+                      <span className="text-xs text-muted-foreground tabular-nums">
+                        Page {page} of {totalPages}
+                      </span>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 gap-1"
+                        disabled={page >= totalPages}
+                        onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                        data-testid="button-client-timecards-next"
+                      >
+                        Next
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
               </div>
             )}
           </div>
@@ -356,13 +535,25 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center justify-end gap-2">
             <div className="flex items-center gap-2 bg-primary/5 border border-primary/20 rounded-lg px-4 py-2">
               <Timer className="w-4 h-4 text-primary" />
               <span className="text-sm font-semibold text-primary" data-testid="text-total-hours">
                 {totalHours.toFixed(1)}h {isManagerOrAdmin ? "total" : "logged"}
               </span>
             </div>
+            {entries.length > 0 && (
+              <>
+                <Button variant="outline" size="sm" className="h-9 gap-1.5" onClick={handleExportCsv} data-testid="button-export-csv">
+                  <FileSpreadsheet className="w-3.5 h-3.5" />
+                  Excel (CSV)
+                </Button>
+                <Button variant="outline" size="sm" className="h-9 gap-1.5" onClick={handleExportPdf} data-testid="button-export-pdf">
+                  <FileDown className="w-3.5 h-3.5" />
+                  PDF
+                </Button>
+              </>
+            )}
             <Button
               onClick={() => setLogOpen(true)}
               className="gap-2"
@@ -378,37 +569,44 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
         <div className="flex flex-wrap gap-3 items-center">
           <Filter className="w-4 h-4 text-muted-foreground shrink-0" />
           {isManagerOrAdmin && (
-            <Select value={filterUserId} onValueChange={setFilterUserId}>
-              <SelectTrigger className="w-[170px] h-9 text-sm" data-testid="select-filter-user">
-                <div className="flex items-center gap-1.5">
-                  <Users className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                  <SelectValue placeholder="All members" />
-                </div>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All members</SelectItem>
-                {usersArray.map(u => (
-                  <SelectItem key={u.id} value={String(u.id)}>
-                    <div className="flex items-center gap-2">
-                      <User className="w-3 h-3" />
-                      {u.name}
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="flex items-center gap-1.5">
+              <Users className="w-3.5 h-3.5 text-muted-foreground shrink-0" aria-hidden />
+              <SearchableSelect
+                value={filterUserId}
+                onValueChange={setFilterUserId}
+                options={memberFilterOptions}
+                placeholder="All members"
+                searchPlaceholder="Search members…"
+                triggerClassName="w-[200px]"
+                data-testid="select-filter-user"
+              />
+            </div>
           )}
-          <Select value={filterProjectId} onValueChange={setFilterProjectId}>
-            <SelectTrigger className="w-[160px] h-9 text-sm" data-testid="select-filter-project">
-              <SelectValue placeholder="All projects" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All projects</SelectItem>
-              {projects.map(p => (
-                <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="flex items-center gap-1.5">
+            <Folder className="w-3.5 h-3.5 text-muted-foreground shrink-0" aria-hidden />
+            <SearchableSelect
+              value={filterProjectId}
+              onValueChange={setFilterProjectId}
+              options={projectFilterOptions}
+              placeholder="All projects"
+              searchPlaceholder="Search projects…"
+              triggerClassName="w-[200px]"
+              data-testid="select-filter-project"
+            />
+          </div>
+          <div className="flex items-center gap-1.5">
+            <Tag className="w-3.5 h-3.5 text-muted-foreground shrink-0" aria-hidden />
+            <SearchableSelect
+              value={filterTaskId}
+              onValueChange={setFilterTaskId}
+              options={taskFilterOptions}
+              placeholder={filterProjectId === "all" ? "Select project for tasks" : "All tasks in project"}
+              searchPlaceholder="Search tasks…"
+              disabled={filterProjectId === "all"}
+              triggerClassName="w-[220px]"
+              data-testid="select-filter-task"
+            />
+          </div>
           <Input
             type="date"
             value={filterStartDate}
@@ -432,8 +630,10 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
               onClick={() => {
                 setFilterUserId("all");
                 setFilterProjectId("all");
+                setFilterTaskId("all");
                 setFilterStartDate("");
                 setFilterEndDate("");
+                setPage(1);
               }}
               data-testid="button-clear-filters"
             >
@@ -528,81 +728,112 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
                 </Button>
               </div>
             ) : (
-              <div className="bg-background border border-border/50 rounded-xl overflow-hidden shadow-sm">
-                <table className="w-full text-sm" data-testid="table-time-log">
-                  <thead>
-                    <tr className="border-b border-border/50 bg-muted/30">
-                      <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Date</th>
-                      {isManagerOrAdmin && <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Member</th>}
-                      <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Task</th>
-                      <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Project</th>
-                      <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Work Type</th>
-                      <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Hours</th>
-                      <th className="px-4 py-3 w-10" />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {entries.map((entry: any) => {
-                      const canDelete = isManagerOrAdmin || String(entry.userId) === String(currentUser?.id);
-                      const isPrivate = entry.clientVisible === false;
-                      return (
-                        <tr key={entry.id} className={cn("border-b border-border/30 last:border-0 hover:bg-muted/20 transition-colors group", isPrivate && "bg-muted/10")} data-testid={`row-time-entry-${entry.id}`}>
-                          <td className="px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">
-                            <div className="flex items-center gap-1.5">
-                              {entry.logDate}
-                              {isPrivate && (
-                                <span className="inline-flex items-center gap-0.5 text-[10px] font-medium text-muted-foreground bg-muted border border-border/50 px-1.5 py-0.5 rounded" data-testid={`badge-private-${entry.id}`}>
-                                  <Lock className="w-2.5 h-2.5" />
-                                  private
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                          {isManagerOrAdmin && (
-                            <td className="px-4 py-3">
-                              <div className="flex items-center gap-2">
-                                <Avatar className="h-5 w-5 shrink-0">
-                                  <AvatarFallback className="text-[9px]">{(entry.userName || "?")[0]}</AvatarFallback>
-                                </Avatar>
-                                <span className="text-xs whitespace-nowrap">{entry.userName}</span>
+              <div className="space-y-3">
+                <div className="bg-background border border-border/50 rounded-xl overflow-hidden shadow-sm">
+                  <table className="w-full text-sm" data-testid="table-time-log">
+                    <thead>
+                      <tr className="border-b border-border/50 bg-muted/30">
+                        <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Date</th>
+                        {showMemberColumn ? (
+                          <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Member</th>
+                        ) : null}
+                        <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Task</th>
+                        <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Project</th>
+                        <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Work type &amp; description</th>
+                        <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Hours</th>
+                        <th className="px-4 py-3 w-10" />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {paginatedEntries.map((entry: any) => {
+                        const canDelete = isManagerOrAdmin || String(entry.userId) === String(currentUser?.id);
+                        const isPrivate = entry.clientVisible === false;
+                        return (
+                          <tr key={entry.id} className={cn("border-b border-border/30 last:border-0 hover:bg-muted/20 transition-colors group", isPrivate && "bg-muted/10")} data-testid={`row-time-entry-${entry.id}`}>
+                            <td className="px-4 py-3 text-muted-foreground text-xs whitespace-nowrap align-top">
+                              <div className="flex items-center gap-1.5">
+                                {entry.logDate}
+                                {isPrivate && (
+                                  <span className="inline-flex items-center gap-0.5 text-[10px] font-medium text-muted-foreground bg-muted border border-border/50 px-1.5 py-0.5 rounded" data-testid={`badge-private-${entry.id}`}>
+                                    <Lock className="w-2.5 h-2.5" />
+                                    private
+                                  </span>
+                                )}
                               </div>
                             </td>
-                          )}
-                          <td className="px-4 py-3 font-medium max-w-[200px] truncate" title={entry.taskTitle}>{entry.taskTitle}</td>
-                          <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">{projectMap[String(entry.projectId)] || `Project ${entry.projectId}`}</td>
-                          <td className="px-4 py-3 max-w-[220px]">
-                            {entry.description ? (() => {
-                              const match = entry.description.match(/^\[([^\]]+)\](.*)/);
-                              if (match) {
-                                return (
-                                  <div className="flex items-center gap-1.5 flex-wrap">
-                                    <Badge variant="outline" className="text-[10px] font-medium shrink-0 border-primary/30 text-primary bg-primary/5">{match[1]}</Badge>
-                                    {match[2].trim() && <span className="text-xs text-muted-foreground truncate">{match[2].trim()}</span>}
-                                  </div>
-                                );
-                              }
-                              return <span className="text-xs text-muted-foreground italic truncate">{entry.description}</span>;
-                            })() : <span className="text-xs text-muted-foreground">—</span>}
-                          </td>
-                          <td className="px-4 py-3 text-right font-semibold text-primary whitespace-nowrap">{parseFloat(entry.hours).toFixed(1)}h</td>
-                          <td className="px-4 py-3 text-right">
-                            {canDelete && (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
-                                onClick={() => handleDelete(entry.id)}
-                                data-testid={`button-delete-entry-${entry.id}`}
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </Button>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                            {showMemberColumn ? (
+                              <td className="px-4 py-3 align-top">
+                                <div className="flex items-center gap-2">
+                                  <Avatar className="h-5 w-5 shrink-0">
+                                    <AvatarFallback className="text-[9px]">{(entry.userName || "?")[0]}</AvatarFallback>
+                                  </Avatar>
+                                  <span className="text-xs whitespace-nowrap">{entry.userName}</span>
+                                </div>
+                              </td>
+                            ) : null}
+                            <td className="px-4 py-3 font-medium max-w-[220px] align-top">
+                              <span className="block whitespace-pre-wrap break-words" title={entry.taskTitle}>
+                                {entry.taskTitle}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-xs text-muted-foreground align-top whitespace-nowrap">{projectMap[String(entry.projectId)] || `Project ${entry.projectId}`}</td>
+                            <td className="px-4 py-3 align-top min-w-[12rem] max-w-md">
+                              <WorkDescriptionCell description={entry.description} />
+                            </td>
+                            <td className="px-4 py-3 text-right font-semibold text-primary whitespace-nowrap align-top">{parseFloat(entry.hours).toFixed(1)}h</td>
+                            <td className="px-4 py-3 text-right align-top">
+                              {canDelete && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
+                                  onClick={() => handleDelete(entry.id)}
+                                  data-testid={`button-delete-entry-${entry.id}`}
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </Button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="flex flex-wrap items-center justify-between gap-3 px-1">
+                  <p className="text-xs text-muted-foreground">
+                    Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, entries.length)} of {entries.length}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 gap-1"
+                      disabled={page <= 1}
+                      onClick={() => setPage((p) => Math.max(1, p - 1))}
+                      data-testid="button-timecards-prev"
+                    >
+                      <ChevronLeft className="w-3.5 h-3.5" />
+                      Previous
+                    </Button>
+                    <span className="text-xs text-muted-foreground tabular-nums">
+                      Page {page} of {totalPages}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 gap-1"
+                      disabled={page >= totalPages}
+                      onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                      data-testid="button-timecards-next"
+                    >
+                      Next
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </Button>
+                  </div>
+                </div>
               </div>
             )}
           </div>

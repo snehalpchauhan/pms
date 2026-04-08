@@ -2334,6 +2334,10 @@ export async function registerRoutes(
         if (!allowedProjectIds.includes(pid)) return res.json([]);
         filters.projectId = pid;
       }
+      if (req.query.taskId) {
+        const tid = Number(req.query.taskId);
+        if (Number.isInteger(tid) && tid > 0) filters.taskId = tid;
+      }
 
       const entries = await storage.getAllTimeEntries(filters);
       return res.json(entries);
@@ -2342,6 +2346,7 @@ export async function registerRoutes(
     const filters: {
       userId?: number;
       projectId?: number;
+      taskId?: number;
       startDate?: string;
       endDate?: string;
       allowedProjectIds?: number[];
@@ -2374,6 +2379,11 @@ export async function registerRoutes(
       } else {
         filters.userId = currentUser.id;
       }
+    }
+
+    if (req.query.taskId) {
+      const tid = Number(req.query.taskId);
+      if (Number.isInteger(tid) && tid > 0) filters.taskId = tid;
     }
 
     const entries = await storage.getAllTimeEntries(filters);

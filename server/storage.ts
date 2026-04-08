@@ -93,6 +93,7 @@ export interface IStorage {
   getAllTimeEntries(filters?: {
     userId?: number;
     projectId?: number;
+    taskId?: number;
     startDate?: string;
     endDate?: string;
     clientVisibleOnly?: boolean;
@@ -576,6 +577,7 @@ export class DatabaseStorage implements IStorage {
   async getAllTimeEntries(filters?: {
     userId?: number;
     projectId?: number;
+    taskId?: number;
     startDate?: string;
     endDate?: string;
     clientVisibleOnly?: boolean;
@@ -602,6 +604,7 @@ export class DatabaseStorage implements IStorage {
     return rows.filter(row => {
       if (filters?.userId && row.userId !== filters.userId) return false;
       if (filters?.projectId && row.projectId !== filters.projectId) return false;
+      if (filters?.taskId && row.taskId !== filters.taskId) return false;
       if (filters?.startDate && row.logDate < filters.startDate) return false;
       if (filters?.endDate && row.logDate > filters.endDate) return false;
       if (filters?.clientVisibleOnly && !row.clientVisible) return false;
