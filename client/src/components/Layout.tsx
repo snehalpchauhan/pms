@@ -1,4 +1,4 @@
-import { Plus, LayoutGrid, CheckSquare, Settings, Users, MessageSquare, Bell, Search, Hash, Lock, ListTodo, FolderKanban, LogOut, Briefcase, Building2, User, Shield, Key, Clock, LogIn, MoreVertical, X, Menu } from "lucide-react";
+import { Plus, LayoutGrid, CheckSquare, Settings, Users, MessageSquare, Bell, Search, Hash, Lock, ListTodo, FolderKanban, LogOut, Briefcase, Building2, User, Shield, Key, Clock, LogIn, MoreVertical, X, Menu, BarChart3 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -39,9 +39,12 @@ import { resolveProjectChipAppearance } from "@shared/projectColors";
 import { ProjectNavSheet } from "@/components/ProjectNavSheet";
 
 interface SidebarProps {
-    currentView: "tasks" | "messages" | "team" | "settings" | "profile" | "timecards";
-    currentChannelId?: string; 
-    onViewChange: (view: "tasks" | "messages" | "team" | "settings" | "profile" | "timecards", channelId?: string) => void;
+    currentView: "tasks" | "messages" | "team" | "settings" | "profile" | "timecards" | "team-summary";
+    currentChannelId?: string;
+    onViewChange: (
+        view: "tasks" | "messages" | "team" | "settings" | "profile" | "timecards" | "team-summary",
+        channelId?: string,
+    ) => void;
     /** null when there are no projects or none selected yet */
     currentProject: Project | null;
     onProjectChange: (projectId: string) => void;
@@ -145,16 +148,21 @@ export function Sidebar({ currentView, currentChannelId, onViewChange, currentPr
   }, [usersArray, authUser?.id, projectMemberIdSet]);
 
   const showTimecards = !isClient || (clientPermissions?.clientShowTimecards === true);
+  const showTeamSummaryNav = !isClient && (currentUserRole === "manager" || currentUserRole === "admin");
   const showTeam = !isClient;
   const showSettings = !isClient && currentUserRole === "admin";
   const showNewProject = !isClient && (currentUserRole === "manager" || currentUserRole === "admin");
   const showNewChannel = !isClient;
 
   // Determine if we're in a "Global" context (outside a project)
-  const isGlobalView = currentView === "settings" || currentView === "profile" || currentView === "timecards";
+  const isGlobalView =
+    currentView === "settings" || currentView === "profile" || currentView === "timecards" || currentView === "team-summary";
   const isSettingsView = currentView === "settings";
   const isProfileView = currentView === "profile";
   const isTimecardsView = currentView === "timecards";
+  const isTeamSummaryView = currentView === "team-summary";
+  const isTimeHoursContext = isTimecardsView || isTeamSummaryView;
+  const timeHoursNavActive = isTimeHoursContext;
 
   return (
     <div className="flex h-screen bg-sidebar border-r border-border shadow-2xl z-20">
@@ -265,8 +273,8 @@ export function Sidebar({ currentView, currentChannelId, onViewChange, currentPr
                                 onClick={() => onViewChange("timecards")}
                                 className={cn(
                                     "w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-200",
-                                    isTimecardsView 
-                                        ? "bg-blue-600 text-white shadow-md ring-2 ring-blue-600 ring-offset-2 ring-offset-background" 
+                                    timeHoursNavActive
+                                        ? "bg-blue-600 text-white shadow-md ring-2 ring-blue-600 ring-offset-2 ring-offset-background"
                                         : "hover:bg-muted text-muted-foreground hover:text-foreground"
                                 )}
                                 data-testid="button-nav-timecards"
@@ -274,7 +282,7 @@ export function Sidebar({ currentView, currentChannelId, onViewChange, currentPr
                                 <Clock className="w-5 h-5" />
                             </button>
                         </TooltipTrigger>
-                        <TooltipContent side="right">Timecards</TooltipContent>
+                        <TooltipContent side="right">Time & hours</TooltipContent>
                      </Tooltip>
                  )}
 
@@ -321,17 +329,38 @@ export function Sidebar({ currentView, currentChannelId, onViewChange, currentPr
 
         {/* Secondary Sidebar - Context Aware */}
         <div className="w-60 flex flex-col bg-muted/5 animate-in slide-in-from-left-2 duration-200">
-             {isTimecardsView ? (
+             {isTimeHoursContext ? (
                 <div className="flex-1 flex flex-col">
                     <div className="h-16 flex items-center px-5 border-b border-border/40 shrink-0">
-                        <h2 className="font-display font-bold text-lg">Timecards</h2>
+                        <h2 className="font-display font-bold text-lg">Time & hours</h2>
                     </div>
                     <ScrollArea className="flex-1 px-3 py-4">
                         <div className="space-y-1">
-                            <Button variant="ghost" className="w-full justify-start font-medium bg-background shadow-sm text-primary">
+                            <Button
+                                variant="ghost"
+                                className={cn(
+                                    "w-full justify-start font-medium",
+                                    isTimecardsView ? "bg-background shadow-sm text-primary" : "text-muted-foreground hover:text-foreground",
+                                )}
+                                onClick={() => onViewChange("timecards")}
+                            >
                                 <Clock className="w-4 h-4 mr-2" />
-                                {isClient ? "Shared Hours" : "Time Log"}
+                                {isClient ? "Shared hours" : "Time log"}
                             </Button>
+                            {showTeamSummaryNav && (
+                                <Button
+                                    variant="ghost"
+                                    className={cn(
+                                        "w-full justify-start font-medium",
+                                        isTeamSummaryView ? "bg-background shadow-sm text-primary" : "text-muted-foreground hover:text-foreground",
+                                    )}
+                                    onClick={() => onViewChange("team-summary")}
+                                    data-testid="button-nav-team-summary"
+                                >
+                                    <BarChart3 className="w-4 h-4 mr-2" />
+                                    Team summary
+                                </Button>
+                            )}
                         </div>
                     </ScrollArea>
                 </div>

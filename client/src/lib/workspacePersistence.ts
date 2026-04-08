@@ -5,9 +5,16 @@
 
 const STORAGE_KEY = "taskflow-workspace-v1";
 
-const VIEWS = new Set(["tasks", "messages", "team", "settings", "profile", "timecards"]);
+const VIEWS = new Set(["tasks", "messages", "team", "settings", "profile", "timecards", "team-summary"]);
 
-export type WorkspaceView = "tasks" | "messages" | "team" | "settings" | "profile" | "timecards";
+export type WorkspaceView =
+  | "tasks"
+  | "messages"
+  | "team"
+  | "settings"
+  | "profile"
+  | "timecards"
+  | "team-summary";
 
 export type TaskWorkspaceTab = "board" | "list" | "calendar";
 

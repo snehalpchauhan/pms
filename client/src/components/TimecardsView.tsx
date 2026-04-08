@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { useAppData } from "@/hooks/useAppData";
+import { useTimecardsFiltersAndEntries } from "@/hooks/useTimecardsFiltersAndEntries";
 import { apiRequest } from "@/lib/queryClient";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -14,11 +15,11 @@ import { SearchableSelect } from "@/components/SearchableSelect";
 import { parseTimeEntryDescription } from "@/lib/timeEntryDescription";
 import {
   buildExportRows,
+  buildTimecardsExportMeta,
   downloadTimecardsCsv,
   downloadTimecardsPdf,
 } from "@/lib/timecardsExport";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
@@ -32,8 +33,6 @@ import {
   Trash2,
   Filter,
   Plus,
-  ChevronDown,
-  ChevronUp,
   Timer,
   Users,
   Folder,
@@ -83,32 +82,39 @@ interface TimecardsViewProps {
   clientPermissions?: ClientPermissions;
 }
 
-interface AllTask {
-  id: number;
-  title: string;
-  projectId: number;
-  projectName: string;
-  status: string;
-}
-
 export default function TimecardsView({ currentUserRole, currentProject, clientPermissions }: TimecardsViewProps) {
   const { user: currentUser } = useAuth();
-  const { usersArray, projects } = useAppData();
+  const { projects } = useAppData();
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
-  const isClient = currentUserRole === "client";
-  const isAdmin = currentUserRole === "admin";
-  const isManagerOrAdmin = isAdmin || currentUserRole === "manager";
+  const {
+    isClient,
+    isAdmin,
+    isManagerOrAdmin,
+    numericProjectId,
+    filterUserId,
+    setFilterUserId,
+    filterProjectId,
+    setFilterProjectId,
+    filterTaskId,
+    setFilterTaskId,
+    filterStartDate,
+    setFilterStartDate,
+    filterEndDate,
+    setFilterEndDate,
+    entries,
+    isLoading,
+    allTasks,
+    totalHours,
+    projectMap,
+    memberFilterOptions,
+    projectFilterOptions,
+    taskFilterOptions,
+    hasActiveFilters,
+    clearFilters: clearFiltersBase,
+  } = useTimecardsFiltersAndEntries(currentUserRole, currentProject);
 
-  const numericProjectId = currentProject ? Number(currentProject.id) : null;
-
-  const [filterUserId, setFilterUserId] = useState<string>("all");
-  const [filterProjectId, setFilterProjectId] = useState<string>("all");
-  const [filterTaskId, setFilterTaskId] = useState<string>("all");
-  const [filterStartDate, setFilterStartDate] = useState<string>("");
-  const [filterEndDate, setFilterEndDate] = useState<string>("");
-  const [summaryExpanded, setSummaryExpanded] = useState(true);
   const [page, setPage] = useState(1);
 
   const [logOpen, setLogOpen] = useState(false);
@@ -135,19 +141,6 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
   });
   const clientTimecardsEnabled = !isClient && (logProjectClientTimecardsData?.hasClientTimecards === true);
 
-  const queryParams = new URLSearchParams();
-  if (isManagerOrAdmin && filterUserId !== "all") queryParams.set("userId", filterUserId);
-  if (filterProjectId !== "all") queryParams.set("projectId", filterProjectId);
-  if (!isClient && filterProjectId !== "all" && filterTaskId !== "all") {
-    queryParams.set("taskId", filterTaskId);
-  }
-  if (filterStartDate) queryParams.set("startDate", filterStartDate);
-  if (filterEndDate) queryParams.set("endDate", filterEndDate);
-  // For clients, also pass their current project
-  if (isClient && numericProjectId && filterProjectId === "all") {
-    queryParams.set("projectId", String(numericProjectId));
-  }
-
   const { data: companySettingsForTime } = useQuery<{
     timeLogMinDescriptionWords?: number;
     timeLogMaxHoursPerEntry?: number | null;
@@ -169,34 +162,6 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
       ? null
       : Number(companySettingsForTime.timeLogMaxHoursPerEntry);
   const logHoursInputMax = maxHoursPerEntryCap != null ? Math.min(24, maxHoursPerEntryCap) : 24;
-
-  const { data: entries = [], isLoading } = useQuery<any[]>({
-    queryKey: [
-      "/api/time-entries",
-      filterUserId,
-      filterProjectId,
-      filterTaskId,
-      filterStartDate,
-      filterEndDate,
-      currentUserRole,
-      numericProjectId,
-    ],
-    queryFn: async () => {
-      const res = await fetch(`/api/time-entries?${queryParams.toString()}`, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch time entries");
-      return res.json();
-    },
-  });
-
-  const { data: allTasks = [] } = useQuery<AllTask[]>({
-    queryKey: ["/api/tasks"],
-    queryFn: async () => {
-      const res = await fetch("/api/tasks", { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch tasks");
-      return res.json();
-    },
-    enabled: !isClient,
-  });
 
   const handleDelete = async (id: number) => {
     try {
@@ -280,63 +245,6 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
     }
   };
 
-  const totalHours = entries.reduce((sum: number, e: any) => sum + parseFloat(e.hours || "0"), 0);
-
-  const memberSummary = useMemo(() => {
-    const summary: Record<string, { name: string; avatar?: string; total: number; byProject: Record<string, number> }> = {};
-    entries.forEach((e: any) => {
-      const uid = String(e.userId);
-      if (!summary[uid]) {
-        const u = usersArray.find(u => String(u.id) === uid);
-        summary[uid] = { name: e.userName || u?.name || "Unknown", avatar: u?.avatar || undefined, total: 0, byProject: {} };
-      }
-      summary[uid].total += parseFloat(e.hours || "0");
-      const pid = String(e.projectId);
-      summary[uid].byProject[pid] = (summary[uid].byProject[pid] || 0) + parseFloat(e.hours || "0");
-    });
-    return summary;
-  }, [entries, usersArray]);
-
-  const projectMap = useMemo(() => {
-    const m: Record<string, string> = {};
-    projects.forEach(p => { m[p.id] = p.name; });
-    return m;
-  }, [projects]);
-
-  const memberFilterOptions = useMemo(
-    () => [
-      { value: "all", label: "All members" },
-      ...usersArray.map((u) => ({ value: String(u.id), label: u.name })),
-    ],
-    [usersArray],
-  );
-
-  const projectFilterOptions = useMemo(
-    () => [
-      { value: "all", label: "All projects" },
-      ...projects.map((p) => ({ value: p.id, label: p.name })),
-    ],
-    [projects],
-  );
-
-  const taskFilterOptions = useMemo(() => {
-    if (filterProjectId === "all") {
-      return [{ value: "all", label: "Select a project first" }];
-    }
-    const inProject = allTasks.filter((t) => String(t.projectId) === filterProjectId);
-    return [
-      { value: "all", label: "All tasks in project" },
-      ...inProject.map((t) => ({
-        value: String(t.id),
-        label: (t.title || `Task ${t.id}`).slice(0, 120),
-      })),
-    ];
-  }, [allTasks, filterProjectId]);
-
-  useEffect(() => {
-    setFilterTaskId("all");
-  }, [filterProjectId]);
-
   useEffect(() => {
     setPage(1);
   }, [filterUserId, filterProjectId, filterTaskId, filterStartDate, filterEndDate]);
@@ -353,17 +261,54 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
 
   const showMemberColumn = isClient || isManagerOrAdmin;
 
+  const exportMeta = useMemo(
+    () =>
+      buildTimecardsExportMeta({
+        isClient,
+        projectName: currentProject?.name,
+        totalHours,
+        entryCount: entries.length,
+        filterUserLabel:
+          isManagerOrAdmin && filterUserId !== "all"
+            ? memberFilterOptions.find((o) => o.value === filterUserId)?.label
+            : undefined,
+        filterProjectLabel:
+          filterProjectId !== "all" ? projectFilterOptions.find((o) => o.value === filterProjectId)?.label : undefined,
+        filterTaskLabel:
+          !isClient && filterProjectId !== "all" && filterTaskId !== "all"
+            ? taskFilterOptions.find((o) => o.value === filterTaskId)?.label
+            : undefined,
+        filterStartDate: filterStartDate || undefined,
+        filterEndDate: filterEndDate || undefined,
+      }),
+    [
+      isClient,
+      currentProject?.name,
+      totalHours,
+      entries.length,
+      isManagerOrAdmin,
+      filterUserId,
+      memberFilterOptions,
+      filterProjectId,
+      projectFilterOptions,
+      filterTaskId,
+      taskFilterOptions,
+      filterStartDate,
+      filterEndDate,
+    ],
+  );
+
   const handleExportCsv = () => {
     const rows = buildExportRows(entries, projectMap, showMemberColumn);
-    downloadTimecardsCsv(rows, showMemberColumn, "timecards");
-    toast({ title: "Download started", description: "CSV includes all rows matching your filters." });
+    downloadTimecardsCsv(rows, showMemberColumn, "timecards", exportMeta);
+    toast({ title: "Download started", description: "Spreadsheet includes totals and matches your filters." });
   };
 
   const handleExportPdf = () => {
     try {
       const rows = buildExportRows(entries, projectMap, showMemberColumn);
-      downloadTimecardsPdf(rows, showMemberColumn, "Timecards — filtered export");
-      toast({ title: "PDF ready", description: "Includes all rows matching your filters." });
+      downloadTimecardsPdf(rows, showMemberColumn, exportMeta);
+      toast({ title: "PDF ready", description: "Includes totals and all rows matching your filters." });
     } catch (e) {
       toast({
         title: "PDF export failed",
@@ -378,12 +323,10 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
     return allTasks.filter(t => String(t.projectId) === logProjectId && t.title.trim());
   }, [allTasks, logProjectId]);
 
-  const hasActiveFilters =
-    filterUserId !== "all" ||
-    filterProjectId !== "all" ||
-    filterTaskId !== "all" ||
-    filterStartDate ||
-    filterEndDate;
+  function clearFiltersAndPage() {
+    clearFiltersBase();
+    setPage(1);
+  }
 
   // Client view: read-only table
   if (isClient) {
@@ -400,14 +343,16 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
               </p>
             </div>
             <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
-              {totalHours > 0 && (
-                <div className="flex items-center gap-2 bg-primary/5 border border-primary/20 rounded-lg px-4 py-2">
-                  <Timer className="w-4 h-4 text-primary" />
-                  <span className="text-sm font-semibold text-primary" data-testid="text-total-hours">
-                    {totalHours.toFixed(1)}h total
-                  </span>
+              <div className="flex items-center gap-3 rounded-lg border border-primary/20 bg-primary/5 px-4 py-2.5">
+                <Timer className="h-5 w-5 shrink-0 text-primary" />
+                <div className="text-right leading-tight">
+                  <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Total hours</p>
+                  <p className="text-xl font-bold tabular-nums text-primary" data-testid="text-total-hours">
+                    {totalHours.toFixed(1)}h
+                  </p>
+                  <p className="text-xs text-muted-foreground">{entries.length} entries</p>
                 </div>
-              )}
+              </div>
               {entries.length > 0 && (
                 <>
                   <Button variant="outline" size="sm" className="h-9 gap-1.5" onClick={handleExportCsv} data-testid="button-export-csv-client">
@@ -525,23 +470,32 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
     <div className="flex-1 h-full overflow-hidden flex flex-col">
       {/* Header */}
       <div className="p-6 border-b border-border/50 space-y-4 shrink-0">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Clock className="w-6 h-6 text-primary" />
-            <div>
-              <h2 className="text-xl font-display font-bold text-foreground">Timecards</h2>
-              <p className="text-sm text-muted-foreground">
-                {isAdmin ? "All team members' time logs" : isManagerOrAdmin ? "Your team's time logs" : "Your personal time log"}
-              </p>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="flex min-w-0 flex-wrap items-start gap-4">
+            <div className="flex items-center gap-3">
+              <Clock className="h-7 w-7 shrink-0 text-primary" />
+              <div>
+                <h2 className="font-display text-xl font-bold text-foreground">Timecards</h2>
+                <p className="text-sm text-muted-foreground">
+                  {isAdmin ? "All team members' time logs" : isManagerOrAdmin ? "Your team's time logs" : "Your personal time log"}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 rounded-lg border border-primary/20 bg-primary/5 px-4 py-2.5">
+              <Timer className="h-5 w-5 shrink-0 text-primary" />
+              <div className="leading-tight">
+                <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Total hours</p>
+                <p className="text-2xl font-bold tabular-nums text-primary" data-testid="text-total-hours">
+                  {totalHours.toFixed(1)}h
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {entries.length} {entries.length === 1 ? "entry" : "entries"}
+                  {isManagerOrAdmin ? " (filtered)" : ""}
+                </p>
+              </div>
             </div>
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2">
-            <div className="flex items-center gap-2 bg-primary/5 border border-primary/20 rounded-lg px-4 py-2">
-              <Timer className="w-4 h-4 text-primary" />
-              <span className="text-sm font-semibold text-primary" data-testid="text-total-hours">
-                {totalHours.toFixed(1)}h {isManagerOrAdmin ? "total" : "logged"}
-              </span>
-            </div>
             {entries.length > 0 && (
               <>
                 <Button variant="outline" size="sm" className="h-9 gap-1.5" onClick={handleExportCsv} data-testid="button-export-csv">
@@ -623,20 +577,7 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
             data-testid="input-filter-end-date"
           />
           {hasActiveFilters && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-9 text-xs"
-              onClick={() => {
-                setFilterUserId("all");
-                setFilterProjectId("all");
-                setFilterTaskId("all");
-                setFilterStartDate("");
-                setFilterEndDate("");
-                setPage(1);
-              }}
-              data-testid="button-clear-filters"
-            >
+            <Button variant="ghost" size="sm" className="h-9 text-xs" onClick={clearFiltersAndPage} data-testid="button-clear-filters">
               Clear filters
             </Button>
           )}
@@ -644,67 +585,7 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
       </div>
 
       <ScrollArea className="flex-1">
-        <div className="p-6 space-y-6">
-
-          {/* Team Summary — admin/manager only */}
-          {isManagerOrAdmin && Object.keys(memberSummary).length > 0 && (
-            <div className="space-y-3">
-              <button
-                className="flex items-center gap-2 text-sm font-semibold text-foreground hover:text-primary transition-colors"
-                onClick={() => setSummaryExpanded(v => !v)}
-              >
-                {summaryExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                Team Summary
-                <Badge variant="secondary" className="font-normal text-xs">{Object.keys(memberSummary).length} members</Badge>
-              </button>
-
-              {summaryExpanded && (
-                <div className="bg-background border border-border/50 rounded-xl overflow-hidden shadow-sm">
-                  <table className="w-full text-sm" data-testid="table-member-summary">
-                    <thead>
-                      <tr className="border-b border-border/50 bg-muted/30">
-                        <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Member</th>
-                        <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Project Breakdown</th>
-                        <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Total Hours</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {Object.entries(memberSummary)
-                        .sort((a, b) => b[1].total - a[1].total)
-                        .map(([uid, summary]) => (
-                          <tr key={uid} className="border-b border-border/30 last:border-0 hover:bg-muted/20 transition-colors" data-testid={`row-member-${uid}`}>
-                            <td className="px-4 py-3">
-                              <div className="flex items-center gap-2">
-                                <Avatar className="h-7 w-7">
-                                  <AvatarImage src={summary.avatar} />
-                                  <AvatarFallback className="text-[10px]">{summary.name[0]}</AvatarFallback>
-                                </Avatar>
-                                <span className="font-medium">{summary.name}</span>
-                              </div>
-                            </td>
-                            <td className="px-4 py-3">
-                              <div className="flex flex-wrap gap-1">
-                                {Object.entries(summary.byProject).map(([pid, hrs]) => (
-                                  <Badge key={pid} variant="secondary" className="text-[10px] font-normal">
-                                    {projectMap[pid] || `Project ${pid}`}: {(hrs as number).toFixed(1)}h
-                                  </Badge>
-                                ))}
-                              </div>
-                            </td>
-                            <td className="px-4 py-3 text-right">
-                              <span className="font-bold text-primary" data-testid={`text-member-hours-${uid}`}>{summary.total.toFixed(1)}h</span>
-                            </td>
-                          </tr>
-                        ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          )}
-
-          <Separator className="opacity-50" />
-
+        <div className="space-y-3 p-6">
           {/* Detailed Log */}
           <div className="space-y-3">
             <h3 className="text-sm font-semibold text-foreground">

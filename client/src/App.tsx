@@ -5,6 +5,7 @@ import TeamView from "@/components/TeamView";
 import CompanySettingsView from "@/components/CompanySettingsView";
 import UserProfileView from "@/components/UserProfileView";
 import TimecardsView from "@/components/TimecardsView";
+import TeamSummaryView from "@/components/TeamSummaryView";
 import { NewTaskModal } from "@/components/NewTaskModal";
 import { NewProjectModal } from "@/components/NewProjectModal";
 import { NewChannelModal } from "@/components/NewChannelModal";
@@ -298,7 +299,10 @@ function AuthenticatedApp() {
           <div className="flex-1 flex flex-col h-full overflow-hidden relative z-0">
             <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 pointer-events-none mix-blend-overlay z-[1]" />
 
-            {currentView !== "settings" && currentView !== "profile" && currentView !== "timecards" && (
+            {currentView !== "settings" &&
+              currentView !== "profile" &&
+              currentView !== "timecards" &&
+              currentView !== "team-summary" && (
               <Header
                 title={currentProject?.name ?? "Workspace"}
                 view={currentView}
@@ -349,6 +353,13 @@ function AuthenticatedApp() {
                 ))}
               {currentView === "timecards" && (
                 <TimecardsView
+                  currentUserRole={currentUserRole}
+                  currentProject={currentProject ?? undefined}
+                  clientPermissions={effectivePermissions}
+                />
+              )}
+              {currentView === "team-summary" && (
+                <TeamSummaryView
                   currentUserRole={currentUserRole}
                   currentProject={currentProject ?? undefined}
                   clientPermissions={effectivePermissions}

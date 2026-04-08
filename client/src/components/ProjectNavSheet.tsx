@@ -117,7 +117,7 @@ interface ProjectNavSheetProps {
   projects: Project[];
   currentProjectId: string | null | undefined;
   onSelectProject: (projectId: string) => void;
-  /** When user is in settings/profile/timecards, selecting a project should return to tasks */
+  /** When user is in settings/profile/timecards/team-summary, selecting a project should return to tasks */
   leaveGlobalView?: () => void;
 }
 
