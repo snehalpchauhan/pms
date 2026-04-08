@@ -22,6 +22,21 @@ import {
 } from "@shared/workflowColumns";
 import { isValidProjectColor, sanitizeProjectColor } from "@shared/projectColors";
 import { timeLogNoteMeetsMinWords } from "@shared/timeLogDescription";
+import type { Project } from "@shared/schema";
+
+/** Closed projects are hidden from normal API use; admins manage them via /api/admin/projects. */
+async function requireOpenProjectForApi(res: express.Response, projectId: number): Promise<Project | null> {
+  const project = await storage.getProject(projectId);
+  if (!project) {
+    res.status(404).json({ message: "Project not found" });
+    return null;
+  }
+  if (project.closedAt != null) {
+    res.status(404).json({ message: "Project not found" });
+    return null;
+  }
+  return project;
+}
 
 function parsePositiveTimeEntryHours(raw: unknown): number | null {
   if (raw == null || raw === "") return null;
@@ -670,11 +685,73 @@ export async function registerRoutes(
     res.json(userProjects);
   });
 
+  app.get("/api/admin/projects", requireAuth, async (req, res) => {
+    const currentUser = req.user as any;
+    if (currentUser.role !== "admin") {
+      return res.status(403).json({ message: "Access denied" });
+    }
+    const all = await storage.getProjects({ includeClosed: true });
+    res.json(all);
+  });
+
+  const closeProjectBodySchema = z.object({
+    closureDescription: z.string().min(1).max(10_000),
+    paymentReceived: z.boolean(),
+  });
+
+  app.post("/api/admin/projects/:id/close", requireAuth, async (req, res) => {
+    const currentUser = req.user as any;
+    if (currentUser.role !== "admin") {
+      return res.status(403).json({ message: "Access denied" });
+    }
+    const projectId = Number(req.params.id);
+    if (!Number.isInteger(projectId) || projectId <= 0) {
+      return res.status(400).json({ message: "Invalid project id" });
+    }
+    const parsed = closeProjectBodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: parsed.error.issues[0]?.message ?? "Invalid body" });
+    }
+    const project = await storage.getProject(projectId);
+    if (!project) return res.status(404).json({ message: "Project not found" });
+    if (project.closedAt != null) {
+      return res.status(400).json({ message: "Project is already closed" });
+    }
+    const updated = await storage.updateProject(projectId, {
+      closedAt: new Date(),
+      closureDescription: parsed.data.closureDescription.trim(),
+      closurePaymentReceived: parsed.data.paymentReceived,
+    });
+    res.json(updated);
+  });
+
+  app.post("/api/admin/projects/:id/reopen", requireAuth, async (req, res) => {
+    const currentUser = req.user as any;
+    if (currentUser.role !== "admin") {
+      return res.status(403).json({ message: "Access denied" });
+    }
+    const projectId = Number(req.params.id);
+    if (!Number.isInteger(projectId) || projectId <= 0) {
+      return res.status(400).json({ message: "Invalid project id" });
+    }
+    const project = await storage.getProject(projectId);
+    if (!project) return res.status(404).json({ message: "Project not found" });
+    if (project.closedAt == null) {
+      return res.status(400).json({ message: "Project is not closed" });
+    }
+    const updated = await storage.updateProject(projectId, {
+      closedAt: null,
+      closureDescription: null,
+      closurePaymentReceived: false,
+    });
+    res.json(updated);
+  });
+
   app.get("/api/projects/:id", requireAuth, async (req, res) => {
     const currentUser = req.user as any;
     const projectId = Number(req.params.id);
-    const project = await storage.getProject(projectId);
-    if (!project) return res.status(404).json({ message: "Project not found" });
+    const project = await requireOpenProjectForApi(res, projectId);
+    if (!project) return;
     if (currentUser.role !== "admin") {
       const membership = await storage.getProjectMembership(projectId, currentUser.id);
       if (!membership) return res.status(403).json({ message: "Access denied" });
@@ -752,6 +829,9 @@ export async function registerRoutes(
     }
     const projectRecord = await storage.getProject(projectId);
     if (!projectRecord) return res.status(404).json({ message: "Project not found" });
+    if (projectRecord.closedAt != null && currentUser.role !== "admin") {
+      return res.status(404).json({ message: "Project not found" });
+    }
 
     const wantsDetails =
       parsed.data.name !== undefined ||
@@ -837,8 +917,8 @@ export async function registerRoutes(
     if (peerUserId === currentUser.id) {
       return res.status(400).json({ message: "Cannot message yourself" });
     }
-    const project = await storage.getProject(projectId);
-    if (!project) return res.status(404).json({ message: "Project not found" });
+    const project = await requireOpenProjectForApi(res, projectId);
+    if (!project) return;
     let callerMembership = await storage.getProjectMembership(projectId, currentUser.id);
     if (!callerMembership && (currentUser.role === "admin" || currentUser.role === "manager")) {
       await storage.addProjectMember(projectId, currentUser.id);
@@ -872,11 +952,13 @@ export async function registerRoutes(
   app.get("/api/projects/:id/members", requireAuth, async (req, res) => {
     const currentUser = req.user as any;
     const projectId = Number(req.params.id);
+    const open = await requireOpenProjectForApi(res, projectId);
+    if (!open) return;
     if (currentUser.role !== "admin") {
       const membership = await storage.getProjectMembership(projectId, currentUser.id);
       if (!membership) return res.status(403).json({ message: "Access denied" });
     }
-    const projectRow = await storage.getProject(projectId);
+    const projectRow = open;
     const ownerId = projectRow?.ownerId ?? null;
     const members = await storage.getProjectMembersWithSettings(projectId);
     res.json(
@@ -898,8 +980,8 @@ export async function registerRoutes(
     if (!Number.isInteger(userId) || userId <= 0) {
       return res.status(400).json({ message: "Invalid user id" });
     }
-    const projectRecord = await storage.getProject(projectId);
-    if (!projectRecord) return res.status(404).json({ message: "Project not found" });
+    const projectRecord = await requireOpenProjectForApi(res, projectId);
+    if (!projectRecord) return;
     const isAdmin = currentUser.role === "admin";
     const isManager = currentUser.role === "manager";
     const isProjectOwner =
@@ -936,8 +1018,8 @@ export async function registerRoutes(
     if (!Number.isInteger(targetUserId) || targetUserId <= 0) {
       return res.status(400).json({ message: "Invalid user id" });
     }
-    const projectRecord = await storage.getProject(projectId);
-    if (!projectRecord) return res.status(404).json({ message: "Project not found" });
+    const projectRecord = await requireOpenProjectForApi(res, projectId);
+    if (!projectRecord) return;
 
     if (projectRecord.ownerId != null && Number(projectRecord.ownerId) === targetUserId) {
       return res.status(400).json({ message: "Cannot remove the project owner from the team" });
@@ -972,6 +1054,8 @@ export async function registerRoutes(
   app.get("/api/projects/:id/my-permissions", requireAuth, async (req, res) => {
     const currentUser = req.user as any;
     const projectId = Number(req.params.id);
+    const open = await requireOpenProjectForApi(res, projectId);
+    if (!open) return;
     const membership = await storage.getProjectMembership(projectId, currentUser.id);
     if (!membership) {
       if (currentUser.role === "admin") {
@@ -998,6 +1082,8 @@ export async function registerRoutes(
     }
     const projectId = Number(req.params.id);
     const userId = Number(req.params.userId);
+    const openProj = await requireOpenProjectForApi(res, projectId);
+    if (!openProj) return;
     const { clientShowTimecards, clientTaskAccess } = req.body;
 
     // Validate clientTaskAccess enum if provided
@@ -1026,6 +1112,8 @@ export async function registerRoutes(
   app.get("/api/projects/:id/has-client-timecards", requireAuth, async (req, res) => {
     const currentUser = req.user as any;
     const projectId = Number(req.params.id);
+    const open = await requireOpenProjectForApi(res, projectId);
+    if (!open) return;
     if (currentUser.role !== "admin") {
       const membership = await storage.getProjectMembership(projectId, currentUser.id);
       if (!membership) return res.status(403).json({ message: "Access denied" });
@@ -1060,6 +1148,8 @@ export async function registerRoutes(
   app.get("/api/projects/:projectId/tasks", requireAuth, async (req, res) => {
     const currentUser = req.user as any;
     const projectId = Number(req.params.projectId);
+    const open = await requireOpenProjectForApi(res, projectId);
+    if (!open) return;
     const isClient = currentUser.role === "client";
 
     // For client callers, enforce project membership (clients can only see their own projects' tasks)
@@ -1116,6 +1206,8 @@ export async function registerRoutes(
     const currentUser = req.user as any;
     const task = await storage.getTask(Number(req.params.id));
     if (!task) return res.status(404).json({ message: "Task not found" });
+    const open = await requireOpenProjectForApi(res, task.projectId);
+    if (!open) return;
     let clientMembership: any = null;
     if (currentUser.role === "client") {
       clientMembership = await storage.getProjectMembership(task.projectId, currentUser.id);
@@ -1154,6 +1246,12 @@ export async function registerRoutes(
   app.post("/api/tasks", requireAuth, async (req, res) => {
     const currentUser = req.user as any;
     const { assignees, ownerId: _ignoreOwner, initialHours: _legacyInitialHours, ...taskData } = req.body;
+    const pidEarly = Number(taskData.projectId);
+    if (!Number.isInteger(pidEarly) || pidEarly <= 0) {
+      return res.status(400).json({ message: "Invalid project" });
+    }
+    const openForTask = await requireOpenProjectForApi(res, pidEarly);
+    if (!openForTask) return;
     // Clients with "contribute" access can create tasks tagged [Client Request]
     if (currentUser.role === "client") {
       const membership = await storage.getProjectMembership(taskData.projectId, currentUser.id);
@@ -1164,11 +1262,10 @@ export async function registerRoutes(
       taskData.tags = [...(taskData.tags || []), "[Client Request]"];
     }
     if (currentUser.role !== "admin" && currentUser.role !== "client") {
-      const pidMem = Number(taskData.projectId);
-      const m = await storage.getProjectMembership(pidMem, currentUser.id);
+      const m = await storage.getProjectMembership(pidEarly, currentUser.id);
       if (!m) return res.status(403).json({ message: "Access denied" });
     }
-    const pid = Number(taskData.projectId);
+    const pid = pidEarly;
     const st = String(taskData.status ?? "todo");
     if (Number.isInteger(pid) && pid > 0) {
       const maxOrder = await storage.getMaxBoardOrderForStatus(pid, st);
@@ -1218,6 +1315,8 @@ export async function registerRoutes(
     }
     const task = await storage.getTask(taskId);
     if (!task) return res.status(404).json({ message: "Task not found" });
+    const openDel = await requireOpenProjectForApi(res, task.projectId);
+    if (!openDel) return;
 
     if (currentUser.role !== "admin") {
       const membership = await storage.getProjectMembership(task.projectId, currentUser.id);
@@ -1261,17 +1360,18 @@ export async function registerRoutes(
     }
     const taskId = Number(req.params.id);
 
+    const before = await storage.getTask(taskId);
+    if (!before) return res.status(404).json({ message: "Task not found" });
+    const openPatch = await requireOpenProjectForApi(res, before.projectId);
+    if (!openPatch) return;
+
     if (currentUser.role === "client") {
-      const task = await storage.getTask(taskId);
-      if (!task) return res.status(404).json({ message: "Task not found" });
-      const membership = await storage.getProjectMembership(task.projectId, currentUser.id);
+      const membership = await storage.getProjectMembership(before.projectId, currentUser.id);
       if (!membership || membership.clientTaskAccess !== "full") {
         return res.status(403).json({ message: "Not authorized to edit tasks" });
       }
     }
 
-    const before = await storage.getTask(taskId);
-    if (!before) return res.status(404).json({ message: "Task not found" });
     if (currentUser.role !== "client" && currentUser.role !== "admin") {
       const staffMem = await storage.getProjectMembership(before.projectId, currentUser.id);
       if (!staffMem) return res.status(403).json({ message: "Access denied" });
@@ -1410,6 +1510,8 @@ export async function registerRoutes(
 
     const task = await storage.getTask(Number(req.params.id));
     if (!task) return res.status(404).json({ message: "Task not found" });
+    const openAppr = await requireOpenProjectForApi(res, task.projectId);
+    if (!openAppr) return;
 
     const membership = await storage.getProjectMembership(task.projectId, currentUser.id);
     // Only feedback/contribute clients can approve; full clients behave as employees
@@ -1418,7 +1520,7 @@ export async function registerRoutes(
     }
 
     // Fetch project to identify the review column
-    const project = await storage.getProject(task.projectId);
+    const project = openAppr;
     const columns = (project?.columns as any[]) || [];
 
     // Server-side guard: task must be in the review/second-to-last column
@@ -1463,6 +1565,8 @@ export async function registerRoutes(
 
     const task = await storage.getTask(Number(req.params.id));
     if (!task) return res.status(404).json({ message: "Task not found" });
+    const openRev = await requireOpenProjectForApi(res, task.projectId);
+    if (!openRev) return;
 
     const membership = await storage.getProjectMembership(task.projectId, currentUser.id);
     // Only feedback/contribute clients can request revisions; full clients behave as employees
@@ -1471,7 +1575,7 @@ export async function registerRoutes(
     }
 
     // Fetch project to identify the review column
-    const project = await storage.getProject(task.projectId);
+    const project = openRev;
     const columns = (project?.columns as any[]) || [];
 
     // Server-side guard: task must be in the review/second-to-last column
@@ -1510,15 +1614,19 @@ export async function registerRoutes(
   async function clientHasFullAccess(userId: number, taskId: number): Promise<boolean> {
     const task = await storage.getTask(taskId);
     if (!task) return false;
+    const project = await storage.getProject(task.projectId);
+    if (!project || project.closedAt != null) return false;
     const membership = await storage.getProjectMembership(task.projectId, userId);
     return !!(membership && membership.clientTaskAccess === "full");
   }
 
-  /** Admins bypass; clients rely on route-specific rules; other roles must be project members. */
+  /** Admins bypass membership; clients rely on route-specific rules; closed projects never pass. */
   async function requireStaffProjectMembership(
     user: { id: number; role?: string },
     projectId: number,
   ): Promise<boolean> {
+    const project = await storage.getProject(projectId);
+    if (!project || project.closedAt != null) return false;
     if (user.role === "admin") return true;
     if (user.role === "client") return true;
     const m = await storage.getProjectMembership(projectId, user.id);
@@ -1889,6 +1997,14 @@ export async function registerRoutes(
         }
       }
     }
+    const closedProjectIds = new Set(
+      (await storage.getProjects({ includeClosed: true }))
+        .filter((p) => p.closedAt != null)
+        .map((p) => p.id),
+    );
+    allChannels = allChannels.filter(
+      (c) => c.projectId == null || !closedProjectIds.has(c.projectId),
+    );
     const uniqueProjectIds = Array.from(
       new Set(allChannels.map((c) => c.projectId).filter((id): id is number => id != null)),
     );
@@ -1931,6 +2047,8 @@ export async function registerRoutes(
 
     const myMembership = await storage.getProjectMembership(projectId, currentUser.id);
     if (!myMembership) return res.status(403).json({ message: "You are not a member of this project" });
+    const openForChannel = await requireOpenProjectForApi(res, projectId);
+    if (!openForChannel) return;
 
     const channel = await storage.createChannel({
       name,
@@ -1957,6 +2075,10 @@ export async function registerRoutes(
   async function userCanAccessChannel(userId: number, channelId: number): Promise<boolean> {
     const channel = await storage.getChannel(channelId);
     if (!channel) return false;
+    if (channel.projectId != null) {
+      const proj = await storage.getProject(channel.projectId);
+      if (proj?.closedAt != null) return false;
+    }
     const channelUser = await storage.getUser(userId);
     if (channelUser?.role === "admin") return true;
     const members = await storage.getChannelMembers(channelId);
@@ -2170,8 +2292,8 @@ export async function registerRoutes(
     if (!Number.isInteger(projectId) || projectId <= 0) {
       return res.status(400).json({ message: "Invalid project" });
     }
-    const project = await storage.getProject(projectId);
-    if (!project) return res.status(404).json({ message: "Project not found" });
+    const project = await requireOpenProjectForApi(res, projectId);
+    if (!project) return;
     let membership = await storage.getProjectMembership(projectId, currentUser.id);
     if (!membership && currentUser.role === "admin") {
       await storage.addProjectMember(projectId, currentUser.id);
@@ -2200,6 +2322,8 @@ export async function registerRoutes(
     }
     const taskForTime = await storage.getTask(taskId);
     if (!taskForTime) return res.status(404).json({ message: "Task not found" });
+    const openTimePost = await requireOpenProjectForApi(res, taskForTime.projectId);
+    if (!openTimePost) return;
     if (currentUser.role === "client") {
       const membership = await storage.getProjectMembership(taskForTime.projectId, currentUser.id);
       if (!membership || membership.clientTaskAccess !== "full") {
@@ -2255,6 +2379,8 @@ export async function registerRoutes(
     }
     const taskForList = await storage.getTask(taskId);
     if (!taskForList) return res.status(404).json({ message: "Task not found" });
+    const openTimeList = await requireOpenProjectForApi(res, taskForList.projectId);
+    if (!openTimeList) return;
     if (currentUser.role === "client") {
       const membership = await storage.getProjectMembership(taskForList.projectId, currentUser.id);
       if (!membership) return res.status(403).json({ message: "Access denied" });
@@ -2277,6 +2403,8 @@ export async function registerRoutes(
       // Only full-access clients can delete their own time entries
       const task = await storage.getTask(entry.taskId);
       if (!task) return res.status(404).json({ message: "Task not found" });
+      const openTe = await requireOpenProjectForApi(res, task.projectId);
+      if (!openTe) return;
       const membership = await storage.getProjectMembership(task.projectId, currentUser.id);
       if (!membership || membership.clientTaskAccess !== "full") {
         return res.status(403).json({ message: "Clients cannot delete time entries" });
@@ -2287,6 +2415,8 @@ export async function registerRoutes(
     } else {
       const taskForDel = await storage.getTask(entry.taskId);
       if (!taskForDel) return res.status(404).json({ message: "Task not found" });
+      const openTeStaff = await requireOpenProjectForApi(res, taskForDel.projectId);
+      if (!openTeStaff) return;
       if (currentUser.role !== "admin") {
         const mem = await storage.getProjectMembership(taskForDel.projectId, currentUser.id);
         if (!mem) return res.status(403).json({ message: "Not authorized to delete this entry" });
@@ -2317,9 +2447,10 @@ export async function registerRoutes(
       // Client: only return entries from projects where they have clientShowTimecards = true, and only clientVisible entries
       // Fetch all memberships in one query (avoid N+1 per project)
       const memberships = await storage.getUserMemberships(currentUser.id);
+      const openClientProjects = new Set((await storage.getProjects()).map((p) => p.id));
       const allowedProjectIds: number[] = memberships
-        .filter(m => m.clientShowTimecards)
-        .map(m => m.projectId);
+        .filter((m) => m.clientShowTimecards && openClientProjects.has(m.projectId))
+        .map((m) => m.projectId);
 
       if (allowedProjectIds.length === 0) {
         return res.json([]);
@@ -2355,7 +2486,18 @@ export async function registerRoutes(
     if (req.query.endDate) filters.endDate = String(req.query.endDate);
 
     if (currentUser.role === "admin") {
-      if (req.query.projectId) filters.projectId = Number(req.query.projectId);
+      const adminOpenIds = (await storage.getProjects()).map((p) => p.id);
+      if (adminOpenIds.length === 0) {
+        return res.json([]);
+      }
+      filters.allowedProjectIds = adminOpenIds;
+      if (req.query.projectId) {
+        const pid = Number(req.query.projectId);
+        if (!adminOpenIds.includes(pid)) {
+          return res.json([]);
+        }
+        filters.projectId = pid;
+      }
       if (isManagerOrAdmin) {
         if (req.query.userId) filters.userId = Number(req.query.userId);
       } else {
@@ -2398,6 +2540,8 @@ export async function registerRoutes(
     if (!taskId || !hours || !logDate) return res.status(400).json({ message: "taskId, hours and logDate are required" });
     const task = await storage.getTask(Number(taskId));
     if (!task) return res.status(404).json({ message: "Task not found" });
+    const openGlobalTe = await requireOpenProjectForApi(res, task.projectId);
+    if (!openGlobalTe) return;
     if (currentUser.role !== "admin") {
       const mem = await storage.getProjectMembership(task.projectId, currentUser.id);
       if (!mem) return res.status(403).json({ message: "Access denied" });

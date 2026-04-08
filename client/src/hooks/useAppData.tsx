@@ -64,6 +64,10 @@ function convertProject(p: any): Project {
     columns: (p.columns as any[]) || [],
     members: [],
     ownerId: p.ownerId != null ? String(p.ownerId) : undefined,
+    closedAt: p.closedAt != null && p.closedAt !== "" ? String(p.closedAt) : undefined,
+    closureDescription:
+      p.closureDescription != null && p.closureDescription !== "" ? String(p.closureDescription) : undefined,
+    closurePaymentReceived: typeof p.closurePaymentReceived === "boolean" ? p.closurePaymentReceived : undefined,
   };
 }
 

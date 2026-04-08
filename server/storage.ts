@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { eq, and, asc, desc, inArray, gte, lte, sql, ne, gt } from "drizzle-orm";
+import { eq, and, asc, desc, inArray, gte, lte, sql, ne, gt, isNull } from "drizzle-orm";
 import {
   users, projects, projectMembers, tasks, taskAssignees,
   checklistItems, attachments, comments, channels, channelMembers, channelUserReadState, messages, timeEntries,
@@ -26,12 +26,20 @@ export interface IStorage {
   deleteUser(id: number): Promise<void>;
   getAllUsers(): Promise<User[]>;
 
-  getProjects(): Promise<Project[]>;
+  getProjects(opts?: { includeClosed?: boolean }): Promise<Project[]>;
   getProject(id: number): Promise<Project | undefined>;
   createProject(project: InsertProject): Promise<Project>;
   updateProject(
     id: number,
-    updates: Partial<{ name: string; color: string; description: string | null; columns: unknown }>,
+    updates: Partial<{
+      name: string;
+      color: string;
+      description: string | null;
+      columns: unknown;
+      closedAt: Date | null;
+      closureDescription: string | null;
+      closurePaymentReceived: boolean;
+    }>,
   ): Promise<Project | undefined>;
   deleteProject(id: number): Promise<void>;
   getProjectMembers(projectId: number): Promise<User[]>;
@@ -192,8 +200,11 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(users);
   }
 
-  async getProjects(): Promise<Project[]> {
-    return db.select().from(projects);
+  async getProjects(opts?: { includeClosed?: boolean }): Promise<Project[]> {
+    if (opts?.includeClosed) {
+      return db.select().from(projects);
+    }
+    return db.select().from(projects).where(isNull(projects.closedAt));
   }
 
   async getProject(id: number): Promise<Project | undefined> {
@@ -208,7 +219,15 @@ export class DatabaseStorage implements IStorage {
 
   async updateProject(
     id: number,
-    updates: Partial<{ name: string; color: string; description: string | null; columns: unknown }>,
+    updates: Partial<{
+      name: string;
+      color: string;
+      description: string | null;
+      columns: unknown;
+      closedAt: Date | null;
+      closureDescription: string | null;
+      closurePaymentReceived: boolean;
+    }>,
   ): Promise<Project | undefined> {
     const [updated] = await db.update(projects).set(updates).where(eq(projects.id, id)).returning();
     return updated;
@@ -259,7 +278,7 @@ export class DatabaseStorage implements IStorage {
       .select({ project: projects })
       .from(projectMembers)
       .innerJoin(projects, eq(projectMembers.projectId, projects.id))
-      .where(eq(projectMembers.userId, userId));
+      .where(and(eq(projectMembers.userId, userId), isNull(projects.closedAt)));
     return rows.map(r => r.project);
   }
 

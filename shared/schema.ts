@@ -55,6 +55,10 @@ export const projects = pgTable("projects", {
   columns: jsonb("columns").notNull().default(sql`'[]'::jsonb`),
   /** Creator / owner; only this user (and admins) may add, rename, remove, or reorder board sections. */
   ownerId: integer("owner_id").references(() => users.id),
+  /** When set, project is closed; hidden from workspace for non-admin flows (admin manages via /api/admin/projects). */
+  closedAt: timestamp("closed_at"),
+  closureDescription: text("closure_description"),
+  closurePaymentReceived: boolean("closure_payment_received").notNull().default(false),
 });
 
 export const projectMembers = pgTable("project_members", {

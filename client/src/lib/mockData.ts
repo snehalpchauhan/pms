@@ -101,6 +101,10 @@ export interface Project {
     members?: string[];
     /** Server user id of project owner (creator); board sections only they + admins may change. */
     ownerId?: string;
+    /** ISO timestamp when project was closed (admin-only listing uses full project APIs). */
+    closedAt?: string;
+    closureDescription?: string;
+    closurePaymentReceived?: boolean;
 }
 
 export interface Message {

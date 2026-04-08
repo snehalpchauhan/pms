@@ -18,7 +18,17 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Building2, Upload, Plus, MoreHorizontal, Search, Trash2, LogIn, Kanban, Pencil, Clock } from "lucide-react";
+import { Building2, Upload, Plus, MoreHorizontal, Search, Trash2, LogIn, Kanban, Pencil, Clock, FolderKanban } from "lucide-react";
+import { format } from "date-fns";
+import { Textarea } from "@/components/ui/textarea";
+import {
+    Table,
+    TableBody,
+    TableCell,
+    TableHead,
+    TableHeader,
+    TableRow,
+} from "@/components/ui/table";
 import {
     WORKFLOW_COLUMN_PRESETS,
     DEFAULT_TASK_CLIENT_REOPEN_STATUS,
@@ -39,14 +49,25 @@ const ALL_ROLES: UserRole[] = ["admin", "manager", "employee", "client"];
 
 const MAX_LOGO_BYTES = 2 * 1024 * 1024;
 
-const SETTINGS_TABS = ["general", "login", "users", "billing"] as const;
+const SETTINGS_TABS = ["general", "login", "users", "projects", "billing"] as const;
 type SettingsTab = (typeof SETTINGS_TABS)[number];
 
-function settingsTabFromHash(): SettingsTab {
+function settingsTabFromHash(isAdmin: boolean): SettingsTab {
     if (typeof window === "undefined") return "general";
     const h = window.location.hash.replace(/^#/, "");
+    if (h === "projects" && !isAdmin) return "general";
     return SETTINGS_TABS.includes(h as SettingsTab) ? (h as SettingsTab) : "general";
 }
+
+type AdminProjectRow = {
+    id: number;
+    name: string;
+    color?: string;
+    ownerId?: number | null;
+    closedAt?: string | null;
+    closureDescription?: string | null;
+    closurePaymentReceived?: boolean | null;
+};
 
 type CompanySettingsDto = {
     companyName: string;
@@ -83,6 +104,16 @@ export default function CompanySettingsView() {
 
     const { data: companyData, isLoading: companyLoading } = useQuery<CompanySettingsDto>({
         queryKey: ["/api/company-settings"],
+    });
+
+    const { data: adminProjects = [], isLoading: adminProjectsLoading } = useQuery<AdminProjectRow[]>({
+        queryKey: ["/api/admin/projects"],
+        queryFn: async () => {
+            const res = await fetch("/api/admin/projects", { credentials: "include" });
+            if (!res.ok) throw new Error("Failed to load projects");
+            return res.json();
+        },
+        enabled: isAdmin,
     });
 
     const [companyName, setCompanyName] = useState("");
@@ -127,7 +158,15 @@ export default function CompanySettingsView() {
     const [timeLogMinDescriptionWords, setTimeLogMinDescriptionWords] = useState<number>(10);
     const [timeLogMaxHoursPerEntry, setTimeLogMaxHoursPerEntry] = useState<string>("");
 
-    const [activeSettingsTab, setActiveSettingsTab] = useState<SettingsTab>(settingsTabFromHash);
+    const [projectsSubTab, setProjectsSubTab] = useState<"active" | "closed">("active");
+    const [projectsSearch, setProjectsSearch] = useState("");
+    const [closeTarget, setCloseTarget] = useState<{ id: number; name: string } | null>(null);
+    const [closeDescription, setCloseDescription] = useState("");
+    const [closePaymentReceived, setClosePaymentReceived] = useState(false);
+
+    const [activeSettingsTab, setActiveSettingsTab] = useState<SettingsTab>(() =>
+        typeof window !== "undefined" ? settingsTabFromHash(!!isAdmin) : "general",
+    );
 
     const syncSettingsTabToUrl = useCallback((v: SettingsTab) => {
         setActiveSettingsTab(v);
@@ -136,23 +175,29 @@ export default function CompanySettingsView() {
     }, []);
 
     useEffect(() => {
-        const onHash = () => setActiveSettingsTab(settingsTabFromHash());
+        setActiveSettingsTab(settingsTabFromHash(!!isAdmin));
+    }, [isAdmin]);
+
+    useEffect(() => {
+        const onHash = () => setActiveSettingsTab(settingsTabFromHash(!!isAdmin));
         window.addEventListener("hashchange", onHash);
         return () => window.removeEventListener("hashchange", onHash);
-    }, []);
+    }, [isAdmin]);
 
     useEffect(() => {
         const onNav = (e: Event) => {
             const detail = (e as CustomEvent<string>).detail as SettingsTab;
             if (!SETTINGS_TABS.includes(detail)) return;
+            if (detail === "projects" && !isAdmin) return;
             syncSettingsTabToUrl(detail);
         };
         window.addEventListener(COMPANY_SETTINGS_TAB_EVENT, onNav);
         return () => window.removeEventListener(COMPANY_SETTINGS_TAB_EVENT, onNav);
-    }, [syncSettingsTabToUrl]);
+    }, [syncSettingsTabToUrl, isAdmin]);
 
     const handleSettingsTabChange = (value: string) => {
         const v = value as SettingsTab;
+        if (v === "projects" && !isAdmin) return;
         syncSettingsTabToUrl(v);
         window.dispatchEvent(new CustomEvent(COMPANY_SETTINGS_TAB_EVENT, { detail: v }));
     };
@@ -275,6 +320,50 @@ export default function CompanySettingsView() {
         try { return JSON.parse(body).message || body; } catch { return body; }
     }
 
+    const closeProjectMutation = useMutation({
+        mutationFn: async (payload: { id: number; closureDescription: string; paymentReceived: boolean }) => {
+            await apiRequest("POST", `/api/admin/projects/${payload.id}/close`, {
+                closureDescription: payload.closureDescription,
+                paymentReceived: payload.paymentReceived,
+            });
+        },
+        onSuccess: async () => {
+            await queryClient.invalidateQueries({ queryKey: ["/api/admin/projects"] });
+            await queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+            await queryClient.invalidateQueries({ queryKey: ["/api/channels"] });
+            setCloseTarget(null);
+            setCloseDescription("");
+            setClosePaymentReceived(false);
+            toast({ title: "Project closed" });
+        },
+        onError: (err: unknown) => {
+            toast({
+                title: "Could not close project",
+                description: parseApiError(err),
+                variant: "destructive",
+            });
+        },
+    });
+
+    const reopenProjectMutation = useMutation({
+        mutationFn: async (id: number) => {
+            await apiRequest("POST", `/api/admin/projects/${id}/reopen`, {});
+        },
+        onSuccess: async () => {
+            await queryClient.invalidateQueries({ queryKey: ["/api/admin/projects"] });
+            await queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+            await queryClient.invalidateQueries({ queryKey: ["/api/channels"] });
+            toast({ title: "Project reopened" });
+        },
+        onError: (err: unknown) => {
+            toast({
+                title: "Could not reopen project",
+                description: parseApiError(err),
+                variant: "destructive",
+            });
+        },
+    });
+
     async function handleAddUser() {
         setAddError("");
         const ms365Staff =
@@ -394,6 +483,18 @@ export default function CompanySettingsView() {
         return base.length > 80 ? base.slice(0, 80) : base;
     }
 
+    function adminProjectOwnerLabel(row: AdminProjectRow): string {
+        if (row.ownerId == null) return "—";
+        const u = usersArray.find((x) => String(x.id) === String(row.ownerId));
+        return u?.name ?? `User ${row.ownerId}`;
+    }
+
+    const qProj = projectsSearch.trim().toLowerCase();
+    const projectMatchesSearch = (p: AdminProjectRow) =>
+        !qProj || p.name.toLowerCase().includes(qProj) || String(p.id).includes(qProj);
+    const activeProjectsFiltered = adminProjects.filter((p) => !p.closedAt).filter(projectMatchesSearch);
+    const closedProjectsFiltered = adminProjects.filter((p) => !!p.closedAt).filter(projectMatchesSearch);
+
     return (
         <div className="h-full bg-background flex flex-col overflow-hidden animate-in fade-in duration-300">
             <div className="border-b border-border p-6 shrink-0 bg-background/80 backdrop-blur-md sticky top-0 z-10">
@@ -411,6 +512,15 @@ export default function CompanySettingsView() {
                                 Login options
                             </TabsTrigger>
                             <TabsTrigger value="users" className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-0 h-full font-medium">User Management</TabsTrigger>
+                            {isAdmin && (
+                                <TabsTrigger
+                                    value="projects"
+                                    className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-0 h-full font-medium gap-1.5 inline-flex items-center"
+                                >
+                                    <FolderKanban className="h-3.5 w-3.5 opacity-70" />
+                                    Projects
+                                </TabsTrigger>
+                            )}
                             <TabsTrigger value="billing" className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-0 h-full font-medium">Billing</TabsTrigger>
                         </TabsList>
                     </div>
@@ -936,6 +1046,146 @@ export default function CompanySettingsView() {
                             </Card>
                         </TabsContent>
 
+                        {/* Projects (admin) */}
+                        {isAdmin && (
+                            <TabsContent value="projects" className="max-w-4xl space-y-6 mt-0">
+                                <Card>
+                                    <CardHeader>
+                                        <CardTitle>Projects</CardTitle>
+                                        <CardDescription>
+                                            Close completed projects to hide them from the workspace for employees, managers, and
+                                            clients. You can reopen a closed project at any time.
+                                        </CardDescription>
+                                    </CardHeader>
+                                    <CardContent className="space-y-4">
+                                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                            <Tabs
+                                                value={projectsSubTab}
+                                                onValueChange={(v) => setProjectsSubTab(v as "active" | "closed")}
+                                            >
+                                                <TabsList>
+                                                    <TabsTrigger value="active">Active</TabsTrigger>
+                                                    <TabsTrigger value="closed">Closed</TabsTrigger>
+                                                </TabsList>
+                                            </Tabs>
+                                            <div className="relative w-full sm:max-w-xs">
+                                                <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                                                <Input
+                                                    placeholder="Search by name or id…"
+                                                    className="pl-9"
+                                                    value={projectsSearch}
+                                                    onChange={(e) => setProjectsSearch(e.target.value)}
+                                                />
+                                            </div>
+                                        </div>
+                                        {adminProjectsLoading ? (
+                                            <p className="text-sm text-muted-foreground">Loading projects…</p>
+                                        ) : projectsSubTab === "active" ? (
+                                            <div className="rounded-md border">
+                                                <Table>
+                                                    <TableHeader>
+                                                        <TableRow>
+                                                            <TableHead>Project</TableHead>
+                                                            <TableHead>Owner</TableHead>
+                                                            <TableHead className="text-right w-[140px]">Actions</TableHead>
+                                                        </TableRow>
+                                                    </TableHeader>
+                                                    <TableBody>
+                                                        {activeProjectsFiltered.length === 0 ? (
+                                                            <TableRow>
+                                                                <TableCell colSpan={3} className="text-muted-foreground">
+                                                                    No active projects match your search.
+                                                                </TableCell>
+                                                            </TableRow>
+                                                        ) : (
+                                                            activeProjectsFiltered.map((p) => (
+                                                                <TableRow key={p.id}>
+                                                                    <TableCell className="font-medium">{p.name}</TableCell>
+                                                                    <TableCell className="text-muted-foreground">
+                                                                        {adminProjectOwnerLabel(p)}
+                                                                    </TableCell>
+                                                                    <TableCell className="text-right">
+                                                                        <Button
+                                                                            type="button"
+                                                                            variant="outline"
+                                                                            size="sm"
+                                                                            className="text-destructive border-destructive/30 hover:bg-destructive/10"
+                                                                            onClick={() => {
+                                                                                setCloseTarget({ id: p.id, name: p.name });
+                                                                                setCloseDescription("");
+                                                                                setClosePaymentReceived(false);
+                                                                            }}
+                                                                        >
+                                                                            Close project
+                                                                        </Button>
+                                                                    </TableCell>
+                                                                </TableRow>
+                                                            ))
+                                                        )}
+                                                    </TableBody>
+                                                </Table>
+                                            </div>
+                                        ) : (
+                                            <div className="rounded-md border">
+                                                <Table>
+                                                    <TableHeader>
+                                                        <TableRow>
+                                                            <TableHead>Project</TableHead>
+                                                            <TableHead>Closed</TableHead>
+                                                            <TableHead>Payment</TableHead>
+                                                            <TableHead>Notes</TableHead>
+                                                            <TableHead className="text-right w-[120px]">Actions</TableHead>
+                                                        </TableRow>
+                                                    </TableHeader>
+                                                    <TableBody>
+                                                        {closedProjectsFiltered.length === 0 ? (
+                                                            <TableRow>
+                                                                <TableCell colSpan={5} className="text-muted-foreground">
+                                                                    No closed projects match your search.
+                                                                </TableCell>
+                                                            </TableRow>
+                                                        ) : (
+                                                            closedProjectsFiltered.map((p) => (
+                                                                <TableRow key={p.id}>
+                                                                    <TableCell className="font-medium">{p.name}</TableCell>
+                                                                    <TableCell className="text-muted-foreground whitespace-nowrap">
+                                                                        {p.closedAt
+                                                                            ? format(new Date(p.closedAt), "MMM d, yyyy")
+                                                                            : "—"}
+                                                                    </TableCell>
+                                                                    <TableCell>
+                                                                        {p.closurePaymentReceived ? (
+                                                                            <Badge variant="secondary">Received</Badge>
+                                                                        ) : (
+                                                                            <Badge variant="outline">Not recorded</Badge>
+                                                                        )}
+                                                                    </TableCell>
+                                                                    <TableCell className="max-w-[240px] truncate text-muted-foreground text-sm">
+                                                                        {p.closureDescription?.trim() || "—"}
+                                                                    </TableCell>
+                                                                    <TableCell className="text-right">
+                                                                        <Button
+                                                                            type="button"
+                                                                            variant="secondary"
+                                                                            size="sm"
+                                                                            disabled={reopenProjectMutation.isPending}
+                                                                            onClick={() => reopenProjectMutation.mutate(p.id)}
+                                                                        >
+                                                                            Reopen
+                                                                        </Button>
+                                                                    </TableCell>
+                                                                </TableRow>
+                                                            ))
+                                                        )}
+                                                    </TableBody>
+                                                </Table>
+                                            </div>
+                                        )}
+                                    </CardContent>
+                                </Card>
+                            </TabsContent>
+                        )}
+
                         {/* Billing Tab */}
                         <TabsContent value="billing" className="max-w-2xl space-y-6 mt-0">
                             <Card>
@@ -951,6 +1201,79 @@ export default function CompanySettingsView() {
                     </div>
                 </Tabs>
             </div>
+
+            <Dialog
+                open={closeTarget != null}
+                onOpenChange={(open) => {
+                    if (!open) {
+                        setCloseTarget(null);
+                        setCloseDescription("");
+                        setClosePaymentReceived(false);
+                    }
+                }}
+            >
+                <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>Close project</DialogTitle>
+                    </DialogHeader>
+                    {closeTarget && (
+                        <div className="space-y-4 py-1">
+                            <p className="text-sm text-muted-foreground">
+                                Closing <span className="font-medium text-foreground">{closeTarget.name}</span> hides it from
+                                employees, managers, and clients until you reopen it from this list.
+                            </p>
+                            <div className="space-y-2">
+                                <Label htmlFor="close-desc">Closure description</Label>
+                                <Textarea
+                                    id="close-desc"
+                                    placeholder="Summarize deliverables, handoff, or other closure notes…"
+                                    value={closeDescription}
+                                    onChange={(e) => setCloseDescription(e.target.value)}
+                                    rows={4}
+                                />
+                            </div>
+                            <div className="flex items-start gap-2 rounded-md border border-border/60 bg-muted/20 p-3">
+                                <Checkbox
+                                    id="close-payment"
+                                    checked={closePaymentReceived}
+                                    onCheckedChange={(c) => setClosePaymentReceived(c === true)}
+                                />
+                                <label htmlFor="close-payment" className="text-sm leading-tight cursor-pointer">
+                                    Final payment has been received for this project
+                                </label>
+                            </div>
+                            <DialogFooter className="gap-2 sm:gap-0">
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    onClick={() => {
+                                        setCloseTarget(null);
+                                        setCloseDescription("");
+                                        setClosePaymentReceived(false);
+                                    }}
+                                >
+                                    Cancel
+                                </Button>
+                                <Button
+                                    type="button"
+                                    variant="destructive"
+                                    disabled={closeProjectMutation.isPending || !closeDescription.trim()}
+                                    onClick={() => {
+                                        if (!closeTarget || !closeDescription.trim()) return;
+                                        closeProjectMutation.mutate({
+                                            id: closeTarget.id,
+                                            closureDescription: closeDescription.trim(),
+                                            paymentReceived: closePaymentReceived,
+                                        });
+                                    }}
+                                >
+                                    {closeProjectMutation.isPending ? "Closing…" : "Close project"}
+                                </Button>
+                            </DialogFooter>
+                        </div>
+                    )}
+                </DialogContent>
+            </Dialog>
 
             {/* Add User Dialog */}
             <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>

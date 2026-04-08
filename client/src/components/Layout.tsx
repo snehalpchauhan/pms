@@ -54,7 +54,7 @@ interface SidebarProps {
     clientPermissions?: ClientPermissions;
 }
 
-const SETTINGS_SIDEBAR_TABS = ["general", "login", "users", "billing"] as const;
+const SETTINGS_SIDEBAR_TABS = ["general", "login", "users", "projects", "billing"] as const;
 
 function directChannelWithPeer(
   channels: Channel[],
@@ -72,9 +72,10 @@ function directChannelWithPeer(
   );
 }
 
-function settingsSidebarTabFromHash(): (typeof SETTINGS_SIDEBAR_TABS)[number] {
+function settingsSidebarTabFromHash(isAdmin: boolean): (typeof SETTINGS_SIDEBAR_TABS)[number] {
   if (typeof window === "undefined") return "general";
   const h = window.location.hash.replace(/^#/, "");
+  if (h === "projects" && !isAdmin) return "general";
   return SETTINGS_SIDEBAR_TABS.includes(h as (typeof SETTINGS_SIDEBAR_TABS)[number])
     ? (h as (typeof SETTINGS_SIDEBAR_TABS)[number])
     : "general";
@@ -87,27 +88,32 @@ export function Sidebar({ currentView, currentChannelId, onViewChange, currentPr
   const sidebarAvatar = authUser?.avatar?.trim() || undefined;
   const [projectSearchOpen, setProjectSearchOpen] = useState(false);
   const [projectNavOpen, setProjectNavOpen] = useState(false);
-  const [settingsSidebarTab, setSettingsSidebarTab] = useState(settingsSidebarTabFromHash);
+  const isSettingsAdmin = authUser?.role === "admin";
+  const [settingsSidebarTab, setSettingsSidebarTab] = useState(() => settingsSidebarTabFromHash(!!isSettingsAdmin));
   const [editProjectOpen, setEditProjectOpen] = useState(false);
   const [deleteProjectOpen, setDeleteProjectOpen] = useState(false);
   const [deleteProjectLoading, setDeleteProjectLoading] = useState(false);
 
   useEffect(() => {
-    const onHash = () => setSettingsSidebarTab(settingsSidebarTabFromHash());
+    setSettingsSidebarTab(settingsSidebarTabFromHash(!!isSettingsAdmin));
+  }, [isSettingsAdmin]);
+
+  useEffect(() => {
+    const onHash = () => setSettingsSidebarTab(settingsSidebarTabFromHash(!!isSettingsAdmin));
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
-  }, []);
+  }, [isSettingsAdmin]);
 
   useEffect(() => {
     const onTab = (e: Event) => {
       const d = (e as CustomEvent<string>).detail;
-      if (SETTINGS_SIDEBAR_TABS.includes(d as (typeof SETTINGS_SIDEBAR_TABS)[number])) {
-        setSettingsSidebarTab(d as (typeof SETTINGS_SIDEBAR_TABS)[number]);
-      }
+      if (!SETTINGS_SIDEBAR_TABS.includes(d as (typeof SETTINGS_SIDEBAR_TABS)[number])) return;
+      if (d === "projects" && !isSettingsAdmin) return;
+      setSettingsSidebarTab(d as (typeof SETTINGS_SIDEBAR_TABS)[number]);
     };
     window.addEventListener(COMPANY_SETTINGS_TAB_EVENT, onTab);
     return () => window.removeEventListener(COMPANY_SETTINGS_TAB_EVENT, onTab);
-  }, []);
+  }, [isSettingsAdmin]);
   const isClient = currentUserRole === "client";
 
   const isProjectOwner =
@@ -416,6 +422,25 @@ export function Sidebar({ currentView, currentChannelId, onViewChange, currentPr
                                  <Users className="w-4 h-4 mr-2" />
                                  User Management
                              </Button>
+                             {isSettingsAdmin && (
+                                 <Button
+                                     variant="ghost"
+                                     className={cn(
+                                         "w-full justify-start font-medium",
+                                         settingsSidebarTab === "projects"
+                                             ? "bg-background shadow-sm text-primary"
+                                             : "text-muted-foreground",
+                                     )}
+                                     onClick={() =>
+                                         window.dispatchEvent(
+                                             new CustomEvent(COMPANY_SETTINGS_TAB_EVENT, { detail: "projects" }),
+                                         )
+                                     }
+                                 >
+                                     <FolderKanban className="w-4 h-4 mr-2" />
+                                     Projects
+                                 </Button>
+                             )}
                              <Button
                                  variant="ghost"
                                  className={cn(
