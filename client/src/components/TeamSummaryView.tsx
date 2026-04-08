@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SearchableSelect } from "@/components/SearchableSelect";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { BarChart3, Filter, Folder, Tag, Timer, Users } from "lucide-react";
+import { BarChart3, Filter, Folder, Search, Tag, Timer, Users } from "lucide-react";
 import type { ClientPermissions } from "@/App";
 import type { Project } from "@/lib/mockData";
 
@@ -29,6 +29,8 @@ export default function TeamSummaryView({ currentUserRole, currentProject }: Tea
     setFilterStartDate,
     filterEndDate,
     setFilterEndDate,
+    commitSearch,
+    hasLoadedEntries,
     entries,
     isLoading,
     totalHours,
@@ -66,7 +68,7 @@ export default function TeamSummaryView({ currentUserRole, currentProject }: Tea
             <BarChart3 className="h-7 w-7 text-primary" />
             <div>
               <h2 className="font-display text-xl font-bold text-foreground">Team summary</h2>
-              <p className="text-sm text-muted-foreground">Hours by team member and project (uses the same filters as Timecards)</p>
+              <p className="text-sm text-muted-foreground">Hours by team member and project — click Search to load (same filters as Timecards).</p>
             </div>
           </div>
           <div className="flex items-center gap-2 rounded-lg border border-primary/20 bg-primary/5 px-5 py-3">
@@ -74,9 +76,11 @@ export default function TeamSummaryView({ currentUserRole, currentProject }: Tea
             <div className="text-right leading-tight">
               <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Total hours</p>
               <p className="text-2xl font-bold tabular-nums text-primary" data-testid="text-team-summary-total-hours">
-                {totalHours.toFixed(1)}h
+                {hasLoadedEntries ? `${totalHours.toFixed(1)}h` : "—"}
               </p>
-              <p className="text-xs text-muted-foreground">{entries.length} entries</p>
+              <p className="text-xs text-muted-foreground">
+                {hasLoadedEntries ? `${entries.length} ${entries.length === 1 ? "entry" : "entries"}` : "Not loaded"}
+              </p>
             </div>
           </div>
         </div>
@@ -135,6 +139,10 @@ export default function TeamSummaryView({ currentUserRole, currentProject }: Tea
             className="h-9 w-[150px] text-sm"
             data-testid="input-team-summary-end"
           />
+          <Button size="sm" className="h-9 gap-1.5" onClick={commitSearch} disabled={isLoading} data-testid="button-team-summary-search">
+            <Search className="h-3.5 w-3.5" />
+            Search
+          </Button>
           {hasActiveFilters && (
             <Button variant="ghost" size="sm" className="h-9 text-xs" onClick={clearFilters} data-testid="button-team-summary-clear">
               Clear filters
@@ -145,12 +153,20 @@ export default function TeamSummaryView({ currentUserRole, currentProject }: Tea
 
       <ScrollArea className="flex-1">
         <div className="p-6">
-          {isLoading ? (
+          {!hasLoadedEntries && !isLoading ? (
+            <div className="space-y-2 rounded-xl border-2 border-dashed border-border/50 py-16 text-center">
+              <Search className="mx-auto h-10 w-10 text-muted-foreground/40" />
+              <p className="text-sm font-medium text-muted-foreground">Load team summary</p>
+              <p className="mx-auto max-w-md text-xs text-muted-foreground/80">
+                Data is not loaded automatically. Click <span className="font-medium text-foreground">Search</span> above to fetch hours from the server.
+              </p>
+            </div>
+          ) : isLoading ? (
             <div className="py-16 text-center text-sm text-muted-foreground">Loading…</div>
           ) : sortedMembers.length === 0 ? (
             <div className="space-y-2 rounded-xl border-2 border-dashed border-border/50 py-16 text-center">
               <p className="text-sm font-medium text-muted-foreground">No hours in this range</p>
-              <p className="text-xs text-muted-foreground/80">Adjust filters or log time from the Timecards page.</p>
+              <p className="text-xs text-muted-foreground/80">Adjust filters and Search again, or log time from the Timecards page.</p>
             </div>
           ) : (
             <div className="overflow-hidden rounded-xl border border-border/50 bg-background shadow-sm">

@@ -41,6 +41,7 @@ import {
   FileDown,
   ChevronLeft,
   ChevronRight,
+  Search,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
@@ -102,6 +103,9 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
     setFilterStartDate,
     filterEndDate,
     setFilterEndDate,
+    applied,
+    commitSearch,
+    hasLoadedEntries,
     entries,
     isLoading,
     allTasks,
@@ -248,7 +252,7 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
 
   useEffect(() => {
     setPage(1);
-  }, [filterUserId, filterProjectId, filterTaskId, filterStartDate, filterEndDate]);
+  }, [applied]);
 
   const totalPages = Math.max(1, Math.ceil(entries.length / PAGE_SIZE));
   const paginatedEntries = useMemo(() => {
@@ -359,17 +363,23 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
               </p>
             </div>
             <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+              <Button size="sm" className="h-9 gap-1.5" onClick={commitSearch} disabled={isLoading} data-testid="button-client-timecards-search">
+                <Search className="w-3.5 h-3.5" />
+                Search
+              </Button>
               <div className="flex items-center gap-3 rounded-lg border border-primary/20 bg-primary/5 px-4 py-2.5">
                 <Timer className="h-5 w-5 shrink-0 text-primary" />
                 <div className="text-right leading-tight">
                   <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Total hours</p>
                   <p className="text-xl font-bold tabular-nums text-primary" data-testid="text-total-hours">
-                    {totalHours.toFixed(1)}h
+                    {hasLoadedEntries ? `${totalHours.toFixed(1)}h` : "—"}
                   </p>
-                  <p className="text-xs text-muted-foreground">{entries.length} entries</p>
+                  <p className="text-xs text-muted-foreground">
+                    {hasLoadedEntries ? `${entries.length} ${entries.length === 1 ? "entry" : "entries"}` : "Not loaded"}
+                  </p>
                 </div>
               </div>
-              {entries.length > 0 && (
+              {hasLoadedEntries && entries.length > 0 && (
                 <>
                   <Button variant="outline" size="sm" className="h-9 gap-1.5" onClick={handleExportExcel} data-testid="button-export-xlsx-client">
                     <FileSpreadsheet className="w-3.5 h-3.5" />
@@ -387,7 +397,17 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
 
         <ScrollArea className="flex-1">
           <div className="p-6">
-            {isLoading ? (
+            {!hasLoadedEntries && !isLoading ? (
+              <div className="text-center py-16 border-2 border-dashed border-border/50 rounded-xl space-y-3">
+                <Search className="w-10 h-10 text-muted-foreground/40 mx-auto" />
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Load shared hours</p>
+                  <p className="text-xs text-muted-foreground/70 mt-1 max-w-sm mx-auto">
+                    Time entries are not loaded automatically. Click <span className="font-medium text-foreground">Search</span> above to fetch data from the server.
+                  </p>
+                </div>
+              </div>
+            ) : isLoading ? (
               <div className="text-center text-sm text-muted-foreground py-16">Loading...</div>
             ) : entries.length === 0 ? (
               <div className="text-center py-16 border-2 border-dashed border-border/50 rounded-xl space-y-3">
@@ -495,6 +515,7 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
                 <p className="text-sm text-muted-foreground">
                   {isAdmin ? "All team members' time logs" : isManagerOrAdmin ? "Your team's time logs" : "Your personal time log"}
                 </p>
+                <p className="text-xs text-muted-foreground/80 mt-1">Use Search to load entries — data is not fetched until you search.</p>
               </div>
             </div>
             <div className="flex items-center gap-3 rounded-lg border border-primary/20 bg-primary/5 px-4 py-2.5">
@@ -502,17 +523,23 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
               <div className="leading-tight">
                 <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Total hours</p>
                 <p className="text-2xl font-bold tabular-nums text-primary" data-testid="text-total-hours">
-                  {totalHours.toFixed(1)}h
+                  {hasLoadedEntries ? `${totalHours.toFixed(1)}h` : "—"}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  {entries.length} {entries.length === 1 ? "entry" : "entries"}
-                  {isManagerOrAdmin ? " (filtered)" : ""}
+                  {hasLoadedEntries ? (
+                    <>
+                      {entries.length} {entries.length === 1 ? "entry" : "entries"}
+                      {isManagerOrAdmin ? " (filtered)" : ""}
+                    </>
+                  ) : (
+                    "Run Search to load"
+                  )}
                 </p>
               </div>
             </div>
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2">
-            {entries.length > 0 && (
+            {hasLoadedEntries && entries.length > 0 && (
               <>
                 <Button variant="outline" size="sm" className="h-9 gap-1.5" onClick={handleExportExcel} data-testid="button-export-xlsx">
                   <FileSpreadsheet className="w-3.5 h-3.5" />
@@ -592,6 +619,16 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
             className="w-[150px] h-9 text-sm"
             data-testid="input-filter-end-date"
           />
+          <Button
+            size="sm"
+            className="h-9 gap-1.5"
+            onClick={commitSearch}
+            disabled={isLoading}
+            data-testid="button-timecards-search"
+          >
+            <Search className="w-3.5 h-3.5" />
+            Search
+          </Button>
           {hasActiveFilters && (
             <Button variant="ghost" size="sm" className="h-9 text-xs" onClick={clearFiltersAndPage} data-testid="button-clear-filters">
               Clear filters
@@ -608,7 +645,17 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
               {isManagerOrAdmin ? "Full Time Log" : "My Time Log"}
             </h3>
 
-            {isLoading ? (
+            {!hasLoadedEntries && !isLoading ? (
+              <div className="text-center py-16 border-2 border-dashed border-border/50 rounded-xl space-y-3">
+                <Search className="w-10 h-10 text-muted-foreground/40 mx-auto" />
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Ready to load</p>
+                  <p className="text-xs text-muted-foreground/70 mt-1 max-w-md mx-auto">
+                    Entries are not loaded automatically. Set optional filters, then click <span className="font-medium text-foreground">Search</span> to query the server.
+                  </p>
+                </div>
+              </div>
+            ) : isLoading ? (
               <div className="text-center text-sm text-muted-foreground py-16">Loading...</div>
             ) : entries.length === 0 ? (
               <div className="text-center py-16 border-2 border-dashed border-border/50 rounded-xl space-y-3">
@@ -616,7 +663,7 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
                 <div>
                   <p className="text-sm font-medium text-muted-foreground">No time entries found</p>
                   <p className="text-xs text-muted-foreground/70 mt-1">
-                    Click "Log Time" to record hours against a task
+                    No rows match your filters. Try adjusting Search criteria or click "Log Time" to add an entry.
                   </p>
                 </div>
                 <Button variant="outline" size="sm" onClick={() => setLogOpen(true)} className="gap-1.5">

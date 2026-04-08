@@ -168,7 +168,7 @@ export async function downloadTimecardsPdf(
   meta: TimecardsExportMeta,
   branding: TimecardsPdfBranding,
 ): Promise<void> {
-  const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
   const margin = PDF_MARGIN_MM;
@@ -248,23 +248,19 @@ export async function downloadTimecardsPdf(
       : [r.logDate, r.taskTitle, r.projectName, r.description, r.hours],
   );
 
-  // Explicit widths spanning `contentW`; wider task column, description reduced by the same amount
-  const TASK_EXTRA_MM = 10;
-  const wDate = 17;
-  const wMember = 24;
-  const wTask = 34 + TASK_EXTRA_MM;
-  const wProj = 28;
-  const wHrs = 13;
-  const wDescMember = Math.max(
-    40,
-    contentW - wDate - wMember - wTask - wProj - wHrs - 1,
-  );
+  // Portrait A4 (~180mm usable width): compact fixed cols, remainder for description
+  const wDate = 13;
+  const wMember = 17;
+  const wTask = 30;
+  const wProj = 21;
+  const wHrs = 10;
+  const wDescMember = Math.max(38, contentW - wDate - wMember - wTask - wProj - wHrs - 1);
 
-  const wDateS = 18;
-  const wTaskS = 36 + TASK_EXTRA_MM;
-  const wProjS = 30;
-  const wHrsS = 14;
-  const wDescSolo = Math.max(44, contentW - wDateS - wTaskS - wProjS - wHrsS - 1);
+  const wDateS = 13;
+  const wTaskS = 32;
+  const wProjS = 22;
+  const wHrsS = 10;
+  const wDescSolo = Math.max(42, contentW - wDateS - wTaskS - wProjS - wHrsS - 1);
 
   const narrow = includeUserColumn
     ? {
@@ -290,8 +286,8 @@ export async function downloadTimecardsPdf(
     tableWidth: contentW,
     styles: {
       font: "helvetica",
-      fontSize: 8.5,
-      cellPadding: 1.35,
+      fontSize: 8,
+      cellPadding: 1.2,
       overflow: "linebreak",
       textColor: [17, 24, 39],
       lineColor: [191, 219, 254],
@@ -299,7 +295,7 @@ export async function downloadTimecardsPdf(
     },
     headStyles: {
       font: "helvetica",
-      fontSize: 8.5,
+      fontSize: 8,
       fillColor: PDF_BLUE_HEADER,
       textColor: 255,
       fontStyle: "bold",

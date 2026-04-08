@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAppData } from "@/hooks/useAppData";
 import type { Project } from "@/lib/mockData";
@@ -10,6 +10,15 @@ export interface AllTask {
   projectName: string;
   status: string;
 }
+
+/** Snapshot of filters sent to the server — `null` means no search has been run yet */
+export type TimecardsAppliedFilters = {
+  filterUserId: string;
+  filterProjectId: string;
+  filterTaskId: string;
+  filterStartDate: string;
+  filterEndDate: string;
+};
 
 export function useTimecardsFiltersAndEntries(
   currentUserRole: string,
@@ -29,34 +38,45 @@ export function useTimecardsFiltersAndEntries(
   const [filterStartDate, setFilterStartDate] = useState<string>("");
   const [filterEndDate, setFilterEndDate] = useState<string>("");
 
-  const queryParams = new URLSearchParams();
-  if (isManagerOrAdmin && filterUserId !== "all") queryParams.set("userId", filterUserId);
-  if (filterProjectId !== "all") queryParams.set("projectId", filterProjectId);
-  if (!isClient && filterProjectId !== "all" && filterTaskId !== "all") {
-    queryParams.set("taskId", filterTaskId);
-  }
-  if (filterStartDate) queryParams.set("startDate", filterStartDate);
-  if (filterEndDate) queryParams.set("endDate", filterEndDate);
-  if (isClient && numericProjectId && filterProjectId === "all") {
-    queryParams.set("projectId", String(numericProjectId));
-  }
+  const [applied, setApplied] = useState<TimecardsAppliedFilters | null>(null);
+
+  const buildQueryParams = useCallback(
+    (snap: TimecardsAppliedFilters) => {
+      const qp = new URLSearchParams();
+      if (isManagerOrAdmin && snap.filterUserId !== "all") qp.set("userId", snap.filterUserId);
+      if (snap.filterProjectId !== "all") qp.set("projectId", snap.filterProjectId);
+      if (!isClient && snap.filterProjectId !== "all" && snap.filterTaskId !== "all") {
+        qp.set("taskId", snap.filterTaskId);
+      }
+      if (snap.filterStartDate) qp.set("startDate", snap.filterStartDate);
+      if (snap.filterEndDate) qp.set("endDate", snap.filterEndDate);
+      if (isClient && numericProjectId && snap.filterProjectId === "all") {
+        qp.set("projectId", String(numericProjectId));
+      }
+      return qp;
+    },
+    [isClient, isManagerOrAdmin, numericProjectId],
+  );
 
   const { data: entries = [], isLoading } = useQuery<any[]>({
     queryKey: [
       "/api/time-entries",
-      filterUserId,
-      filterProjectId,
-      filterTaskId,
-      filterStartDate,
-      filterEndDate,
+      applied?.filterUserId,
+      applied?.filterProjectId,
+      applied?.filterTaskId,
+      applied?.filterStartDate,
+      applied?.filterEndDate,
       currentUserRole,
       numericProjectId,
     ],
     queryFn: async () => {
-      const res = await fetch(`/api/time-entries?${queryParams.toString()}`, { credentials: "include" });
+      if (!applied) return [];
+      const qp = buildQueryParams(applied);
+      const res = await fetch(`/api/time-entries?${qp.toString()}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch time entries");
       return res.json();
     },
+    enabled: applied !== null,
   });
 
   const { data: allTasks = [] } = useQuery<AllTask[]>({
@@ -68,6 +88,27 @@ export function useTimecardsFiltersAndEntries(
     },
     enabled: !isClient,
   });
+
+  const commitSearch = useCallback(() => {
+    setApplied({
+      filterUserId,
+      filterProjectId,
+      filterTaskId,
+      filterStartDate,
+      filterEndDate,
+    });
+  }, [filterUserId, filterProjectId, filterTaskId, filterStartDate, filterEndDate]);
+
+  useEffect(() => {
+    if (!applied) return;
+    const matches =
+      applied.filterUserId === filterUserId &&
+      applied.filterProjectId === filterProjectId &&
+      applied.filterTaskId === filterTaskId &&
+      applied.filterStartDate === filterStartDate &&
+      applied.filterEndDate === filterEndDate;
+    if (!matches) setApplied(null);
+  }, [filterUserId, filterProjectId, filterTaskId, filterStartDate, filterEndDate, applied]);
 
   const totalHours = entries.reduce((sum: number, e: any) => sum + parseFloat(e.hours || "0"), 0);
 
@@ -147,6 +188,7 @@ export function useTimecardsFiltersAndEntries(
     setFilterTaskId("all");
     setFilterStartDate("");
     setFilterEndDate("");
+    setApplied(null);
   }
 
   return {
@@ -164,6 +206,9 @@ export function useTimecardsFiltersAndEntries(
     setFilterStartDate,
     filterEndDate,
     setFilterEndDate,
+    applied,
+    commitSearch,
+    hasLoadedEntries: applied !== null,
     entries,
     isLoading,
     allTasks,
