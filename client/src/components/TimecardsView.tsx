@@ -337,13 +337,37 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
     return rows;
   }, [entries, projectMap]);
 
+  const overallSummary = useMemo(() => {
+    const memberIds = new Set<string>();
+    for (const e of entries) {
+      const uid = String(e.userId ?? "");
+      if (uid) memberIds.add(uid);
+    }
+    return {
+      entryCount: entries.length,
+      memberCount: memberIds.size,
+      projectCount: projectSummary.length,
+    };
+  }, [entries, projectSummary.length]);
+
   const summaryDialog = (
     <Dialog open={summaryOpen} onOpenChange={setSummaryOpen}>
       <DialogContent className="sm:max-w-[900px]">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <BarChart3 className="h-5 w-5 text-primary" />
-            Summary
+          <DialogTitle className="flex items-center justify-between gap-3">
+            <span className="flex items-center gap-2">
+              <BarChart3 className="h-5 w-5 text-primary" />
+              Summary
+            </span>
+            <span className="shrink-0 rounded-lg border border-primary/20 bg-primary/5 px-3 py-1.5">
+              <span className="block text-[10px] font-medium uppercase tracking-wide text-muted-foreground text-right">Total hours</span>
+              <span className="block text-lg font-bold tabular-nums text-primary text-right">{totalHours.toFixed(1)}h</span>
+              <span className="block text-[11px] text-muted-foreground text-right">
+                {overallSummary.entryCount} {overallSummary.entryCount === 1 ? "entry" : "entries"} •{" "}
+                {overallSummary.memberCount} {overallSummary.memberCount === 1 ? "member" : "members"} •{" "}
+                {overallSummary.projectCount} {overallSummary.projectCount === 1 ? "project" : "projects"}
+              </span>
+            </span>
           </DialogTitle>
           <DialogDescription>Project-wise totals based on your current search and filters.</DialogDescription>
         </DialogHeader>
