@@ -28,9 +28,11 @@ function slugifyChannelName(raw: string): string {
 
 function setsEqual(a: Set<number>, b: Set<number>): boolean {
   if (a.size !== b.size) return false;
-  for (const x of a) {
-    if (!b.has(x)) return false;
-  }
+  let ok = true;
+  a.forEach((x) => {
+    if (!b.has(x)) ok = false;
+  });
+  if (!ok) return false;
   return true;
 }
 

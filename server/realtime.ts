@@ -56,7 +56,7 @@ export function notifyChannelMessages(channelId: number) {
   const set = channelSubscribers.get(channelId);
   if (!set?.size) return;
   const payload = JSON.stringify({ type: "channel_messages", channelId });
-  for (const ws of [...set]) {
+  set.forEach((ws) => {
     if (ws.readyState === WebSocket.OPEN) {
       try {
         ws.send(payload);
@@ -64,5 +64,5 @@ export function notifyChannelMessages(channelId: number) {
         /* ignore */
       }
     }
-  }
+  });
 }

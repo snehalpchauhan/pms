@@ -547,7 +547,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async replaceChannelMembers(channelId: number, userIds: number[]): Promise<void> {
-    const unique = [...new Set(userIds)];
+    const unique = userIds.filter((id, idx) => userIds.indexOf(id) === idx);
     await db.transaction(async (tx) => {
       await tx.delete(channelMembers).where(eq(channelMembers.channelId, channelId));
       if (unique.length > 0) {
@@ -618,7 +618,9 @@ export class DatabaseStorage implements IStorage {
       })
       .from(timeEntries)
       .innerJoin(tasks, eq(timeEntries.taskId, tasks.id))
-      .innerJoin(users, eq(timeEntries.userId, users.id));
+      .innerJoin(users, eq(timeEntries.userId, users.id))
+      // Ensure newest-first ordering (stable within day by id)
+      .orderBy(desc(timeEntries.logDate), desc(timeEntries.id));
 
     return rows.filter(row => {
       if (filters?.userId && row.userId !== filters.userId) return false;

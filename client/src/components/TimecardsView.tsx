@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, Fragment } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { useAppData } from "@/hooks/useAppData";
@@ -44,7 +44,7 @@ import {
   Search,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { format } from "date-fns";
+import { format, isToday, parseISO } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import type { ClientPermissions } from "@/App";
 import type { Project } from "@/lib/mockData";
@@ -260,6 +260,27 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
     return entries.slice(start, start + PAGE_SIZE);
   }, [entries, page]);
 
+  const groupedPaginatedEntries = useMemo(() => {
+    const groups: Array<{ logDate: string; label: string; entries: any[] }> = [];
+    const today = new Date();
+    const labelFor = (logDate: string) => {
+      const d = parseISO(logDate);
+      if (isToday(d)) return "Today";
+      // Example: Apr 17, 2026
+      return format(d, "MMM d, yyyy");
+    };
+    for (const entry of paginatedEntries) {
+      const logDate = String(entry.logDate || "");
+      const last = groups[groups.length - 1];
+      if (!last || last.logDate !== logDate) {
+        groups.push({ logDate, label: labelFor(logDate || format(today, "yyyy-MM-dd")), entries: [entry] });
+      } else {
+        last.entries.push(entry);
+      }
+    }
+    return groups;
+  }, [paginatedEntries]);
+
   useEffect(() => {
     if (page > totalPages) setPage(totalPages);
   }, [page, totalPages]);
@@ -433,27 +454,41 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
                       </tr>
                     </thead>
                     <tbody>
-                      {paginatedEntries.map((entry: any) => (
-                        <tr key={entry.id} className="border-b border-border/30 last:border-0 hover:bg-muted/20 transition-colors" data-testid={`row-client-time-entry-${entry.id}`}>
-                          <td className="px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">{entry.logDate}</td>
-                          <td className="px-4 py-3">
-                            <div className="flex items-center gap-2">
-                              <Avatar className="h-5 w-5 shrink-0">
-                                <AvatarFallback className="text-[9px]">{(entry.userName || "?")[0]}</AvatarFallback>
-                              </Avatar>
-                              <span className="text-xs whitespace-nowrap">{entry.userName}</span>
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 font-medium max-w-[220px] align-top">
-                            <span className="block whitespace-pre-wrap break-words" title={entry.taskTitle}>
-                              {entry.taskTitle}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 align-top min-w-[12rem] max-w-md">
-                            <WorkDescriptionCell description={entry.description} />
-                          </td>
-                          <td className="px-4 py-3 text-right font-semibold text-primary whitespace-nowrap align-top">{parseFloat(entry.hours).toFixed(1)}h</td>
-                        </tr>
+                      {groupedPaginatedEntries.map((group) => (
+                        <Fragment key={`group-client-${group.logDate}`}>
+                          <tr className="bg-muted/20 border-b border-border/30">
+                            <td colSpan={5} className="px-4 py-2 text-xs font-semibold text-muted-foreground">
+                              {group.label}
+                              {group.label !== "Today" ? (
+                                <span className="ml-2 font-normal text-muted-foreground/80 tabular-nums">{group.logDate}</span>
+                              ) : (
+                                <span className="ml-2 font-normal text-muted-foreground/80 tabular-nums">{group.logDate}</span>
+                              )}
+                            </td>
+                          </tr>
+                          {group.entries.map((entry: any) => (
+                            <tr key={entry.id} className="border-b border-border/30 last:border-0 hover:bg-muted/20 transition-colors" data-testid={`row-client-time-entry-${entry.id}`}>
+                              <td className="px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">{entry.logDate}</td>
+                              <td className="px-4 py-3">
+                                <div className="flex items-center gap-2">
+                                  <Avatar className="h-5 w-5 shrink-0">
+                                    <AvatarFallback className="text-[9px]">{(entry.userName || "?")[0]}</AvatarFallback>
+                                  </Avatar>
+                                  <span className="text-xs whitespace-nowrap">{entry.userName}</span>
+                                </div>
+                              </td>
+                              <td className="px-4 py-3 font-medium max-w-[220px] align-top">
+                                <span className="block whitespace-pre-wrap break-words" title={entry.taskTitle}>
+                                  {entry.taskTitle}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 align-top min-w-[12rem] max-w-md">
+                                <WorkDescriptionCell description={entry.description} />
+                              </td>
+                              <td className="px-4 py-3 text-right font-semibold text-primary whitespace-nowrap align-top">{parseFloat(entry.hours).toFixed(1)}h</td>
+                            </tr>
+                          ))}
+                        </Fragment>
                       ))}
                     </tbody>
                   </table>
@@ -689,58 +724,68 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
                       </tr>
                     </thead>
                     <tbody>
-                      {paginatedEntries.map((entry: any) => {
-                        const canDelete = isManagerOrAdmin || String(entry.userId) === String(currentUser?.id);
-                        const isPrivate = entry.clientVisible === false;
-                        return (
-                          <tr key={entry.id} className={cn("border-b border-border/30 last:border-0 hover:bg-muted/20 transition-colors group", isPrivate && "bg-muted/10")} data-testid={`row-time-entry-${entry.id}`}>
-                            <td className="px-4 py-3 text-muted-foreground text-xs whitespace-nowrap align-top">
-                              <div className="flex items-center gap-1.5">
-                                {entry.logDate}
-                                {isPrivate && (
-                                  <span className="inline-flex items-center gap-0.5 text-[10px] font-medium text-muted-foreground bg-muted border border-border/50 px-1.5 py-0.5 rounded" data-testid={`badge-private-${entry.id}`}>
-                                    <Lock className="w-2.5 h-2.5" />
-                                    private
-                                  </span>
-                                )}
-                              </div>
-                            </td>
-                            {showMemberColumn ? (
-                              <td className="px-4 py-3 align-top">
-                                <div className="flex items-center gap-2">
-                                  <Avatar className="h-5 w-5 shrink-0">
-                                    <AvatarFallback className="text-[9px]">{(entry.userName || "?")[0]}</AvatarFallback>
-                                  </Avatar>
-                                  <span className="text-xs whitespace-nowrap">{entry.userName}</span>
-                                </div>
-                              </td>
-                            ) : null}
-                            <td className="px-4 py-3 font-medium max-w-[220px] align-top">
-                              <span className="block whitespace-pre-wrap break-words" title={entry.taskTitle}>
-                                {entry.taskTitle}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3 text-xs text-muted-foreground align-top whitespace-nowrap">{projectMap[String(entry.projectId)] || `Project ${entry.projectId}`}</td>
-                            <td className="px-4 py-3 align-top min-w-[12rem] max-w-md">
-                              <WorkDescriptionCell description={entry.description} />
-                            </td>
-                            <td className="px-4 py-3 text-right font-semibold text-primary whitespace-nowrap align-top">{parseFloat(entry.hours).toFixed(1)}h</td>
-                            <td className="px-4 py-3 text-right align-top">
-                              {canDelete && (
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
-                                  onClick={() => handleDelete(entry.id)}
-                                  data-testid={`button-delete-entry-${entry.id}`}
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </Button>
-                              )}
+                      {groupedPaginatedEntries.map((group) => (
+                        <Fragment key={`group-staff-${group.logDate}`}>
+                          <tr className="bg-muted/20 border-b border-border/30">
+                            <td colSpan={showMemberColumn ? 7 : 6} className="px-4 py-2 text-xs font-semibold text-muted-foreground">
+                              {group.label}
+                              <span className="ml-2 font-normal text-muted-foreground/80 tabular-nums">{group.logDate}</span>
                             </td>
                           </tr>
-                        );
-                      })}
+                          {group.entries.map((entry: any) => {
+                            const canDelete = isManagerOrAdmin || String(entry.userId) === String(currentUser?.id);
+                            const isPrivate = entry.clientVisible === false;
+                            return (
+                              <tr key={entry.id} className={cn("border-b border-border/30 last:border-0 hover:bg-muted/20 transition-colors group", isPrivate && "bg-muted/10")} data-testid={`row-time-entry-${entry.id}`}>
+                                <td className="px-4 py-3 text-muted-foreground text-xs whitespace-nowrap align-top">
+                                  <div className="flex items-center gap-1.5">
+                                    {entry.logDate}
+                                    {isPrivate && (
+                                      <span className="inline-flex items-center gap-0.5 text-[10px] font-medium text-muted-foreground bg-muted border border-border/50 px-1.5 py-0.5 rounded" data-testid={`badge-private-${entry.id}`}>
+                                        <Lock className="w-2.5 h-2.5" />
+                                        private
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+                                {showMemberColumn ? (
+                                  <td className="px-4 py-3 align-top">
+                                    <div className="flex items-center gap-2">
+                                      <Avatar className="h-5 w-5 shrink-0">
+                                        <AvatarFallback className="text-[9px]">{(entry.userName || "?")[0]}</AvatarFallback>
+                                      </Avatar>
+                                      <span className="text-xs whitespace-nowrap">{entry.userName}</span>
+                                    </div>
+                                  </td>
+                                ) : null}
+                                <td className="px-4 py-3 font-medium max-w-[220px] align-top">
+                                  <span className="block whitespace-pre-wrap break-words" title={entry.taskTitle}>
+                                    {entry.taskTitle}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3 text-xs text-muted-foreground align-top whitespace-nowrap">{projectMap[String(entry.projectId)] || `Project ${entry.projectId}`}</td>
+                                <td className="px-4 py-3 align-top min-w-[12rem] max-w-md">
+                                  <WorkDescriptionCell description={entry.description} />
+                                </td>
+                                <td className="px-4 py-3 text-right font-semibold text-primary whitespace-nowrap align-top">{parseFloat(entry.hours).toFixed(1)}h</td>
+                                <td className="px-4 py-3 text-right align-top">
+                                  {canDelete && (
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
+                                      onClick={() => handleDelete(entry.id)}
+                                      data-testid={`button-delete-entry-${entry.id}`}
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </Button>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </Fragment>
+                      ))}
                     </tbody>
                   </table>
                 </div>

@@ -328,7 +328,7 @@ export default function TeamView({ project, currentUserRole }: TeamViewProps) {
                                 </div>
                                 <Switch
                                     checked={user.clientShowTimecards === true}
-                                    onCheckedChange={(checked) => handleClientSettingChange(user.id, { clientShowTimecards: checked })}
+                                    onCheckedChange={(checked) => handleClientSettingChange(String(user.id), { clientShowTimecards: checked })}
                                     data-testid={`switch-client-timecards-${user.id}`}
                                 />
                             </div>
@@ -339,7 +339,7 @@ export default function TeamView({ project, currentUserRole }: TeamViewProps) {
                                 </div>
                                 <Select
                                     value={user.clientTaskAccess || "feedback"}
-                                    onValueChange={(v) => handleClientSettingChange(user.id, { clientTaskAccess: v })}
+                                    onValueChange={(v) => handleClientSettingChange(String(user.id), { clientTaskAccess: v })}
                                 >
                                     <SelectTrigger className="w-[130px] h-7 text-xs" data-testid={`select-client-task-access-${user.id}`}>
                                         <SelectValue />
