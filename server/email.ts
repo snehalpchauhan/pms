@@ -1,9 +1,11 @@
 import nodemailer from "nodemailer";
 
 export type SendEmailInput = {
-  to: string;
+  /** One or more recipients (Brevo: all in one transactional send). */
+  to: string | string[];
   subject: string;
   text: string;
+  html?: string;
 };
 
 export type SendEmailResult = {
@@ -72,8 +74,26 @@ function defaultFromAddress(): { email: string; name: string } {
   return { email, name };
 }
 
+function normalizeRecipients(to: string | string[]): string[] {
+  const list = Array.isArray(to) ? to : [to];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of list) {
+    const e = String(raw).trim();
+    if (!e || seen.has(e.toLowerCase())) continue;
+    seen.add(e.toLowerCase());
+    out.push(e);
+  }
+  return out;
+}
+
 /** Primary: Brevo transactional API. Fallback: SMTP if Brevo not configured. */
 export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult> {
+  const recipients = normalizeRecipients(input.to);
+  if (recipients.length === 0) {
+    return { sent: false, reason: "No recipients" };
+  }
+
   if (brevoConfigured()) {
     const key = getBrevoApiKey()!;
     const { email, name } = defaultFromAddress();
@@ -86,9 +106,10 @@ export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult>
       },
       body: JSON.stringify({
         sender: { name, email },
-        to: [{ email: input.to.trim() }],
+        to: recipients.map((e) => ({ email: e })),
         subject: input.subject,
         textContent: input.text,
+        ...(input.html ? { htmlContent: input.html } : {}),
       }),
     });
     if (!res.ok) {
@@ -101,7 +122,7 @@ export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult>
       const body = (await res.json()) as { messageId?: string };
       if (body?.messageId && typeof body.messageId === "string") {
         brevoMessageId = body.messageId;
-        console.log("[email] Brevo accepted:", { to: input.to.trim(), brevoMessageId });
+        console.log("[email] Brevo accepted:", { to: recipients, brevoMessageId });
       }
     } catch {
       /* non-JSON success body is unexpected but still “sent” */
@@ -121,11 +142,12 @@ export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult>
   const transporter = await getTransporter();
   await transporter.sendMail({
     from,
-    to: input.to,
+    to: recipients.length === 1 ? recipients[0] : recipients,
     subject: input.subject,
     text: input.text,
+    ...(input.html ? { html: input.html } : {}),
   });
-  console.log("[email] SMTP sent:", { to: input.to.trim() });
+  console.log("[email] SMTP sent:", { to: recipients });
   return { sent: true };
 }
 

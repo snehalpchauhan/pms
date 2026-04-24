@@ -378,6 +378,8 @@ export async function registerRoutes(
     timeLogMaxHoursPerEntry: z
       .union([z.coerce.number().min(0.25).max(24), z.literal(0), z.null()])
       .optional(),
+    timecardDateDisplayFormat: z.enum(["DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD"]).optional(),
+    timecardSummaryRecipientEmails: z.array(z.string().email()).max(50).optional(),
   });
 
   app.get("/api/company-settings", requireAuth, async (_req, res) => {
@@ -400,6 +402,10 @@ export async function registerRoutes(
       timeLogMinDescriptionWords:
         row.timeLogMinDescriptionWords == null ? 10 : Number(row.timeLogMinDescriptionWords),
       timeLogMaxHoursPerEntry: companyTimeLogMaxHoursPerEntry(row.timeLogMaxHoursPerEntry),
+      timecardDateDisplayFormat: row.timecardDateDisplayFormat ?? "DD/MM/YYYY",
+      timecardSummaryRecipientEmails: Array.isArray(row.timecardSummaryRecipientEmails)
+        ? row.timecardSummaryRecipientEmails
+        : [],
     });
   });
 
@@ -426,7 +432,9 @@ export async function registerRoutes(
       body.taskMarkCompleteStatus === undefined &&
       body.taskClientReopenStatus === undefined &&
       body.timeLogMinDescriptionWords === undefined &&
-      body.timeLogMaxHoursPerEntry === undefined
+      body.timeLogMaxHoursPerEntry === undefined &&
+      body.timecardDateDisplayFormat === undefined &&
+      body.timecardSummaryRecipientEmails === undefined
     ) {
       return res.status(400).json({ message: "No changes provided" });
     }
@@ -446,6 +454,8 @@ export async function registerRoutes(
       taskClientReopenStatus?: string;
       timeLogMinDescriptionWords?: number;
       timeLogMaxHoursPerEntry?: string | null;
+      timecardDateDisplayFormat?: string;
+      timecardSummaryRecipientEmails?: string[];
     } = {};
 
     if (body.companyName !== undefined) updates.companyName = body.companyName;
@@ -503,6 +513,12 @@ export async function registerRoutes(
           ? null
           : String(body.timeLogMaxHoursPerEntry);
     }
+    if (body.timecardDateDisplayFormat !== undefined) {
+      updates.timecardDateDisplayFormat = body.timecardDateDisplayFormat;
+    }
+    if (body.timecardSummaryRecipientEmails !== undefined) {
+      updates.timecardSummaryRecipientEmails = body.timecardSummaryRecipientEmails;
+    }
 
     const updated = await storage.updateCompanySettings(updates);
     if (
@@ -531,6 +547,10 @@ export async function registerRoutes(
       timeLogMinDescriptionWords:
         updated.timeLogMinDescriptionWords == null ? 10 : Number(updated.timeLogMinDescriptionWords),
       timeLogMaxHoursPerEntry: companyTimeLogMaxHoursPerEntry(updated.timeLogMaxHoursPerEntry),
+      timecardDateDisplayFormat: updated.timecardDateDisplayFormat ?? "DD/MM/YYYY",
+      timecardSummaryRecipientEmails: Array.isArray(updated.timecardSummaryRecipientEmails)
+        ? updated.timecardSummaryRecipientEmails
+        : [],
     });
   });
 

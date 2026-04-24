@@ -128,6 +128,8 @@ export interface IStorage {
       taskClientReopenStatus: string;
       timeLogMinDescriptionWords: number;
       timeLogMaxHoursPerEntry: string | null;
+      timecardDateDisplayFormat: string;
+      timecardSummaryRecipientEmails: string[];
     }>,
   ): Promise<CompanySettings>;
 
@@ -677,6 +679,8 @@ export class DatabaseStorage implements IStorage {
       taskClientReopenStatus: string;
       timeLogMinDescriptionWords: number;
       timeLogMaxHoursPerEntry: string | null;
+      timecardDateDisplayFormat: string;
+      timecardSummaryRecipientEmails: string[];
     }>,
   ): Promise<CompanySettings> {
     const current = await this.getCompanySettings();

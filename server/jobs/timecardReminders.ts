@@ -1,7 +1,9 @@
 import { and, eq, gte, lte, sql } from "drizzle-orm";
 import { addDays, format, isWeekend, startOfWeek, subDays } from "date-fns";
+import { formatYmdForTimecardDisplay } from "@shared/timecardDateFormat";
 import { db } from "../db";
 import { sendEmail } from "../email";
+import { storage } from "../storage";
 import { timeEntries, users } from "@shared/schema";
 
 export const REQUIRED_HOURS_PER_DAY = 8;
@@ -136,41 +138,125 @@ export async function getWeeklyTimecardGaps(
   return { weekStartYmd: startYmd, endYmd, weekdays: days, rows };
 }
 
-export function formatWeeklyTimecardGapsText(data: Awaited<ReturnType<typeof getWeeklyTimecardGaps>>): string {
-  const { weekStartYmd, endYmd, rows } = data;
-  if (rows.length === 0) {
-    return `No missing or incomplete timecards (below ${REQUIRED_HOURS_PER_DAY}h) for the selected weekdays in this week (${weekStartYmd} – ${endYmd}).\n`;
+function escHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+export function buildTimecardSummaryContent(
+  data: Awaited<ReturnType<typeof getWeeklyTimecardGaps>>,
+  dateDisplayPreset: string,
+): { text: string; html: string } {
+  const wkStart = formatYmdForTimecardDisplay(data.weekStartYmd, dateDisplayPreset);
+  const wkEnd = formatYmdForTimecardDisplay(data.endYmd, dateDisplayPreset);
+  if (data.rows.length === 0) {
+    const line = `No missing or incomplete timecards (below ${REQUIRED_HOURS_PER_DAY}h) for weekdays this week (${wkStart} – ${wkEnd}).`;
+    return {
+      text: `${line}\n`,
+      html: `<!DOCTYPE html><html><body style="font-family:system-ui,sans-serif;font-size:14px"><p>${escHtml(line)}</p></body></html>`,
+    };
   }
-  const lines: string[] = [
-    `Week ${weekStartYmd} to ${endYmd} (weekdays only; ${REQUIRED_HOURS_PER_DAY}h required per day)`,
+  const textLines: string[] = [
+    `Week to date: ${wkStart} – ${wkEnd} (weekdays only; ${REQUIRED_HOURS_PER_DAY}h required per day)`,
     "",
-    "Staff with gaps:",
-    "",
+    "Member | Email | Date | Hours logged | Status",
+    "—".repeat(70),
   ];
-  for (const r of rows) {
-    lines.push(`• ${r.name} (${r.email})`);
+  const htmlRows: string[] = [];
+  for (const r of data.rows) {
     for (const g of r.gaps) {
-      if (g.hours <= 0) lines.push(`  - ${g.dateYmd}: missing (0h)`);
-      else lines.push(`  - ${g.dateYmd}: ${g.hours.toFixed(2)}h (need ${REQUIRED_HOURS_PER_DAY}h)`);
+      const d = formatYmdForTimecardDisplay(g.dateYmd, dateDisplayPreset);
+      const status = g.hours <= 0 ? "Missing (0h)" : `Below ${REQUIRED_HOURS_PER_DAY}h (logged ${g.hours.toFixed(2)}h)`;
+      textLines.push(
+        `${r.name} | ${r.email} | ${d} | ${g.hours.toFixed(2)} | ${status}`,
+      );
+      htmlRows.push(
+        `<tr><td>${escHtml(r.name)}</td><td>${escHtml(r.email)}</td><td>${escHtml(d)}</td><td style="text-align:right">${g.hours.toFixed(2)}</td><td>${escHtml(status)}</td></tr>`,
+      );
     }
-    lines.push("");
   }
-  return lines.join("\n");
+  const text = textLines.join("\n") + "\n";
+  const html = `<!DOCTYPE html>
+<html>
+<body style="font-family:system-ui,Segoe UI,sans-serif;font-size:14px;color:#111">
+  <h2 style="font-size:16px;margin:0 0 12px">PMS timecard summary</h2>
+  <p style="margin:0 0 12px">Week to date: <strong>${escHtml(wkStart)}</strong> – <strong>${escHtml(wkEnd)}</strong> (weekdays; ${REQUIRED_HOURS_PER_DAY}h required per day)</p>
+  <table border="1" cellspacing="0" cellpadding="8" style="border-collapse:collapse;max-width:100%;border-color:#ccc">
+    <thead>
+      <tr style="background:#f4f4f5">
+        <th align="left">Member</th>
+        <th align="left">Email</th>
+        <th align="left">Date</th>
+        <th align="right">Hours logged</th>
+        <th align="left">Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${htmlRows.join("\n")}
+    </tbody>
+  </table>
+  <p style="margin:16px 0 0;font-size:12px;color:#666">PMS</p>
+</body>
+</html>`;
+  return { text, html };
+}
+
+/** Sends one message to all addresses (Brevo multi-recipient). */
+export async function sendTimecardAdminSummaryEmail(
+  recipients: string[],
+  now: Date,
+  dateDisplayPreset: string,
+): Promise<{ sent: boolean; reason?: string; rowsWithGaps: number; brevoMessageId?: string }> {
+  const data = await getWeeklyTimecardGaps(now);
+  const { text, html } = buildTimecardSummaryContent(data, dateDisplayPreset);
+  const wkStart = formatYmdForTimecardDisplay(data.weekStartYmd, dateDisplayPreset);
+  const wkEnd = formatYmdForTimecardDisplay(data.endYmd, dateDisplayPreset);
+  const subject = `PMS: Timecard summary — week to date (${wkStart} – ${wkEnd})`;
+  const res = await sendEmail({ to: recipients, subject, text, html });
+  return { sent: res.sent, reason: res.reason, brevoMessageId: res.brevoMessageId, rowsWithGaps: data.rows.length };
 }
 
 /**
- * One email to an admin: everyone (employee/manager) with a weekday gap Mon–today this week, with dates and hours.
- * Used by the daily admin cron and by `server/scripts/send-weekly-timecard-report.ts` flow.
+ * Recipients: company settings (Time tracking) first; if empty, `TIME_ADMIN_SUMMARY_TO` (single) as fallback.
+ */
+export async function runScheduledTimecardAdminSummary(now = new Date()): Promise<{
+  sent: boolean;
+  reason?: string;
+  rowsWithGaps: number;
+  brevoMessageId?: string;
+  to: string[];
+}> {
+  const settings = await storage.getCompanySettings();
+  const fmt = settings.timecardDateDisplayFormat ?? "DD/MM/YYYY";
+  const raw = settings.timecardSummaryRecipientEmails;
+  const fromDb = Array.isArray(raw) ? raw.map((e) => String(e).trim()).filter(Boolean) : [];
+  const envTo = (process.env.TIME_ADMIN_SUMMARY_TO ?? "").trim();
+  const recipients = fromDb.length > 0 ? fromDb : envTo ? [envTo] : [];
+  if (recipients.length === 0) {
+    return {
+      sent: false,
+      reason: "No summary recipients: add emails under Company → Time tracking, or set TIME_ADMIN_SUMMARY_TO on the server",
+      rowsWithGaps: 0,
+      to: [],
+    };
+  }
+  const r = await sendTimecardAdminSummaryEmail(recipients, now, fmt);
+  return { ...r, to: recipients };
+}
+
+/**
+ * @deprecated use `sendTimecardAdminSummaryEmail` or `runScheduledTimecardAdminSummary` — kept for the manual script and tests.
  */
 export async function sendAdminTimecardSummaryEmail(
   to: string,
   now = new Date(),
 ): Promise<{ sent: boolean; reason?: string; rowsWithGaps: number; brevoMessageId?: string }> {
-  const data = await getWeeklyTimecardGaps(now);
-  const text = formatWeeklyTimecardGapsText(data);
-  const subject = `PMS: Daily timecard summary — week to date (${data.weekStartYmd} – ${data.endYmd})`;
-  const res = await sendEmail({ to: to.trim(), subject, text: `${text}\n` });
-  return { sent: res.sent, reason: res.reason, brevoMessageId: res.brevoMessageId, rowsWithGaps: data.rows.length };
+  const settings = await storage.getCompanySettings();
+  const fmt = settings.timecardDateDisplayFormat ?? "DD/MM/YYYY";
+  return sendTimecardAdminSummaryEmail([to.trim()], now, fmt);
 }
 
 export async function sendWeeklyMissingTimecardEmails(now = new Date()): Promise<{ emailed: number; skipped: number }> {

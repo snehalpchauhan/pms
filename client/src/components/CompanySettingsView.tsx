@@ -35,6 +35,7 @@ import {
     DEFAULT_TASK_MARK_COMPLETE_STATUS,
     type WorkflowColumnId,
 } from "@shared/workflowColumns";
+import { TIMECARD_DATE_FORMAT_PRESETS, type TimecardDateFormatPreset } from "@shared/timecardDateFormat";
 
 type UserRole = "admin" | "manager" | "employee" | "client";
 
@@ -85,6 +86,8 @@ type CompanySettingsDto = {
     timeLogMinDescriptionWords: number;
     /** null = no limit */
     timeLogMaxHoursPerEntry: number | null;
+    timecardDateDisplayFormat: TimecardDateFormatPreset;
+    timecardSummaryRecipientEmails: string[];
 };
 
 /** Mirrors server `ms365FullyConfigured` for UI (tenant, client id, secret). */
@@ -157,6 +160,8 @@ export default function CompanySettingsView() {
         useState<WorkflowColumnId>(DEFAULT_TASK_CLIENT_REOPEN_STATUS);
     const [timeLogMinDescriptionWords, setTimeLogMinDescriptionWords] = useState<number>(10);
     const [timeLogMaxHoursPerEntry, setTimeLogMaxHoursPerEntry] = useState<string>("");
+    const [timecardDateDisplayFormat, setTimecardDateDisplayFormat] = useState<TimecardDateFormatPreset>("DD/MM/YYYY");
+    const [timecardSummaryEmailsText, setTimecardSummaryEmailsText] = useState<string>("");
 
     const [projectsSubTab, setProjectsSubTab] = useState<"active" | "closed">("active");
     const [projectsSearch, setProjectsSearch] = useState("");
@@ -222,6 +227,10 @@ export default function CompanySettingsView() {
         setTimeLogMaxHoursPerEntry(
             cap == null || Number(cap) <= 0 ? "" : String(Number(cap)),
         );
+        setTimecardDateDisplayFormat(
+            (companyData.timecardDateDisplayFormat as TimecardDateFormatPreset) || "DD/MM/YYYY",
+        );
+        setTimecardSummaryEmailsText((companyData.timecardSummaryRecipientEmails ?? []).join("\n"));
     }, [companyData]);
 
     const displayLogoSrc =
@@ -243,6 +252,10 @@ export default function CompanySettingsView() {
                 }
                 timeLogMaxHoursPayload = n;
             }
+            const emailLines = timecardSummaryEmailsText
+                .split(/\r?\n/)
+                .map((l) => l.trim())
+                .filter(Boolean);
             const body: Record<string, unknown> = {
                 companyName: companyName.trim(),
                 browserTitle: browserTitle.trim(),
@@ -255,6 +268,8 @@ export default function CompanySettingsView() {
                 taskClientReopenStatus,
                 timeLogMinDescriptionWords,
                 timeLogMaxHoursPerEntry: timeLogMaxHoursPayload,
+                timecardDateDisplayFormat,
+                timecardSummaryRecipientEmails: emailLines,
             };
             if (removeStoredMs365Secret) {
                 body.ms365ClientSecret = null;
@@ -785,6 +800,48 @@ export default function CompanySettingsView() {
                                         <p className="text-xs text-muted-foreground">
                                             Leave empty for no limit. If set (e.g. 2), one entry cannot exceed that many
                                             hours—users split a full day across multiple entries.
+                                        </p>
+                                    </div>
+                                    <div className="space-y-2 max-w-md">
+                                        <Label htmlFor="timecard-date-format">Date format (timecard emails &amp; exports)</Label>
+                                        <Select
+                                            value={timecardDateDisplayFormat}
+                                            onValueChange={(v) => setTimecardDateDisplayFormat(v as TimecardDateFormatPreset)}
+                                            disabled={!isAdmin || companyLoading}
+                                        >
+                                            <SelectTrigger id="timecard-date-format" className="max-w-xs">
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {TIMECARD_DATE_FORMAT_PRESETS.map((p) => (
+                                                    <SelectItem key={p} value={p}>
+                                                        {p}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                        <p className="text-xs text-muted-foreground">
+                                            Used in scheduled summary emails and timecard report emails (e.g.{" "}
+                                            <span className="whitespace-nowrap">DD/MM/YYYY</span>).
+                                        </p>
+                                    </div>
+                                    <div className="space-y-2 max-w-lg">
+                                        <Label htmlFor="timecard-summary-emails">Timecard summary email recipients</Label>
+                                        <Textarea
+                                            id="timecard-summary-emails"
+                                            placeholder={"snehal@example.com\nops@example.com"}
+                                            rows={5}
+                                            value={timecardSummaryEmailsText}
+                                            onChange={(e) => setTimecardSummaryEmailsText(e.target.value)}
+                                            disabled={!isAdmin || companyLoading}
+                                            className="font-mono text-sm"
+                                        />
+                                        <p className="text-xs text-muted-foreground">
+                                            One email address per line. These addresses receive the daily &quot;week to
+                                            date&quot; timecard summary when{" "}
+                                            <code className="text-xs bg-muted px-1 rounded">TIME_ADMIN_SUMMARY_ENABLED=true</code>{" "}
+                                            is set on the server. If this list is empty, the server can fall back to{" "}
+                                            <code className="text-xs bg-muted px-1 rounded">TIME_ADMIN_SUMMARY_TO</code>.
                                         </p>
                                     </div>
                                 </CardContent>

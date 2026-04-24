@@ -28,6 +28,14 @@ export const companySettings = pgTable("company_settings", {
   timeLogMinDescriptionWords: integer("time_log_min_description_words").notNull().default(10),
   /** If set, a single time entry cannot exceed this many hours (split longer work across entries). */
   timeLogMaxHoursPerEntry: numeric("time_log_max_hours_per_entry", { precision: 8, scale: 2 }),
+  /**
+   * Display format for timecard-related emails (e.g. DD/MM/YYYY). See shared/timecardDateFormat.ts presets.
+   */
+  timecardDateDisplayFormat: text("timecard_date_display_format").notNull().default("DD/MM/YYYY"),
+  /**
+   * Recipients of the consolidated "admin" timecard gap summary email (JSON array of email strings).
+   */
+  timecardSummaryRecipientEmails: jsonb("timecard_summary_recipient_emails").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
 });
 
 export const users = pgTable("users", {
