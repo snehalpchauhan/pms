@@ -3,6 +3,7 @@ import { registerRoutes } from "./routes";
 import { attachChatWebSocket } from "./realtime";
 import { serveStatic } from "./static";
 import { createServer } from "http";
+import { startSchedulers } from "./scheduler";
 
 const app = express();
 app.set("trust proxy", 1);
@@ -65,6 +66,7 @@ app.use((req, res, next) => {
 (async () => {
   await registerRoutes(httpServer, app);
   attachChatWebSocket(httpServer);
+  startSchedulers();
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
     const status = err.status || err.statusCode || 500;

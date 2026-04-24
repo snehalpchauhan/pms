@@ -6,6 +6,8 @@ dist
 !.env.example
 .local
 scripts/deploy.local.env
+# Local API keys (never commit)
+client/KEYS
 .DS_Store
 server/public
 vite.config.ts.*
