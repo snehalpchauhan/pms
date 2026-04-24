@@ -6,6 +6,13 @@ export type SendEmailInput = {
   text: string;
 };
 
+export type SendEmailResult = {
+  sent: boolean;
+  reason?: string;
+  /** Present when Brevo accepted the send; use with Brevo dashboard or `brevo-transactional-events` script. */
+  brevoMessageId?: string;
+};
+
 function env(name: string): string | undefined {
   const v = process.env[name];
   return v && v.trim() ? v.trim() : undefined;
@@ -66,7 +73,7 @@ function defaultFromAddress(): { email: string; name: string } {
 }
 
 /** Primary: Brevo transactional API. Fallback: SMTP if Brevo not configured. */
-export async function sendEmail(input: SendEmailInput): Promise<{ sent: boolean; reason?: string }> {
+export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult> {
   if (brevoConfigured()) {
     const key = getBrevoApiKey()!;
     const { email, name } = defaultFromAddress();
@@ -89,7 +96,17 @@ export async function sendEmail(input: SendEmailInput): Promise<{ sent: boolean;
       console.error("[email] Brevo API error:", res.status, errText?.slice(0, 500));
       return { sent: false, reason: `Brevo send failed (HTTP ${res.status})` };
     }
-    return { sent: true };
+    let brevoMessageId: string | undefined;
+    try {
+      const body = (await res.json()) as { messageId?: string };
+      if (body?.messageId && typeof body.messageId === "string") {
+        brevoMessageId = body.messageId;
+        console.log("[email] Brevo accepted:", { to: input.to.trim(), brevoMessageId });
+      }
+    } catch {
+      /* non-JSON success body is unexpected but still “sent” */
+    }
+    return { sent: true, brevoMessageId };
   }
 
   if (!smtpConfigured() || !env("SMTP_HOST")) {
@@ -108,5 +125,33 @@ export async function sendEmail(input: SendEmailInput): Promise<{ sent: boolean;
     subject: input.subject,
     text: input.text,
   });
+  console.log("[email] SMTP sent:", { to: input.to.trim() });
   return { sent: true };
+}
+
+const BREVO_EVENTS_URL = "https://api.brevo.com/v3/smtp/statistics/events";
+
+/**
+ * Look up recent transactional events in Brevo (optional `messageId` filter when supported).
+ * Requires BREVO_API_KEY. Useful to confirm delivery vs. bounce after a send.
+ */
+export async function fetchBrevoTransactionalEvents(params: {
+  messageId?: string;
+  email?: string;
+  limit?: number;
+}): Promise<unknown> {
+  const key = getBrevoApiKey();
+  if (!key) throw new Error("BREVO_API_KEY is not set");
+  const sp = new URLSearchParams();
+  sp.set("limit", String(params.limit ?? 20));
+  if (params.messageId) sp.set("messageId", params.messageId);
+  if (params.email) sp.set("email", params.email);
+  const res = await fetch(`${BREVO_EVENTS_URL}?${sp.toString()}`, {
+    headers: { accept: "application/json", "api-key": key },
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`Brevo events HTTP ${res.status}: ${text.slice(0, 400)}`);
+  }
+  return JSON.parse(text) as unknown;
 }

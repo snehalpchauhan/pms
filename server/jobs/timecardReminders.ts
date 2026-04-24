@@ -158,6 +158,21 @@ export function formatWeeklyTimecardGapsText(data: Awaited<ReturnType<typeof get
   return lines.join("\n");
 }
 
+/**
+ * One email to an admin: everyone (employee/manager) with a weekday gap Mon–today this week, with dates and hours.
+ * Used by the daily admin cron and by `server/scripts/send-weekly-timecard-report.ts` flow.
+ */
+export async function sendAdminTimecardSummaryEmail(
+  to: string,
+  now = new Date(),
+): Promise<{ sent: boolean; reason?: string; rowsWithGaps: number; brevoMessageId?: string }> {
+  const data = await getWeeklyTimecardGaps(now);
+  const text = formatWeeklyTimecardGapsText(data);
+  const subject = `PMS: Daily timecard summary — week to date (${data.weekStartYmd} – ${data.endYmd})`;
+  const res = await sendEmail({ to: to.trim(), subject, text: `${text}\n` });
+  return { sent: res.sent, reason: res.reason, brevoMessageId: res.brevoMessageId, rowsWithGaps: data.rows.length };
+}
+
 export async function sendWeeklyMissingTimecardEmails(now = new Date()): Promise<{ emailed: number; skipped: number }> {
   // Only meaningful on Fridays; if called other days, still computes "this week so far".
   const weekStart = startOfWeek(now, { weekStartsOn: 1 }); // Monday
