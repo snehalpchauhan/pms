@@ -4,7 +4,7 @@ import { db } from "../db";
 import { sendEmail } from "../email";
 import { timeEntries, users } from "@shared/schema";
 
-const REQUIRED_HOURS_PER_DAY = 8;
+export const REQUIRED_HOURS_PER_DAY = 8;
 
 function toYmd(d: Date): string {
   return format(d, "yyyy-MM-dd");
@@ -102,6 +102,60 @@ export async function sendDailyMissingTimecardEmails(now = new Date()): Promise<
   }
 
   return { emailed, skipped };
+}
+
+/** All employee/manager staff with gaps (< 8h) on at least one weekday Mon–end of this week, with per-date detail. */
+export async function getWeeklyTimecardGaps(
+  now = new Date(),
+): Promise<{
+  weekStartYmd: string;
+  endYmd: string;
+  weekdays: string[];
+  rows: { name: string; email: string; gaps: { dateYmd: string; hours: number }[] }[];
+}> {
+  const weekStart = startOfWeek(now, { weekStartsOn: 1 });
+  const startYmd = toYmd(weekStart);
+  const endYmd = toYmd(now);
+  const staff = await getStaffWithEmail();
+  const totals = await totalsByUserByDate(startYmd, endYmd);
+  const days: string[] = [];
+  for (let d = weekStart; toYmd(d) <= endYmd; d = addDays(d, 1)) {
+    if (!isWeekend(d)) days.push(toYmd(d));
+  }
+  const rows: { name: string; email: string; gaps: { dateYmd: string; hours: number }[] }[] = [];
+  for (const u of staff) {
+    const byDate = totals.get(u.id) ?? new Map<string, number>();
+    const gaps: { dateYmd: string; hours: number }[] = [];
+    for (const day of days) {
+      const h = byDate.get(day) ?? 0;
+      if (h < REQUIRED_HOURS_PER_DAY) gaps.push({ dateYmd: day, hours: h });
+    }
+    if (gaps.length === 0) continue;
+    rows.push({ name: u.name, email: u.email!.trim(), gaps });
+  }
+  return { weekStartYmd: startYmd, endYmd, weekdays: days, rows };
+}
+
+export function formatWeeklyTimecardGapsText(data: Awaited<ReturnType<typeof getWeeklyTimecardGaps>>): string {
+  const { weekStartYmd, endYmd, rows } = data;
+  if (rows.length === 0) {
+    return `No missing or incomplete timecards (below ${REQUIRED_HOURS_PER_DAY}h) for the selected weekdays in this week (${weekStartYmd} – ${endYmd}).\n`;
+  }
+  const lines: string[] = [
+    `Week ${weekStartYmd} to ${endYmd} (weekdays only; ${REQUIRED_HOURS_PER_DAY}h required per day)`,
+    "",
+    "Staff with gaps:",
+    "",
+  ];
+  for (const r of rows) {
+    lines.push(`• ${r.name} (${r.email})`);
+    for (const g of r.gaps) {
+      if (g.hours <= 0) lines.push(`  - ${g.dateYmd}: missing (0h)`);
+      else lines.push(`  - ${g.dateYmd}: ${g.hours.toFixed(2)}h (need ${REQUIRED_HOURS_PER_DAY}h)`);
+    }
+    lines.push("");
+  }
+  return lines.join("\n");
 }
 
 export async function sendWeeklyMissingTimecardEmails(now = new Date()): Promise<{ emailed: number; skipped: number }> {
