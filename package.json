@@ -11,6 +11,8 @@
     "check": "tsc",
     "db:push": "drizzle-kit push",
     "timecard:weekly-report": "tsx server/scripts/send-weekly-timecard-report.ts",
+    "timecard:test-all-emails": "tsx server/scripts/test-all-timecard-emails.ts",
+    "timecard:impersonate-digest": "tsx server/scripts/send-employee-digest-impersonate.ts",
     "brevo:events": "tsx server/scripts/brevo-transactional-events.ts"
   },
   "dependencies": {

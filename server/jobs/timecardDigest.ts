@@ -26,7 +26,7 @@ function toYmd(d: Date): string {
   return format(d, "yyyy-MM-dd");
 }
 
-function previousBusinessDay(from: Date): Date {
+export function previousBusinessDay(from: Date): Date {
   let d = subDays(from, 1);
   while (isWeekend(d)) d = subDays(d, 1);
   return d;
@@ -75,6 +75,31 @@ function hoursMissing(logged: number): number {
   return Math.max(0, REQUIRED_HOURS_PER_DAY - logged);
 }
 
+/** Plain + HTML copy for the employee “daily missed” notice (no “At a glance”). */
+export function buildEmployeeDailyMissComplianceAddon(p: {
+  dateDisplay: string;
+  loggedHours: number;
+  missingHours: number;
+}): { text: string; html: string } {
+  const { dateDisplay, loggedHours, missingHours } = p;
+  const safeDate = escHtml(dateDisplay);
+  const text = [
+    `You have an incomplete timecard for ${dateDisplay}.`,
+    `Logged: ${loggedHours.toFixed(2)}h — required: ${REQUIRED_HOURS_PER_DAY}h per weekday (short by ${missingHours.toFixed(2)}h).`,
+    "",
+    "If you were absent or on approved leave for all or part of that day, please contact HR as soon as possible so your attendance and leave can be recorded correctly.",
+    "",
+    "If you worked that day, please submit or update your timecard in PMS immediately. Accurate, timely timecards are required for payroll and compliance.",
+  ].join("\n");
+
+  const html = `<div style="margin:0 0 16px;padding:14px 16px;background:#fffbeb;border:1px solid #fde68a;border-radius:10px;font-size:14px;line-height:1.55;color:#374151">
+  <p style="margin:0 0 10px"><strong>Action required:</strong> Your timecard for <strong>${safeDate}</strong> is below the required <strong>${REQUIRED_HOURS_PER_DAY}h</strong> for that weekday. You have logged <strong>${loggedHours.toFixed(2)}h</strong> (short by <strong>${missingHours.toFixed(2)}h</strong>).</p>
+  <p style="margin:0 0 10px">If you were <strong>absent</strong> or on <strong>approved leave</strong> for all or part of that day, please contact <strong>HR</strong> promptly so your attendance can be updated.</p>
+  <p style="margin:0">If you <strong>worked</strong> that day, please <strong>submit or correct your timecard</strong> in PMS as soon as possible. Timely, accurate timekeeping is required for payroll and compliance.</p>
+</div>`;
+  return { text, html };
+}
+
 /** Weekday YMD keys from start through end (inclusive), skipping Sat/Sun. */
 function weekdayKeysBetween(startYmd: string, endYmd: string): string[] {
   const start = parseISO(startYmd);
@@ -116,8 +141,22 @@ export function buildDigestEmailContent(opts: {
   heading: string;
   subheading: string;
   listMode: DigestListMode;
+  /** When false, omits the “At a glance” box and overview counts (e.g. employee daily missed). Default true. */
+  showAtAGlance?: boolean;
+  /** Extra body copy (plain + HTML) inserted after the subheading; HTML is trusted (caller must escape user data). */
+  complianceAddon?: { text: string; html: string };
 }): { text: string; html: string } {
-  const { rows, dateDisplayPreset, periodStartYmd, periodEndYmd, heading, subheading, listMode } = opts;
+  const {
+    rows,
+    dateDisplayPreset,
+    periodStartYmd,
+    periodEndYmd,
+    heading,
+    subheading,
+    listMode,
+    showAtAGlance = true,
+    complianceAddon,
+  } = opts;
   const pStart = formatYmdForTimecardDisplay(periodStartYmd, dateDisplayPreset);
   const pEnd = formatYmdForTimecardDisplay(periodEndYmd, dateDisplayPreset);
 
@@ -147,23 +186,26 @@ export function buildDigestEmailContent(opts: {
     if (personGap) peopleWithGap++;
   }
 
-  const textLines: string[] = [
-    `${heading}`,
-    `${subheading}`,
-    `Range (weekdays): ${pStart} – ${pEnd} · ${REQUIRED_HOURS_PER_DAY}h required per weekday`,
-    "",
-  ];
-
-  if (listMode === "all-staff") {
+  const textLines: string[] = [`${heading}`, `${subheading}`, ""];
+  if (complianceAddon?.text) {
+    textLines.push(complianceAddon.text.trim(), "");
+  }
+  if (showAtAGlance) {
     textLines.push(
-      `Overview: ${rows.length} employee(s) · ${peopleWithGap} with at least one short day · ${totalGapDays} gap-day(s) · ${totalHoursMissing.toFixed(2)}h missing in total`,
+      `Range (weekdays): ${pStart} – ${pEnd} · ${REQUIRED_HOURS_PER_DAY}h required per weekday`,
       "",
     );
-  } else {
-    textLines.push(
-      `Overview: ${rows.length} employee(s) with gaps · ${totalGapDays} gap-day(s) · ${totalHoursMissing.toFixed(2)}h missing in total`,
-      "",
-    );
+    if (listMode === "all-staff") {
+      textLines.push(
+        `Overview: ${rows.length} employee(s) · ${peopleWithGap} with at least one short day · ${totalGapDays} gap-day(s) · ${totalHoursMissing.toFixed(2)}h missing in total`,
+        "",
+      );
+    } else {
+      textLines.push(
+        `Overview: ${rows.length} employee(s) with gaps · ${totalGapDays} gap-day(s) · ${totalHoursMissing.toFixed(2)}h missing in total`,
+        "",
+      );
+    }
   }
 
   const htmlBlocks: string[] = [];
@@ -257,20 +299,26 @@ ${innerRows}
         <li><strong>${totalGapDays}</strong> gap-day(s) total</li>
         <li><strong>${totalHoursMissing.toFixed(2)}h</strong> missing in total</li>`;
 
+  const glanceBlock = showAtAGlance
+    ? `<p style="margin:0 0 16px;font-size:13px;color:#71717a"><strong>${escHtml(pStart)}</strong> – <strong>${escHtml(pEnd)}</strong> · ${REQUIRED_HOURS_PER_DAY}h per weekday · <span style="color:#166534">green</span> = OK</p>
+    <div style="background:#fff;border:1px solid #e4e4e7;border-radius:10px;padding:12px 14px;margin-bottom:20px">
+      <div style="font-size:13px;font-weight:600;color:#3f3f46">At a glance</div>
+      <ul style="margin:8px 0 0;padding-left:18px;color:#52525b;font-size:13px;line-height:1.5">${glance}</ul>
+    </div>`
+    : `<p style="margin:0 0 12px;font-size:13px;color:#71717a"><strong>Date:</strong> ${escHtml(pStart)}${pStart === pEnd ? "" : ` – ${escHtml(pEnd)}`}</p>`;
+
+  const addonHtml = complianceAddon?.html ? `${complianceAddon.html}\n    ` : "";
+
   const text = textLines.join("\n") + "\n";
   const html = `<!DOCTYPE html>
 <html>
 <body style="margin:0;padding:16px;font-family:system-ui,Segoe UI,sans-serif;font-size:14px;color:#18181b;background:#fafafa">
   <div style="max-width:680px;margin:0 auto">
     <h1 style="font-size:18px;margin:0 0 6px;font-weight:700">${escHtml(heading)}</h1>
-    <p style="margin:0 0 4px;color:#52525b">${escHtml(subheading)}</p>
-    <p style="margin:0 0 16px;font-size:13px;color:#71717a"><strong>${escHtml(pStart)}</strong> – <strong>${escHtml(pEnd)}</strong> · ${REQUIRED_HOURS_PER_DAY}h per weekday · <span style="color:#166534">green</span> = OK</p>
-    <div style="background:#fff;border:1px solid #e4e4e7;border-radius:10px;padding:12px 14px;margin-bottom:20px">
-      <div style="font-size:13px;font-weight:600;color:#3f3f46">At a glance</div>
-      <ul style="margin:8px 0 0;padding-left:18px;color:#52525b;font-size:13px;line-height:1.5">${glance}</ul>
-    </div>
+    <p style="margin:0 0 8px;color:#52525b;line-height:1.45">${escHtml(subheading)}</p>
+    ${addonHtml}${glanceBlock}
     ${htmlBlocks.join("\n")}
-    <p style="margin:20px 0 0;font-size:12px;color:#a1a1aa">PMS · automated digest</p>
+    <p style="margin:20px 0 0;font-size:12px;color:#a1a1aa">PMS · timecard notification</p>
   </div>
 </body>
 </html>`;
@@ -464,14 +512,24 @@ export async function sendEmployeeDailyMissedHtmlDigests(now = new Date()): Prom
   let emailed = 0;
   let skipped = 0;
   for (const r of rows) {
+    const day = r.days[0];
+    const loggedHours = day ? day.hours : 0;
+    const missingHours = hoursMissing(loggedHours);
+    const complianceAddon = buildEmployeeDailyMissComplianceAddon({
+      dateDisplay: pDisp,
+      loggedHours,
+      missingHours,
+    });
     const { text, html } = buildDigestEmailContent({
       rows: [r],
       dateDisplayPreset: fmt,
       periodStartYmd: ymd,
       periodEndYmd: ymd,
-      heading: "PMS: Timecard needs attention",
-      subheading: `Your hours for ${pDisp} are below ${REQUIRED_HOURS_PER_DAY}h`,
+      heading: "Timecard update required",
+      subheading: "Your timecard for the date below is incomplete. Please follow the steps that apply to you.",
       listMode: "gaps-only",
+      showAtAGlance: false,
+      complianceAddon,
     });
     const subject = `PMS: Incomplete timecard — ${pDisp}`;
     try {
