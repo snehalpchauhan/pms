@@ -262,10 +262,31 @@ export function VoiceLinkProvider({ children }: { children: ReactNode }) {
       }
       setVlBusy(media);
       try {
-        const res = await apiRequest("POST", "/api/chat/voice-link", { channelId, media });
-        const data = (await res.json()) as { url?: string; message?: string };
+        // Do not use apiRequest() here: it throws on any !res.ok, which hid real
+        // server messages (502 from VoiceLink, 503 missing key, etc.) behind "Network error".
+        const res = await fetch("/api/chat/voice-link", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ channelId, media }),
+        });
+        let data: { url?: string; message?: string } = {};
+        const raw = await res.text();
+        if (raw) {
+          try {
+            data = JSON.parse(raw) as { url?: string; message?: string };
+          } catch {
+            data = { message: raw.slice(0, 200) };
+          }
+        }
         if (!res.ok || !data.url) {
-          toast({ title: "VoiceLink error", description: data.message ?? "Could not start call.", variant: "destructive" });
+          toast({
+            title: "VoiceLink error",
+            description:
+              data.message ??
+              (res.status ? `Request failed (${res.status}).` : "Could not start call."),
+            variant: "destructive",
+          });
           return;
         }
         setIncomingCall(null);

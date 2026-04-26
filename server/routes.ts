@@ -2404,7 +2404,9 @@ export async function registerRoutes(
       });
     }
 
-    // Stable room name: pms-p<projectId>-c<channelId>
+    // VoiceLink room key: unique per PMS channel (channel PK is global). Different
+    // projects/channels → different strings → different VoiceLink rooms. Same
+    // channel → same string → same room so all participants mesh together.
     const roomName = channel.projectId != null
       ? `pms-p${channel.projectId}-c${channelId}`
       : `pms-c${channelId}`;
