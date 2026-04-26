@@ -66,3 +66,15 @@ export function notifyChannelMessages(channelId: number) {
     }
   });
 }
+
+/** Broadcast an incoming-call ring to everyone subscribed to this channel. */
+export function notifyChannelCall(channelId: number, callerName: string, media: "audio" | "video") {
+  const set = channelSubscribers.get(channelId);
+  if (!set?.size) return;
+  const payload = JSON.stringify({ type: "incoming_call", channelId, callerName, media });
+  set.forEach((ws) => {
+    if (ws.readyState === WebSocket.OPEN) {
+      try { ws.send(payload); } catch { /* ignore */ }
+    }
+  });
+}

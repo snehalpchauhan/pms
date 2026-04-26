@@ -4,7 +4,7 @@ import crypto from "node:crypto";
 import fs from "fs";
 import path from "path";
 import { z } from "zod";
-import { notifyChannelMessages } from "./realtime";
+import { notifyChannelMessages, notifyChannelCall } from "./realtime";
 import { storage } from "./storage";
 import { setupAuth, requireAuth } from "./auth";
 import {
@@ -2393,6 +2393,10 @@ export async function registerRoutes(
 
       // Build the public joinUrl ourselves (VoiceLink App.js reads ?sessionToken= and auto-joins)
       const joinUrl = `${VL_HOST}?sessionToken=${encodeURIComponent(data.sessionToken)}`;
+
+      // Ring everyone else in the channel (they'll get their own token when they click Join)
+      notifyChannelCall(channelId, participantName, media);
+
       return res.json({ url: joinUrl });
 
     } catch (e) {
