@@ -14,6 +14,7 @@
  *   monthly — previous calendar month
  *   missed  — previous business day, only if that person was under 8h (otherwise exits with message)
  */
+import "./bootstrap-env-from-cwd";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { sql } from "drizzle-orm";
