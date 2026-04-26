@@ -4,6 +4,9 @@ import type { Server } from "http";
 const wss = new WebSocketServer({ noServer: true });
 const channelSubscribers = new Map<number, Set<WebSocket>>();
 
+/** userId → set of open WebSocket connections for that user (global ring delivery). */
+const userSubscribers = new Map<number, Set<WebSocket>>();
+
 function subscribeToChannel(channelId: number, ws: WebSocket) {
   let set = channelSubscribers.get(channelId);
   if (!set) {
@@ -19,12 +22,36 @@ function subscribeToChannel(channelId: number, ws: WebSocket) {
   ws.once("error", cleanup);
 }
 
+function subscribeUser(userId: number, ws: WebSocket) {
+  let set = userSubscribers.get(userId);
+  if (!set) {
+    set = new Set();
+    userSubscribers.set(userId, set);
+  }
+  set.add(ws);
+  const cleanup = () => {
+    set!.delete(ws);
+    if (set!.size === 0) userSubscribers.delete(userId);
+  };
+  ws.once("close", cleanup);
+  ws.once("error", cleanup);
+}
+
+function sendToWs(ws: WebSocket, payload: string) {
+  if (ws.readyState === WebSocket.OPEN) {
+    try { ws.send(payload); } catch { /* ignore */ }
+  }
+}
+
 wss.on("connection", (ws) => {
   ws.on("message", (raw) => {
     try {
-      const msg = JSON.parse(String(raw)) as { subscribe?: number };
+      const msg = JSON.parse(String(raw)) as { subscribe?: number; subscribeUser?: number };
       if (typeof msg.subscribe === "number" && Number.isInteger(msg.subscribe) && msg.subscribe > 0) {
         subscribeToChannel(msg.subscribe, ws);
+      }
+      if (typeof msg.subscribeUser === "number" && Number.isInteger(msg.subscribeUser) && msg.subscribeUser > 0) {
+        subscribeUser(msg.subscribeUser, ws);
       }
     } catch {
       /* ignore malformed */
@@ -56,25 +83,35 @@ export function notifyChannelMessages(channelId: number) {
   const set = channelSubscribers.get(channelId);
   if (!set?.size) return;
   const payload = JSON.stringify({ type: "channel_messages", channelId });
-  set.forEach((ws) => {
-    if (ws.readyState === WebSocket.OPEN) {
-      try {
-        ws.send(payload);
-      } catch {
-        /* ignore */
-      }
-    }
-  });
+  set.forEach((ws) => sendToWs(ws, payload));
 }
 
-/** Broadcast an incoming-call ring to everyone subscribed to this channel. */
+/**
+ * Ring specific users directly (by userId) — works regardless of which view/
+ * channel they currently have open.  callerUserId is excluded so the caller
+ * doesn't ring themselves.
+ */
+export function notifyUsersCall(
+  memberUserIds: number[],
+  callerUserId: number,
+  channelId: number,
+  channelName: string,
+  callerName: string,
+  media: "audio" | "video",
+) {
+  const payload = JSON.stringify({ type: "incoming_call", channelId, channelName, callerName, media });
+  for (const uid of memberUserIds) {
+    if (uid === callerUserId) continue; // don't ring the caller
+    const sockets = userSubscribers.get(uid);
+    if (!sockets?.size) continue;
+    sockets.forEach((ws) => sendToWs(ws, payload));
+  }
+}
+
+/** @deprecated Use notifyUsersCall for call events. Kept for channel-level fallback. */
 export function notifyChannelCall(channelId: number, callerName: string, media: "audio" | "video") {
   const set = channelSubscribers.get(channelId);
   if (!set?.size) return;
   const payload = JSON.stringify({ type: "incoming_call", channelId, callerName, media });
-  set.forEach((ws) => {
-    if (ws.readyState === WebSocket.OPEN) {
-      try { ws.send(payload); } catch { /* ignore */ }
-    }
-  });
+  set.forEach((ws) => sendToWs(ws, payload));
 }

@@ -4,7 +4,7 @@ import crypto from "node:crypto";
 import fs from "fs";
 import path from "path";
 import { z } from "zod";
-import { notifyChannelMessages, notifyChannelCall } from "./realtime";
+import { notifyChannelMessages, notifyUsersCall } from "./realtime";
 import { storage } from "./storage";
 import { setupAuth, requireAuth } from "./auth";
 import {
@@ -2394,8 +2394,15 @@ export async function registerRoutes(
       // Build the public joinUrl ourselves (VoiceLink App.js reads ?sessionToken= and auto-joins)
       const joinUrl = `${VL_HOST}?sessionToken=${encodeURIComponent(data.sessionToken)}`;
 
-      // Ring everyone else in the channel (they'll get their own token when they click Join)
-      notifyChannelCall(channelId, participantName, media);
+      // Ring all channel members directly by userId (works regardless of which view they have open)
+      const channelMembers = await storage.getChannelMembers(channelId);
+      // For public channels, fall back to project members if channel has no explicit members
+      let memberIds = channelMembers.map((m) => m.id);
+      if (memberIds.length === 0 && channel.projectId != null) {
+        const projectMembers = await storage.getProjectMembers(channel.projectId);
+        memberIds = projectMembers.map((m) => m.id);
+      }
+      notifyUsersCall(memberIds, currentUser.id, channelId, channel.name ?? "", participantName, media);
 
       return res.json({ url: joinUrl });
 
