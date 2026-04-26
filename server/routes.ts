@@ -27,12 +27,16 @@ import type { Project } from "@shared/schema";
 
 /**
  * VoiceLink integration — session-token third-party API.
- *  - Internal API: http://127.0.0.1:5001  (same server, VoiceLink runs on port 5001)
- *  - Public client: https://voicelink.vnnovate.net
- *  - Env: VOICELINK_API_KEY  (set in /var/www/pms/.env on the server)
+ *
+ *  - VOICELINK_CLIENT_URL — Origin used in the join URL returned to the browser (iframe).
+ *    Default: https://voicelink.vnnovate.net
+ *  - VOICELINK_INTERNAL_API — Base URL PMS uses **on the server** to POST /api/sessions/token.
+ *    Default: same as VOICELINK_CLIENT_URL (works when VoiceLink is only reachable via the public host).
+ *    Set explicitly to http://127.0.0.1:5001 (or similar) only when VoiceLink listens on loopback on this machine.
+ *  - VOICELINK_API_KEY — required; must match an API key in VoiceLink.
  */
-const VL_API  = (process.env.VOICELINK_INTERNAL_API  || "http://127.0.0.1:5001").replace(/\/$/, "");
 const VL_HOST = (process.env.VOICELINK_CLIENT_URL || "https://voicelink.vnnovate.net").replace(/\/$/, "");
+const VL_API = (process.env.VOICELINK_INTERNAL_API || VL_HOST).replace(/\/$/, "");
 
 /** Closed projects are hidden from normal API use; admins manage them via /api/admin/projects. */
 async function requireOpenProjectForApi(res: express.Response, projectId: number): Promise<Project | null> {
@@ -2465,8 +2469,13 @@ export async function registerRoutes(
       return res.json({ url: joinUrl });
 
     } catch (e) {
-      console.error("[voice-link] fetch to VoiceLink failed:", e);
-      return res.status(502).json({ message: "Could not reach VoiceLink service on this server." });
+      console.error("[voice-link] fetch to VoiceLink failed:", VL_API, e);
+      return res.status(502).json({
+        message:
+          "Could not reach VoiceLink from this server (session token request failed). " +
+          "VOICELINK_CLIENT_URL is only for the iframe; ensure VOICELINK_INTERNAL_API points at your VoiceLink API " +
+          `(currently ${VL_API}). Same origin as production (e.g. https://voicelink.vnnovate.net) is fine if the server can reach it.`,
+      });
     }
   });
 
