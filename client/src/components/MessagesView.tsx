@@ -1,6 +1,6 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { Hash, Phone, Video, Info, Lock, Loader2 } from "lucide-react";
+import { Hash, Phone, Video, Info, Lock } from "lucide-react";
 import { Message, Project } from "@/lib/mockData";
 import { useEffect, useCallback, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
@@ -33,7 +33,6 @@ export default function MessagesView({ project, channelId, onChannelDeleted }: M
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [editChannelOpen, setEditChannelOpen] = useState(false);
-  const [voiceLinkBusy, setVoiceLinkBusy] = useState<"audio" | "video" | null>(null);
   const canManageChannel = user?.role === "admin" || user?.role === "manager";
   const activeChannelId = channelId || channels.find((c) => c.projectId === project.id && c.type !== "direct")?.id;
   const activeChannel = channels.find((c) => c.id === activeChannelId);
@@ -172,44 +171,6 @@ export default function MessagesView({ project, channelId, onChannelDeleted }: M
     [numericChannelId, queryClient, toast, user],
   );
 
-  const openVoiceLink = useCallback(
-    async (media: "audio" | "video") => {
-      if (numericChannelId == null || Number.isNaN(numericChannelId)) {
-        toast({ title: "Channel not ready", description: "Wait for the conversation to load, then try again.", variant: "destructive" });
-        return;
-      }
-      setVoiceLinkBusy(media);
-      try {
-        const res = await apiRequest("POST", "/api/chat/voice-link", { channelId: numericChannelId, media });
-        const j = (await res.json()) as { url?: string; message?: string };
-        if (!j.url) {
-          throw new Error(j.message || "No join URL returned");
-        }
-        window.open(j.url, "_blank", "noopener,noreferrer");
-      } catch (e) {
-        const raw = e instanceof Error ? e.message : String(e);
-        let detail = raw;
-        try {
-          const brace = raw.indexOf("{");
-          if (brace >= 0) {
-            const parsed = JSON.parse(raw.slice(brace)) as { message?: string };
-            if (parsed.message) detail = parsed.message;
-          }
-        } catch {
-          /* keep raw */
-        }
-        toast({
-          title: "Call link unavailable",
-          description: detail,
-          variant: "destructive",
-        });
-      } finally {
-        setVoiceLinkBusy(null);
-      }
-    },
-    [numericChannelId, toast],
-  );
-
   if (!activeChannel && !isDM) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground h-full bg-background/50">
@@ -269,31 +230,13 @@ export default function MessagesView({ project, channelId, onChannelDeleted }: M
           )}
         </div>
         <div className="flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 text-muted-foreground"
-            type="button"
-            title="Voice call (opens VoiceLink in a new tab — chat stays here)"
-            disabled={numericChannelId == null || voiceLinkBusy !== null}
-            onClick={() => void openVoiceLink("audio")}
-            data-testid="button-chat-voice-call"
-          >
-            {voiceLinkBusy === "audio" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Phone className="w-4 h-4" />}
+          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" type="button">
+            <Phone className="w-4 h-4" />
           </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 text-muted-foreground"
-            type="button"
-            title="Video call (opens VoiceLink in a new tab — chat stays here)"
-            disabled={numericChannelId == null || voiceLinkBusy !== null}
-            onClick={() => void openVoiceLink("video")}
-            data-testid="button-chat-video-call"
-          >
-            {voiceLinkBusy === "video" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Video className="w-4 h-4" />}
+          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" type="button">
+            <Video className="w-4 h-4" />
           </Button>
-          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" type="button" title="Channel info">
+          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" type="button">
             <Info className="w-4 h-4" />
           </Button>
         </div>
