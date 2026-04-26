@@ -1,12 +1,14 @@
 /**
- * One-off / SSH: email a summary of staff (employee + manager) who are below 8h
- * on any weekday from Monday of this week through today.
+ * One-off / SSH: same **admin timecard summary** email as the scheduler
+ * (`TIME_ADMIN_SUMMARY_ENABLED` cron → `runScheduledTimecardAdminSummary`).
+ *
+ * With no address: calls `runScheduledTimecardAdminSummary` (recipients from Company → Time tracking,
+ * or `TIME_ADMIN_SUMMARY_TO`). With an address: same email body/send path, but forces that inbox
+ * (for testing without changing settings).
  *
  * Usage (from repo root, with .env or env):
  *   npx tsx server/scripts/send-weekly-timecard-report.ts
  *   npx tsx server/scripts/send-weekly-timecard-report.ts you@example.com
- *
- * If you omit the address, the script uses Company settings → Time tracking → summary recipient list (same as schedule).
  *
  * On server:
  *   cd /var/www/pms && set -a && source .env && set +a && npx tsx server/scripts/send-weekly-timecard-report.ts
@@ -36,29 +38,37 @@ async function main(): Promise<void> {
     console.error("error: DATABASE_URL is not set (source .env or run from /var/www/pms with .env)");
     process.exit(1);
   }
-  const { sendTimecardAdminSummaryEmail } = await import("../jobs/timecardReminders");
+  const { runScheduledTimecardAdminSummary, sendTimecardAdminSummaryEmail } = await import(
+    "../jobs/timecardReminders"
+  );
   const { storage } = await import("../storage");
 
   const arg = process.argv[2]?.trim() || process.env.REPORT_TO?.trim();
+  const now = new Date();
+
+  if (!arg) {
+    const res = await runScheduledTimecardAdminSummary(now);
+    if (!res.sent) {
+      console.error("error: email not sent:", res.reason);
+      process.exit(1);
+    }
+    console.log(
+      "Sent admin timecard summary (scheduler path) to",
+      res.to.join(", "),
+      "| people with gaps:",
+      res.rowsWithGaps,
+    );
+    return;
+  }
+
   const settings = await storage.getCompanySettings();
   const fmt = settings.timecardDateDisplayFormat ?? "DD/MM/YYYY";
-  const fromDb = Array.isArray(settings.timecardSummaryRecipientEmails)
-    ? settings.timecardSummaryRecipientEmails.map((e) => String(e).trim()).filter(Boolean)
-    : [];
-  const envTo = (process.env.TIME_ADMIN_SUMMARY_TO ?? "").trim();
-  const recipients = arg ? [arg] : fromDb.length > 0 ? fromDb : envTo ? [envTo] : [];
-  if (recipients.length === 0) {
-    console.error(
-      "error: no recipients — pass an email as first arg, set REPORT_TO, add addresses in Company settings (Time tracking), or TIME_ADMIN_SUMMARY_TO on the server",
-    );
-    process.exit(1);
-  }
-  const res = await sendTimecardAdminSummaryEmail(recipients, new Date(), fmt);
+  const res = await sendTimecardAdminSummaryEmail([arg], now, fmt);
   if (!res.sent) {
     console.error("error: email not sent:", res.reason);
     process.exit(1);
   }
-  console.log("Sent weekly timecard report to", recipients.join(", "), "| people with gaps:", res.rowsWithGaps);
+  console.log("Sent admin timecard summary (override recipient) to", arg, "| people with gaps:", res.rowsWithGaps);
 }
 
 main().catch((err) => {

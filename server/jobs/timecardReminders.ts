@@ -146,6 +146,10 @@ function escHtml(s: string): string {
     .replace(/"/g, "&quot;");
 }
 
+function hoursMissing(logged: number): number {
+  return Math.max(0, REQUIRED_HOURS_PER_DAY - logged);
+}
+
 export function buildTimecardSummaryContent(
   data: Awaited<ReturnType<typeof getWeeklyTimecardGaps>>,
   dateDisplayPreset: string,
@@ -159,46 +163,99 @@ export function buildTimecardSummaryContent(
       html: `<!DOCTYPE html><html><body style="font-family:system-ui,sans-serif;font-size:14px"><p>${escHtml(line)}</p></body></html>`,
     };
   }
-  const textLines: string[] = [
-    `Week to date: ${wkStart} – ${wkEnd} (weekdays only; ${REQUIRED_HOURS_PER_DAY}h required per day)`,
-    "",
-    "Member | Email | Date | Hours logged | Status",
-    "—".repeat(70),
-  ];
-  const htmlRows: string[] = [];
+
+  let totalGapDays = 0;
+  let totalHoursMissing = 0;
   for (const r of data.rows) {
+    totalGapDays += r.gaps.length;
+    for (const g of r.gaps) totalHoursMissing += hoursMissing(g.hours);
+  }
+
+  const textLines: string[] = [
+    `PMS timecard summary — week to date`,
+    `Range: ${wkStart} – ${wkEnd} (weekdays only; ${REQUIRED_HOURS_PER_DAY}h required per weekday)`,
+    "",
+    `Overview: ${data.rows.length} employee(s) with gaps · ${totalGapDays} weekday(s) below ${REQUIRED_HOURS_PER_DAY}h · ${totalHoursMissing.toFixed(2)}h missing in total`,
+    "",
+  ];
+
+  const htmlBlocks: string[] = [];
+
+  for (const r of data.rows) {
+    const empMissing = r.gaps.reduce((s, g) => s + hoursMissing(g.hours), 0);
+    textLines.push(
+      `▸ ${r.name}  <${r.email}>`,
+      `   ${r.gaps.length} date(s) under ${REQUIRED_HOURS_PER_DAY}h · ${empMissing.toFixed(2)}h missing (sum of shortfall per day)`,
+    );
     for (const g of r.gaps) {
       const d = formatYmdForTimecardDisplay(g.dateYmd, dateDisplayPreset);
-      const status = g.hours <= 0 ? "Missing (0h)" : `Below ${REQUIRED_HOURS_PER_DAY}h (logged ${g.hours.toFixed(2)}h)`;
-      textLines.push(
-        `${r.name} | ${r.email} | ${d} | ${g.hours.toFixed(2)} | ${status}`,
-      );
-      htmlRows.push(
-        `<tr><td>${escHtml(r.name)}</td><td>${escHtml(r.email)}</td><td>${escHtml(d)}</td><td style="text-align:right">${g.hours.toFixed(2)}</td><td>${escHtml(status)}</td></tr>`,
-      );
+      const miss = hoursMissing(g.hours);
+      const note = g.hours <= 0 ? "no time logged" : `short by ${miss.toFixed(2)}h`;
+      textLines.push(`   • ${d}: logged ${g.hours.toFixed(2)}h → missing ${miss.toFixed(2)}h (${note})`);
     }
-  }
-  const text = textLines.join("\n") + "\n";
-  const html = `<!DOCTYPE html>
-<html>
-<body style="font-family:system-ui,Segoe UI,sans-serif;font-size:14px;color:#111">
-  <h2 style="font-size:16px;margin:0 0 12px">PMS timecard summary</h2>
-  <p style="margin:0 0 12px">Week to date: <strong>${escHtml(wkStart)}</strong> – <strong>${escHtml(wkEnd)}</strong> (weekdays; ${REQUIRED_HOURS_PER_DAY}h required per day)</p>
-  <table border="1" cellspacing="0" cellpadding="8" style="border-collapse:collapse;max-width:100%;border-color:#ccc">
+    textLines.push("");
+
+    const innerRows = r.gaps
+      .map((g) => {
+        const d = formatYmdForTimecardDisplay(g.dateYmd, dateDisplayPreset);
+        const miss = hoursMissing(g.hours);
+        const isEmpty = g.hours <= 0;
+        const rowBg = isEmpty ? "#fef2f2" : "#fffbeb";
+        const border = isEmpty ? "#fecaca" : "#fde68a";
+        const note = isEmpty ? "No hours logged" : `Short by ${miss.toFixed(2)}h`;
+        return `<tr style="background:${rowBg};border-left:4px solid ${border}">
+  <td style="padding:8px 10px;font-weight:600">${escHtml(d)}</td>
+  <td style="padding:8px 10px;text-align:right;white-space:nowrap">${g.hours.toFixed(2)}h</td>
+  <td style="padding:8px 10px;text-align:right;font-weight:600;white-space:nowrap;color:${isEmpty ? "#b91c1c" : "#b45309"}">${miss.toFixed(2)}h</td>
+  <td style="padding:8px 10px;font-size:13px;color:#444">${escHtml(note)}</td>
+</tr>`;
+      })
+      .join("\n");
+
+    htmlBlocks.push(`<div style="margin:0 0 20px;border:1px solid #e4e4e7;border-radius:10px;overflow:hidden;max-width:640px">
+  <div style="background:linear-gradient(180deg,#fafafa 0%,#f4f4f5 100%);padding:12px 14px;border-bottom:1px solid #e4e4e7">
+    <div style="font-size:15px;font-weight:700;color:#18181b">${escHtml(r.name)}</div>
+    <div style="font-size:12px;color:#52525b;margin-top:2px;word-break:break-all">${escHtml(r.email)}</div>
+    <div style="font-size:12px;color:#71717a;margin-top:8px">
+      <strong style="color:#3f3f46">${r.gaps.length}</strong> weekday(s) under ${REQUIRED_HOURS_PER_DAY}h
+      · <strong style="color:#3f3f46">${empMissing.toFixed(2)}h</strong> missing this week
+    </div>
+  </div>
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;font-size:14px">
     <thead>
-      <tr style="background:#f4f4f5">
-        <th align="left">Member</th>
-        <th align="left">Email</th>
-        <th align="left">Date</th>
-        <th align="right">Hours logged</th>
-        <th align="left">Status</th>
+      <tr style="background:#fafafa;font-size:12px;text-transform:uppercase;letter-spacing:0.03em;color:#71717a">
+        <th align="left" style="padding:8px 10px;border-bottom:1px solid #e4e4e7">Date</th>
+        <th align="right" style="padding:8px 10px;border-bottom:1px solid #e4e4e7;width:1%">Logged</th>
+        <th align="right" style="padding:8px 10px;border-bottom:1px solid #e4e4e7;width:1%">Missing</th>
+        <th align="left" style="padding:8px 10px;border-bottom:1px solid #e4e4e7">Note</th>
       </tr>
     </thead>
     <tbody>
-      ${htmlRows.join("\n")}
+${innerRows}
     </tbody>
   </table>
-  <p style="margin:16px 0 0;font-size:12px;color:#666">PMS</p>
+</div>`);
+  }
+
+  const text = textLines.join("\n") + "\n";
+  const html = `<!DOCTYPE html>
+<html>
+<body style="margin:0;padding:16px;font-family:system-ui,Segoe UI,sans-serif;font-size:14px;color:#18181b;background:#fafafa">
+  <div style="max-width:680px;margin:0 auto">
+    <h1 style="font-size:18px;margin:0 0 6px;font-weight:700">PMS timecard summary</h1>
+    <p style="margin:0 0 4px;color:#52525b">Week to date: <strong>${escHtml(wkStart)}</strong> – <strong>${escHtml(wkEnd)}</strong></p>
+    <p style="margin:0 0 16px;font-size:13px;color:#71717a">${REQUIRED_HOURS_PER_DAY}h required per weekday · listed rows are only dates still below that</p>
+    <div style="background:#fff;border:1px solid #e4e4e7;border-radius:10px;padding:12px 14px;margin-bottom:20px">
+      <div style="font-size:13px;font-weight:600;color:#3f3f46">At a glance</div>
+      <ul style="margin:8px 0 0;padding-left:18px;color:#52525b;font-size:13px;line-height:1.5">
+        <li><strong>${data.rows.length}</strong> employee(s) with at least one gap</li>
+        <li><strong>${totalGapDays}</strong> employee–weekday(s) under ${REQUIRED_HOURS_PER_DAY}h</li>
+        <li><strong>${totalHoursMissing.toFixed(2)}h</strong> missing in total (sum of per-day shortfalls)</li>
+      </ul>
+    </div>
+    ${htmlBlocks.join("\n")}
+    <p style="margin:20px 0 0;font-size:12px;color:#a1a1aa">PMS · automated summary</p>
+  </div>
 </body>
 </html>`;
   return { text, html };
