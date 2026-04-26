@@ -1,17 +1,9 @@
 /**
  * VoiceLinkContext — global audio/video call state for PMS.
  *
- * Responsibilities:
- *  - Single source of truth for the active call (callFrame) — persists across
- *    view/project changes so the iframe stays alive.
- *  - Opens ONE WebSocket and subscribes with the current user's ID so incoming-
- *    call ring events are received regardless of which view/project is open.
- *    The server pushes ring events directly to each member by userId — no
- *    per-channel subscription needed.
- *  - Renders the full-screen iframe overlay and the incoming-call ring banner
- *    at the top of the React tree (not inside MessagesView) so they show
- *    globally.
- *  - Guards against starting a second call if one is already active.
+ * - WebSocket `subscribeUser` for instant rings.
+ * - GET /api/chat/pending-invite polling every 3.5s as fallback (proxies / firewalls).
+ * - Full-width top banner + optional desktop notification (if permission granted).
  */
 import {
   createContext,
@@ -26,6 +18,7 @@ import { Phone, Video, X } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
+import { Button } from "@/components/ui/button";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -50,8 +43,6 @@ interface VoiceLinkContextValue {
   closeCall: () => void;
 }
 
-// ─── Context ──────────────────────────────────────────────────────────────────
-
 const VoiceLinkContext = createContext<VoiceLinkContextValue>({
   callFrame: null,
   vlBusy: null,
@@ -63,9 +54,22 @@ export function useVoiceLink() {
   return useContext(VoiceLinkContext);
 }
 
-// ─── Provider ─────────────────────────────────────────────────────────────────
+const RING_TIMEOUT_MS = 45_000;
+const POLL_MS = 3_500;
 
-const RING_TIMEOUT_MS = 30_000;
+function maybeDesktopNotify(callerName: string, channelLabel: string, media: string) {
+  if (typeof Notification === "undefined") return;
+  if (document.visibilityState === "visible") return;
+  if (Notification.permission !== "granted") return;
+  try {
+    new Notification("Incoming call — PMS", {
+      body: `${callerName} started a ${media} call${channelLabel ? ` in ${channelLabel}` : ""}.`,
+      tag: "pms-voicelink-ring",
+    });
+  } catch {
+    /* ignore */
+  }
+}
 
 export function VoiceLinkProvider({ children }: { children: ReactNode }) {
   const { toast } = useToast();
@@ -76,12 +80,28 @@ export function VoiceLinkProvider({ children }: { children: ReactNode }) {
   const [incomingCall, setIncomingCall] = useState<IncomingCall | null>(null);
   const [ringCountdown, setRingCountdown] = useState(RING_TIMEOUT_MS / 1000);
 
-  // Keep a ref so WebSocket handlers always have the latest callFrame value
-  // without needing to re-create the socket on every state change.
   const callFrameRef = useRef<CallFrame | null>(null);
   useEffect(() => { callFrameRef.current = callFrame; }, [callFrame]);
 
-  // ── Listen for VoiceLink "leave" postMessage from the iframe ──────────────
+  const incomingRef = useRef<IncomingCall | null>(null);
+  useEffect(() => { incomingRef.current = incomingCall; }, [incomingCall]);
+
+  const applyInvite = useCallback((payload: IncomingCall) => {
+    if (callFrameRef.current) return;
+    setIncomingCall((prev) => {
+      if (
+        prev &&
+        prev.channelId === payload.channelId &&
+        prev.callerName === payload.callerName &&
+        prev.media === payload.media &&
+        (prev.channelName ?? "") === (payload.channelName ?? "")
+      ) {
+        return prev;
+      }
+      return payload;
+    });
+  }, []);
+
   useEffect(() => {
     const handler = (ev: MessageEvent) => {
       if (ev.data?.type === "vl-left") setCallFrame(null);
@@ -90,19 +110,15 @@ export function VoiceLinkProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("message", handler);
   }, []);
 
-  // ── Global WebSocket: subscribe by userId (server pushes rings directly) ──
   const userId = user?.id ? Number(user.id) : null;
 
   useEffect(() => {
     if (!userId) return;
-
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
     const ws = new WebSocket(`${proto}//${window.location.host}/api/ws/chat`);
-
     ws.onopen = () => {
       ws.send(JSON.stringify({ subscribeUser: userId }));
     };
-
     ws.onmessage = (ev) => {
       try {
         const data = JSON.parse(String(ev.data)) as {
@@ -113,39 +129,79 @@ export function VoiceLinkProvider({ children }: { children: ReactNode }) {
           media?: string;
         };
         if (data.type === "incoming_call" && data.channelId != null) {
-          // Don't ring if we're already in a call on this channel (use ref — not stale)
-          if (callFrameRef.current?.channelId === data.channelId) return;
-          setIncomingCall({
+          if (callFrameRef.current) return;
+          applyInvite({
             channelId: data.channelId,
             channelName: data.channelName,
             callerName: data.callerName ?? "Someone",
             media: (data.media as "audio" | "video") ?? "audio",
           });
-          setRingCountdown(RING_TIMEOUT_MS / 1000);
         }
       } catch {
-        /* ignore malformed */
+        /* ignore */
       }
     };
-
     ws.onerror = () => {};
-
     return () => ws.close();
-  }, [userId]);
+  }, [userId, applyInvite]);
 
-  // ── Ring countdown — auto-dismiss after RING_TIMEOUT_MS ──────────────────
+  // Polling fallback — catches invites when WebSocket upgrade fails (nginx, VPN, etc.)
   useEffect(() => {
-    if (!incomingCall) { setRingCountdown(RING_TIMEOUT_MS / 1000); return; }
+    if (!userId) return;
+    let cancelled = false;
+    const tick = async () => {
+      if (cancelled || callFrameRef.current) return;
+      try {
+        const res = await fetch("/api/chat/pending-invite", { credentials: "include" });
+        if (!res.ok || cancelled) return;
+        const j = (await res.json()) as { invite: IncomingCall | null };
+        if (j.invite && !callFrameRef.current) {
+          applyInvite(j.invite);
+        }
+      } catch {
+        /* ignore */
+      }
+    };
+    void tick();
+    const id = window.setInterval(tick, POLL_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [userId, applyInvite]);
+
+  useEffect(() => {
+    if (!incomingCall) {
+      setRingCountdown(RING_TIMEOUT_MS / 1000);
+      return;
+    }
+    const ch = incomingCall.channelName ? `#${incomingCall.channelName}` : "";
+    maybeDesktopNotify(incomingCall.callerName, ch, incomingCall.media);
+    setRingCountdown(RING_TIMEOUT_MS / 1000);
+
     const interval = setInterval(() => {
       setRingCountdown((prev) => {
-        if (prev <= 1) { setIncomingCall(null); clearInterval(interval); return RING_TIMEOUT_MS / 1000; }
+        if (prev <= 1) {
+          clearInterval(interval);
+          void fetch("/api/chat/pending-invite/dismiss", { method: "POST", credentials: "include" }).catch(() => {});
+          setIncomingCall(null);
+          return RING_TIMEOUT_MS / 1000;
+        }
         return prev - 1;
       });
     }, 1000);
     return () => clearInterval(interval);
   }, [incomingCall]);
 
-  // ── Open a call ───────────────────────────────────────────────────────────
+  const dismissIncoming = useCallback(async () => {
+    setIncomingCall(null);
+    try {
+      await apiRequest("POST", "/api/chat/pending-invite/dismiss", {});
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
   const openVoiceLink = useCallback(
     async (channelId: number, media: "audio" | "video", channelName?: string) => {
       if (callFrameRef.current) {
@@ -164,6 +220,7 @@ export function VoiceLinkProvider({ children }: { children: ReactNode }) {
           toast({ title: "VoiceLink error", description: data.message ?? "Could not start call.", variant: "destructive" });
           return;
         }
+        setIncomingCall(null);
         setCallFrame({ url: data.url, media, channelId, channelName });
       } catch {
         toast({ title: "VoiceLink error", description: "Network error. Please try again.", variant: "destructive" });
@@ -177,64 +234,68 @@ export function VoiceLinkProvider({ children }: { children: ReactNode }) {
   const closeCall = useCallback(() => setCallFrame(null), []);
 
   const joinIncoming = useCallback(async () => {
-    if (!incomingCall) return;
-    const { channelId, media, channelName } = incomingCall;
-    setIncomingCall(null);
+    if (!incomingRef.current) return;
+    const { channelId, media, channelName } = incomingRef.current;
+    await dismissIncoming();
     await openVoiceLink(channelId, media, channelName);
-  }, [incomingCall, openVoiceLink]);
-
-  // ─────────────────────────────────────────────────────────────────────────
+  }, [dismissIncoming, openVoiceLink]);
 
   return (
     <VoiceLinkContext.Provider value={{ callFrame, vlBusy, openVoiceLink, closeCall }}>
       {children}
 
-      {/* ── Incoming call ring banner ── */}
+      {/* App-wide incoming call — fixed top strip (above sidebar / header) */}
       {incomingCall && !callFrame && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] flex items-center gap-3 bg-background border border-border shadow-2xl rounded-2xl px-5 py-4 min-w-80 max-w-sm animate-in slide-in-from-bottom-4">
+        <div
+          className="fixed top-0 left-0 right-0 z-[100] flex flex-wrap items-center gap-3 border-b border-primary/40 bg-gradient-to-r from-primary/20 via-primary/10 to-background px-4 py-3 shadow-lg backdrop-blur-sm"
+          role="alert"
+          aria-live="assertive"
+        >
           <span className="relative flex h-3 w-3 shrink-0">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
-            <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500" />
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
+            <span className="relative inline-flex rounded-full h-3 w-3 bg-primary" />
           </span>
-          <div className="flex flex-col flex-1 min-w-0">
-            <span className="font-semibold text-sm leading-tight truncate">
-              {incomingCall.callerName} is calling…
-            </span>
-            <span className="text-xs text-muted-foreground capitalize">
-              {incomingCall.channelName ? `#${incomingCall.channelName} · ` : ""}
-              {incomingCall.media} call · {ringCountdown}s
-            </span>
+          <Phone className="h-5 w-5 shrink-0 text-primary" aria-hidden />
+          <div className="min-w-0 flex-1 basis-[min(100%,12rem)]">
+            <p className="text-sm font-semibold leading-tight">Incoming call</p>
+            <p className="text-xs text-muted-foreground leading-snug sm:text-sm">
+              <span className="font-medium text-foreground">{incomingCall.callerName}</span>
+              {" "}started a <span className="capitalize">{incomingCall.media}</span> call
+              {incomingCall.channelName ? (
+                <>
+                  {" "}in <span className="font-medium text-foreground">#{incomingCall.channelName}</span>
+                </>
+              ) : null}
+              . Join with audio/video in PMS.
+            </p>
           </div>
-          <button
-            className="rounded-full bg-green-500 hover:bg-green-600 active:scale-95 text-white w-10 h-10 flex items-center justify-center shrink-0 transition-colors"
-            title="Join call"
-            onClick={joinIncoming}
-          >
-            <Phone className="w-4 h-4" />
-          </button>
-          <button
-            className="rounded-full bg-destructive hover:bg-destructive/80 active:scale-95 text-destructive-foreground w-10 h-10 flex items-center justify-center shrink-0 transition-colors"
-            title="Decline"
-            onClick={() => setIncomingCall(null)}
-          >
-            <X className="w-4 h-4" />
-          </button>
+          <div className="flex shrink-0 items-center gap-2">
+            <span className="text-xs tabular-nums text-muted-foreground">{ringCountdown}s</span>
+            <Button size="sm" className="gap-1.5" onClick={joinIncoming}>
+              <Video className="h-4 w-4" />
+              Join call
+            </Button>
+            <Button size="sm" variant="outline" className="gap-1" onClick={dismissIncoming}>
+              <X className="h-4 w-4" />
+              Decline
+            </Button>
+          </div>
         </div>
       )}
 
-      {/* ── Full-screen VoiceLink iframe overlay ── */}
       {callFrame && (
-        <div className="fixed inset-0 z-[55] flex flex-col bg-black">
-          <div className="flex items-center justify-between px-4 py-2 bg-black/70 backdrop-blur-sm shrink-0 border-b border-white/10">
-            <div className="flex items-center gap-2 text-white/80 text-sm">
-              {callFrame.media === "video" ? <Video className="w-4 h-4" /> : <Phone className="w-4 h-4" />}
+        <div className="fixed inset-0 z-[90] flex flex-col bg-black">
+          <div className="flex items-center justify-between border-b border-white/10 bg-black/70 px-4 py-2 backdrop-blur-sm shrink-0">
+            <div className="flex items-center gap-2 text-sm text-white/80">
+              {callFrame.media === "video" ? <Video className="h-4 w-4" /> : <Phone className="h-4 w-4" />}
               <span className="capitalize">{callFrame.media} call</span>
-              {callFrame.channelName && (
+              {callFrame.channelName ? (
                 <span className="text-white/50">· #{callFrame.channelName}</span>
-              )}
+              ) : null}
             </div>
             <button
-              className="text-white/70 hover:text-white hover:bg-white/10 text-xs px-3 py-1.5 rounded-lg border border-white/20 transition-colors"
+              type="button"
+              className="rounded-lg border border-white/20 px-3 py-1.5 text-xs text-white/70 transition-colors hover:bg-white/10 hover:text-white"
               onClick={closeCall}
             >
               ✕ Leave &amp; Close

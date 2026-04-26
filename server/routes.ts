@@ -5,6 +5,7 @@ import fs from "fs";
 import path from "path";
 import { z } from "zod";
 import { notifyChannelMessages, notifyUsersCall } from "./realtime";
+import { publishCallInvites, peekInvite, dismissInvite } from "./callInvites";
 import { storage } from "./storage";
 import { setupAuth, requireAuth } from "./auth";
 import {
@@ -2324,6 +2325,19 @@ export async function registerRoutes(
     }
   });
 
+  /** Polling fallback for call invites (works if WebSocket is blocked). */
+  app.get("/api/chat/pending-invite", requireAuth, (req, res) => {
+    const currentUser = req.user as any;
+    const invite = peekInvite(currentUser.id);
+    res.json({ invite });
+  });
+
+  app.post("/api/chat/pending-invite/dismiss", requireAuth, (_req, res) => {
+    const currentUser = req.user as any;
+    dismissInvite(currentUser.id);
+    res.json({ ok: true });
+  });
+
   // ── VoiceLink: create session token & return join URL (no VoiceLink login needed) ──
   const vlBodySchema = z.object({
     channelId: z.coerce.number().int().positive(),
@@ -2394,15 +2408,27 @@ export async function registerRoutes(
       // Build the public joinUrl ourselves (VoiceLink App.js reads ?sessionToken= and auto-joins)
       const joinUrl = `${VL_HOST}?sessionToken=${encodeURIComponent(data.sessionToken)}`;
 
-      // Ring all channel members directly by userId (works regardless of which view they have open)
+      // Everyone who should be notified (public project channels → all project members)
       const channelMembers = await storage.getChannelMembers(channelId);
-      // For public channels, fall back to project members if channel has no explicit members
       let memberIds = channelMembers.map((m) => m.id);
-      if (memberIds.length === 0 && channel.projectId != null) {
+      if (channel.type === "public" && channel.projectId != null) {
+        const projectMembers = await storage.getProjectMembers(channel.projectId);
+        memberIds = projectMembers.map((m) => m.id);
+      } else if (memberIds.length === 0 && channel.projectId != null) {
         const projectMembers = await storage.getProjectMembers(channel.projectId);
         memberIds = projectMembers.map((m) => m.id);
       }
-      notifyUsersCall(memberIds, currentUser.id, channelId, channel.name ?? "", participantName, media);
+      const ringPayload = {
+        channelId,
+        channelName: channel.name ?? "",
+        callerName: participantName,
+        media,
+      };
+      notifyUsersCall(memberIds, currentUser.id, channelId, ringPayload.channelName, ringPayload.callerName, media);
+      publishCallInvites(memberIds, currentUser.id, ringPayload);
+
+      // Clear any pending ring for this user (they just joined / started the call)
+      dismissInvite(currentUser.id);
 
       return res.json({ url: joinUrl });
 
