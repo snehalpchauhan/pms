@@ -57,6 +57,14 @@ import {
 
 const PAGE_SIZE = 25;
 
+/** Log Time modal: default SelectTrigger uses nowrap + line-clamp-1; long task names overflow without these overrides. */
+const LOG_TIME_SELECT_TRIGGER = cn(
+  "w-full min-w-0 h-auto min-h-9 whitespace-normal py-2 text-left items-start gap-2",
+  "[&>span]:!line-clamp-none [&>span]:block [&>span]:whitespace-normal [&>span]:break-words [&>span]:min-w-0 [&>span]:flex-1 [&>span]:text-left",
+);
+
+const LOG_TIME_SELECT_CONTENT = "max-h-[220px] w-[var(--radix-select-trigger-width)] max-w-full overflow-x-hidden";
+
 function WorkDescriptionCell({ description }: { description: string | null | undefined }) {
   const { workType, note, fullText } = parseTimeEntryDescription(description);
   if (!description?.trim()) {
@@ -1033,7 +1041,7 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
           setLogClientVisible(true);
         }
       }}>
-        <DialogContent className="sm:max-w-[500px]">
+        <DialogContent className="sm:max-w-[500px] max-w-[calc(100vw-2rem)] overflow-x-hidden">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Clock className="w-5 h-5 text-primary" />
@@ -1044,9 +1052,9 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 pt-2">
+          <div className="space-y-4 pt-2 min-w-0">
             {/* Step 1: Project */}
-            <div className="space-y-1.5">
+            <div className="space-y-1.5 min-w-0">
               <Label htmlFor="log-project" className="flex items-center gap-1.5">
                 <Folder className="w-3.5 h-3.5 text-muted-foreground" />
                 Project <span className="text-destructive">*</span>
@@ -1058,19 +1066,21 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
                   setLogTaskId("");
                 }}
               >
-                <SelectTrigger id="log-project" className="w-full" data-testid="select-log-project">
+                <SelectTrigger id="log-project" className={LOG_TIME_SELECT_TRIGGER} data-testid="select-log-project">
                   <SelectValue placeholder="Select a project…" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className={LOG_TIME_SELECT_CONTENT}>
                   {projects.map(p => (
-                    <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>
+                    <SelectItem key={p.id} value={String(p.id)} className="items-start whitespace-normal py-2">
+                      <span className="whitespace-normal break-words leading-snug">{p.name}</span>
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
 
             {/* Step 2: Task — filtered by project */}
-            <div className="space-y-1.5">
+            <div className="space-y-1.5 min-w-0">
               <Label htmlFor="log-task">
                 Task <span className="text-destructive">*</span>
               </Label>
@@ -1079,16 +1089,16 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
                 onValueChange={setLogTaskId}
                 disabled={!logProjectId}
               >
-                <SelectTrigger id="log-task" className="w-full" data-testid="select-log-task">
+                <SelectTrigger id="log-task" className={LOG_TIME_SELECT_TRIGGER} data-testid="select-log-task">
                   <SelectValue placeholder={logProjectId ? "Select a task…" : "Select a project first"} />
                 </SelectTrigger>
-                <SelectContent className="max-h-[220px]">
+                <SelectContent className={LOG_TIME_SELECT_CONTENT}>
                   {filteredTasksForLog.length === 0 ? (
                     <div className="px-3 py-4 text-sm text-muted-foreground text-center">No tasks in this project</div>
                   ) : (
                     filteredTasksForLog.map(task => (
-                      <SelectItem key={task.id} value={String(task.id)}>
-                        <span className="truncate">{task.title}</span>
+                      <SelectItem key={task.id} value={String(task.id)} className="items-start whitespace-normal py-2">
+                        <span className="whitespace-normal break-words leading-snug">{task.title}</span>
                       </SelectItem>
                     ))
                   )}
@@ -1097,18 +1107,20 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
             </div>
 
             {/* Step 3: Work Type (required) */}
-            <div className="space-y-1.5">
+            <div className="space-y-1.5 min-w-0">
               <Label htmlFor="log-category" className="flex items-center gap-1.5">
                 <Tag className="w-3.5 h-3.5 text-muted-foreground" />
                 Work Type <span className="text-destructive">*</span>
               </Label>
               <Select value={logCategory} onValueChange={setLogCategory}>
-                <SelectTrigger id="log-category" className="w-full" data-testid="select-log-category">
+                <SelectTrigger id="log-category" className={LOG_TIME_SELECT_TRIGGER} data-testid="select-log-category">
                   <SelectValue placeholder="What kind of work?" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className={LOG_TIME_SELECT_CONTENT}>
                   {WORK_CATEGORIES.map(c => (
-                    <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+                    <SelectItem key={c.value} value={c.value} className="items-start whitespace-normal py-2">
+                      <span className="whitespace-normal break-words leading-snug">{c.label}</span>
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
