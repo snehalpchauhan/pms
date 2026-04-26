@@ -26,6 +26,7 @@ import { taskMatchesSearch } from "@/lib/taskSearch";
 import { Button } from "@/components/ui/button";
 import { useCompanyBranding } from "@/hooks/useCompanyBranding";
 import { readInitialWorkspaceState, persistWorkspaceState, type WorkspaceView } from "@/lib/workspacePersistence";
+import { VoiceLinkProvider } from "@/context/VoiceLinkContext";
 
 export interface ClientPermissions {
   role: string;
@@ -279,6 +280,7 @@ function AuthenticatedApp() {
 
   return (
     <ClientPermissionsContext.Provider value={{ permissions: effectivePermissions, isLoadingPermissions }}>
+      <VoiceLinkProvider>
       <>
         <div className="flex h-screen bg-background overflow-hidden font-sans text-foreground selection:bg-primary/20">
           <Sidebar
@@ -400,6 +402,7 @@ function AuthenticatedApp() {
 
         <Toaster />
       </>
+      </VoiceLinkProvider>
     </ClientPermissionsContext.Provider>
   );
 }

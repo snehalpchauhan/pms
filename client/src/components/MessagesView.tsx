@@ -12,6 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import { formatChatMarkdown } from "@/lib/chatMarkdown";
 import { ChatRichComposer } from "@/components/ChatRichComposer";
 import { EditChannelModal } from "@/components/EditChannelModal";
+import { useVoiceLink } from "@/context/VoiceLinkContext";
 
 interface MessagesViewProps {
   project: Project;
@@ -69,41 +70,14 @@ export default function MessagesView({ project, channelId, onChannelDeleted }: M
         ? Number(activeChannelId)
         : null;
 
-  const [vlBusy, setVlBusy] = useState<"audio" | "video" | null>(null);
-  const [callFrame, setCallFrame] = useState<{ url: string; media: "audio" | "video" } | null>(null);
-  const [incomingCall, setIncomingCall] = useState<{ callerName: string; media: "audio" | "video" } | null>(null);
-
-  // Close iframe when VoiceLink sends "vl-left" via postMessage
-  useEffect(() => {
-    const handler = (ev: MessageEvent) => {
-      if (ev.data?.type === "vl-left") setCallFrame(null);
-    };
-    window.addEventListener("message", handler);
-    return () => window.removeEventListener("message", handler);
-  }, []);
-
+  // ── VoiceLink — global call state from context ────────────────
+  const { callFrame, vlBusy, openVoiceLink: openVoiceLinkGlobal } = useVoiceLink();
   const openVoiceLink = useCallback(
-    async (media: "audio" | "video") => {
+    (media: "audio" | "video") => {
       if (numericChannelId == null) return;
-      setVlBusy(media);
-      try {
-        const res = await apiRequest("POST", "/api/chat/voice-link", {
-          channelId: numericChannelId,
-          media,
-        });
-        const data = (await res.json()) as { url?: string; message?: string };
-        if (!res.ok || !data.url) {
-          toast({ title: "VoiceLink error", description: data.message ?? "Could not start call.", variant: "destructive" });
-          return;
-        }
-        setCallFrame({ url: data.url, media });
-      } catch {
-        toast({ title: "VoiceLink error", description: "Network error. Please try again.", variant: "destructive" });
-      } finally {
-        setVlBusy(null);
-      }
+      void openVoiceLinkGlobal(numericChannelId, media, activeChannel?.name);
     },
-    [numericChannelId, toast],
+    [numericChannelId, activeChannel?.name, openVoiceLinkGlobal],
   );
 
   const { data: rawMessages } = useQuery<any[]>({
@@ -139,13 +113,10 @@ export default function MessagesView({ project, channelId, onChannelDeleted }: M
     };
     ws.onmessage = (ev) => {
       try {
-        const data = JSON.parse(String(ev.data)) as { type?: string; channelId?: number; callerName?: string; media?: string };
+        const data = JSON.parse(String(ev.data)) as { type?: string; channelId?: number };
         if (data.type === "channel_messages" && data.channelId === numericChannelId) {
           void queryClient.refetchQueries({ queryKey: ["/api/channels", numericChannelId, "messages"] });
           void queryClient.invalidateQueries({ queryKey: ["/api/channels"] });
-        }
-        if (data.type === "incoming_call" && data.channelId === numericChannelId) {
-          setIncomingCall({ callerName: data.callerName ?? "Someone", media: (data.media as "audio" | "video") ?? "audio" });
         }
       } catch {
         /* ignore */
@@ -273,22 +244,22 @@ export default function MessagesView({ project, channelId, onChannelDeleted }: M
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8 text-muted-foreground"
+            className={`h-8 w-8 ${callFrame ? "text-green-500" : "text-muted-foreground"}`}
             type="button"
             disabled={vlBusy !== null || numericChannelId == null}
             onClick={() => openVoiceLink("audio")}
-            title="Start audio call"
+            title={callFrame ? "Already in a call" : "Start audio call"}
           >
             {vlBusy === "audio" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Phone className="w-4 h-4" />}
           </Button>
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8 text-muted-foreground"
+            className={`h-8 w-8 ${callFrame ? "text-green-500" : "text-muted-foreground"}`}
             type="button"
             disabled={vlBusy !== null || numericChannelId == null}
             onClick={() => openVoiceLink("video")}
-            title="Start video call / screen share"
+            title={callFrame ? "Already in a call" : "Start video call / screen share"}
           >
             {vlBusy === "video" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Video className="w-4 h-4" />}
           </Button>
@@ -417,54 +388,6 @@ export default function MessagesView({ project, channelId, onChannelDeleted }: M
           }}
         />
       ) : null}
-
-      {/* ── Incoming call ring banner ── */}
-      {incomingCall && !callFrame && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 bg-background border border-border shadow-xl rounded-2xl px-5 py-4 min-w-72">
-          <div className="flex flex-col flex-1 min-w-0">
-            <span className="font-semibold text-sm truncate">{incomingCall.callerName} is calling…</span>
-            <span className="text-xs text-muted-foreground capitalize">{incomingCall.media} call</span>
-          </div>
-          <button
-            className="rounded-full bg-green-500 hover:bg-green-600 text-white w-10 h-10 flex items-center justify-center shrink-0"
-            title="Join call"
-            onClick={() => {
-              setIncomingCall(null);
-              void openVoiceLink(incomingCall.media);
-            }}
-          >
-            <Phone className="w-4 h-4" />
-          </button>
-          <button
-            className="rounded-full bg-destructive hover:bg-destructive/80 text-destructive-foreground w-10 h-10 flex items-center justify-center shrink-0"
-            title="Decline"
-            onClick={() => setIncomingCall(null)}
-          >
-            <Phone className="w-4 h-4 rotate-[135deg]" />
-          </button>
-        </div>
-      )}
-
-      {/* ── In-page VoiceLink call overlay (iframe) ── */}
-      {callFrame && (
-        <div className="fixed inset-0 z-50 flex flex-col bg-black/90">
-          <div className="flex items-center justify-between px-4 py-2 bg-background/10 backdrop-blur-sm shrink-0">
-            <span className="text-white text-sm font-medium capitalize">{callFrame.media} call · {activeChannel?.name ?? "call"}</span>
-            <button
-              className="text-white/80 hover:text-white text-xs px-3 py-1 rounded border border-white/30 hover:bg-white/10"
-              onClick={() => setCallFrame(null)}
-            >
-              ✕ Leave &amp; Close
-            </button>
-          </div>
-          <iframe
-            src={callFrame.url}
-            className="flex-1 w-full border-0"
-            allow="camera; microphone; display-capture; autoplay"
-            title="VoiceLink call"
-          />
-        </div>
-      )}
     </div>
   );
 }
