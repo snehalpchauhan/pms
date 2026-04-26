@@ -43,31 +43,6 @@ export default function MessagesView({ project, channelId, onChannelDeleted }: M
     String(activeChannel.createdByUserId) === String(user.id);
   const canEditChannel = canManageChannel || isChannelOwner;
 
-  const [vlBusy, setVlBusy] = useState<"audio" | "video" | null>(null);
-  const openVoiceLink = useCallback(
-    async (media: "audio" | "video") => {
-      if (numericChannelId == null) return;
-      setVlBusy(media);
-      try {
-        const res = await apiRequest("POST", "/api/chat/voice-link", {
-          channelId: numericChannelId,
-          media,
-        });
-        const data = (await res.json()) as { url?: string; message?: string };
-        if (!res.ok || !data.url) {
-          toast({ title: "VoiceLink error", description: data.message ?? "Could not start call.", variant: "destructive" });
-          return;
-        }
-        window.open(data.url, "_blank", "noopener,noreferrer");
-      } catch {
-        toast({ title: "VoiceLink error", description: "Network error. Please try again.", variant: "destructive" });
-      } finally {
-        setVlBusy(null);
-      }
-    },
-    [numericChannelId, toast],
-  );
-
   const isDM = Boolean(activeChannelId?.startsWith("dm-"));
   const dmPeerIdStr = isDM && activeChannelId ? activeChannelId.replace(/^dm-/, "") : "";
   const dmPeerNumericId = dmPeerIdStr ? Number(dmPeerIdStr) : NaN;
@@ -93,6 +68,31 @@ export default function MessagesView({ project, channelId, onChannelDeleted }: M
       : activeChannelId && !isDM
         ? Number(activeChannelId)
         : null;
+
+  const [vlBusy, setVlBusy] = useState<"audio" | "video" | null>(null);
+  const openVoiceLink = useCallback(
+    async (media: "audio" | "video") => {
+      if (numericChannelId == null) return;
+      setVlBusy(media);
+      try {
+        const res = await apiRequest("POST", "/api/chat/voice-link", {
+          channelId: numericChannelId,
+          media,
+        });
+        const data = (await res.json()) as { url?: string; message?: string };
+        if (!res.ok || !data.url) {
+          toast({ title: "VoiceLink error", description: data.message ?? "Could not start call.", variant: "destructive" });
+          return;
+        }
+        window.open(data.url, "_blank", "noopener,noreferrer");
+      } catch {
+        toast({ title: "VoiceLink error", description: "Network error. Please try again.", variant: "destructive" });
+      } finally {
+        setVlBusy(null);
+      }
+    },
+    [numericChannelId, toast],
+  );
 
   const { data: rawMessages } = useQuery<any[]>({
     queryKey: ["/api/channels", numericChannelId, "messages"],
