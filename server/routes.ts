@@ -24,6 +24,15 @@ import { isValidProjectColor, sanitizeProjectColor } from "@shared/projectColors
 import { timeLogNoteMeetsMinWords } from "@shared/timeLogDescription";
 import type { Project } from "@shared/schema";
 
+/**
+ * VoiceLink integration — session-token third-party API.
+ *  - Internal API: http://127.0.0.1:5001  (same server, VoiceLink runs on port 5001)
+ *  - Public client: https://voicelink.vnnovate.net
+ *  - Env: VOICELINK_API_KEY  (set in /var/www/pms/.env on the server)
+ */
+const VL_API  = (process.env.VOICELINK_INTERNAL_API  || "http://127.0.0.1:5001").replace(/\/$/, "");
+const VL_HOST = (process.env.VOICELINK_CLIENT_URL || "https://voicelink.vnnovate.net").replace(/\/$/, "");
+
 /** Closed projects are hidden from normal API use; admins manage them via /api/admin/projects. */
 async function requireOpenProjectForApi(res: express.Response, projectId: number): Promise<Project | null> {
   const project = await storage.getProject(projectId);
@@ -2312,6 +2321,83 @@ export async function registerRoutes(
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : "Upload failed";
       return res.status(400).json({ message });
+    }
+  });
+
+  // ── VoiceLink: create session token & return join URL (no VoiceLink login needed) ──
+  const vlBodySchema = z.object({
+    channelId: z.coerce.number().int().positive(),
+    media: z.enum(["audio", "video"]).default("audio"),
+  });
+
+  app.post("/api/chat/voice-link", requireAuth, async (req, res) => {
+    const currentUser = req.user as any;
+
+    const parsed = vlBodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: parsed.error.issues[0]?.message ?? "Invalid body" });
+    }
+    const { channelId, media } = parsed.data;
+
+    // Verify caller has access to this channel
+    if (!(await userCanAccessChannel(currentUser.id, channelId))) {
+      return res.status(403).json({ message: "Access denied" });
+    }
+    const channel = await storage.getChannel(channelId);
+    if (!channel) return res.status(404).json({ message: "Channel not found" });
+
+    const apiKey = (process.env.VOICELINK_API_KEY ?? "").trim();
+    if (!apiKey) {
+      return res.status(503).json({
+        message: "VoiceLink is not configured on this server. Add VOICELINK_API_KEY to /var/www/pms/.env and restart the service.",
+      });
+    }
+
+    // Stable room name: pms-p<projectId>-c<channelId>
+    const roomName = channel.projectId != null
+      ? `pms-p${channel.projectId}-c${channelId}`
+      : `pms-c${channelId}`;
+
+    const me = await storage.getUser(currentUser.id);
+    const participantName = (me?.name ?? "User").trim().slice(0, 120);
+
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 10_000);
+      const vl = await fetch(`${VL_API}/api/sessions/token`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Api-Key": apiKey,
+        },
+        body: JSON.stringify({
+          participantName,
+          roomName,
+          permissions: { audio: true, video: media === "video", screen: media === "video" },
+          expiresIn: "2h",
+        }),
+        signal: ctrl.signal,
+      });
+      clearTimeout(timer);
+
+      if (!vl.ok) {
+        const txt = await vl.text();
+        console.error("[voice-link] VoiceLink session API error:", vl.status, txt.slice(0, 200));
+        return res.status(502).json({ message: `VoiceLink API error ${vl.status}. Check VOICELINK_API_KEY.` });
+      }
+
+      const data = (await vl.json()) as { sessionToken?: string };
+      if (!data.sessionToken) {
+        return res.status(502).json({ message: "VoiceLink did not return a session token." });
+      }
+
+      // Build the public joinUrl ourselves (VoiceLink App.js reads ?sessionToken= and auto-joins)
+      const joinUrl = `${VL_HOST}?sessionToken=${encodeURIComponent(data.sessionToken)}`;
+      return res.json({ url: joinUrl });
+
+    } catch (e) {
+      console.error("[voice-link] fetch to VoiceLink failed:", e);
+      return res.status(502).json({ message: "Could not reach VoiceLink service on this server." });
     }
   });
 

@@ -1,6 +1,6 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { Hash, Phone, Video, Info, Lock } from "lucide-react";
+import { Hash, Phone, Video, Info, Lock, Loader2 } from "lucide-react";
 import { Message, Project } from "@/lib/mockData";
 import { useEffect, useCallback, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
@@ -42,6 +42,31 @@ export default function MessagesView({ project, channelId, onChannelDeleted }: M
     activeChannel.createdByUserId != null &&
     String(activeChannel.createdByUserId) === String(user.id);
   const canEditChannel = canManageChannel || isChannelOwner;
+
+  const [vlBusy, setVlBusy] = useState<"audio" | "video" | null>(null);
+  const openVoiceLink = useCallback(
+    async (media: "audio" | "video") => {
+      if (numericChannelId == null) return;
+      setVlBusy(media);
+      try {
+        const res = await apiRequest("POST", "/api/chat/voice-link", {
+          channelId: numericChannelId,
+          media,
+        });
+        const data = (await res.json()) as { url?: string; message?: string };
+        if (!res.ok || !data.url) {
+          toast({ title: "VoiceLink error", description: data.message ?? "Could not start call.", variant: "destructive" });
+          return;
+        }
+        window.open(data.url, "_blank", "noopener,noreferrer");
+      } catch {
+        toast({ title: "VoiceLink error", description: "Network error. Please try again.", variant: "destructive" });
+      } finally {
+        setVlBusy(null);
+      }
+    },
+    [numericChannelId, toast],
+  );
 
   const isDM = Boolean(activeChannelId?.startsWith("dm-"));
   const dmPeerIdStr = isDM && activeChannelId ? activeChannelId.replace(/^dm-/, "") : "";
@@ -230,11 +255,27 @@ export default function MessagesView({ project, channelId, onChannelDeleted }: M
           )}
         </div>
         <div className="flex items-center gap-1">
-          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" type="button">
-            <Phone className="w-4 h-4" />
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 text-muted-foreground"
+            type="button"
+            disabled={vlBusy !== null || numericChannelId == null}
+            onClick={() => openVoiceLink("audio")}
+            title="Start audio call"
+          >
+            {vlBusy === "audio" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Phone className="w-4 h-4" />}
           </Button>
-          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" type="button">
-            <Video className="w-4 h-4" />
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 text-muted-foreground"
+            type="button"
+            disabled={vlBusy !== null || numericChannelId == null}
+            onClick={() => openVoiceLink("video")}
+            title="Start video call / screen share"
+          >
+            {vlBusy === "video" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Video className="w-4 h-4" />}
           </Button>
           <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" type="button">
             <Info className="w-4 h-4" />
