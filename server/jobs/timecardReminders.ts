@@ -1,10 +1,11 @@
-import { and, eq, gte, lte, sql } from "drizzle-orm";
+import { and, gte, lte, sql } from "drizzle-orm";
 import { addDays, format, isWeekend, startOfWeek, subDays } from "date-fns";
 import { formatYmdForTimecardDisplay } from "@shared/timecardDateFormat";
 import { db } from "../db";
 import { sendEmail } from "../email";
 import { storage } from "../storage";
 import { timeEntries, users } from "@shared/schema";
+import { sendEmployeeDailyMissedHtmlDigests } from "./timecardDigest";
 
 export const REQUIRED_HOURS_PER_DAY = 8;
 
@@ -26,21 +27,6 @@ async function getStaffWithEmail(): Promise<UserRow[]> {
     .select({ id: users.id, name: users.name, email: users.email, role: users.role })
     .from(users);
   return rows.filter((u) => (u.role === "employee" || u.role === "manager") && Boolean(u.email?.trim()));
-}
-
-async function totalsForDate(logDate: string): Promise<Map<number, number>> {
-  const rows = await db
-    .select({
-      userId: timeEntries.userId,
-      total: sql<string>`coalesce(sum(${timeEntries.hours}), 0)::text`,
-    })
-    .from(timeEntries)
-    .where(eq(timeEntries.logDate, logDate))
-    .groupBy(timeEntries.userId);
-
-  const out = new Map<number, number>();
-  for (const r of rows) out.set(r.userId, Number(r.total) || 0);
-  return out;
 }
 
 async function totalsByUserByDate(startDate: string, endDate: string): Promise<Map<number, Map<string, number>>> {
@@ -69,51 +55,17 @@ function missingLabel(dateYmd: string, hours: number): string {
 }
 
 export async function sendDailyMissingTimecardEmails(now = new Date()): Promise<{ emailed: number; skipped: number }> {
-  // If today is Sat/Sun, do nothing.
-  if (isWeekend(now)) return { emailed: 0, skipped: 0 };
-
-  const target = previousBusinessDay(now);
-  const logDate = toYmd(target);
-  const totals = await totalsForDate(logDate);
-  const staff = await getStaffWithEmail();
-
-  let emailed = 0;
-  let skipped = 0;
-
-  for (const u of staff) {
-    const hours = totals.get(u.id) ?? 0;
-    if (hours >= REQUIRED_HOURS_PER_DAY) continue;
-
-    const subject = `Missing timecard for ${logDate}`;
-    const text =
-      `Hi ${u.name},\n\n` +
-      `Your timecard for ${logDate} is incomplete.\n` +
-      `Logged: ${hours.toFixed(2)}h\n` +
-      `Required: ${REQUIRED_HOURS_PER_DAY}h\n\n` +
-      `Please update your timecard.\n`;
-
-    try {
-      const res = await sendEmail({ to: u.email!.trim(), subject, text });
-      if (res.sent) emailed++;
-      else skipped++;
-    } catch (err) {
-      skipped++;
-      const msg = err instanceof Error ? err.message : String(err);
-      console.warn("[timecard-reminder] daily email failed:", { userId: u.id, to: u.email, msg });
-    }
-  }
-
-  return { emailed, skipped };
+  return sendEmployeeDailyMissedHtmlDigests(now);
 }
 
-/** All employee/manager staff with gaps (< 8h) on at least one weekday Mon–end of this week, with per-date detail. */
+/** All employee/manager staff with gaps (< 8h) on at least one weekday Mon–end of this week. Each row includes every weekday in range (hours logged) so email can show OK days in green. */
 export async function getWeeklyTimecardGaps(
   now = new Date(),
 ): Promise<{
   weekStartYmd: string;
   endYmd: string;
   weekdays: string[];
-  rows: { name: string; email: string; gaps: { dateYmd: string; hours: number }[] }[];
+  rows: { name: string; email: string; days: { dateYmd: string; hours: number }[] }[];
 }> {
   const weekStart = startOfWeek(now, { weekStartsOn: 1 });
   const startYmd = toYmd(weekStart);
@@ -124,16 +76,16 @@ export async function getWeeklyTimecardGaps(
   for (let d = weekStart; toYmd(d) <= endYmd; d = addDays(d, 1)) {
     if (!isWeekend(d)) days.push(toYmd(d));
   }
-  const rows: { name: string; email: string; gaps: { dateYmd: string; hours: number }[] }[] = [];
+  const rows: { name: string; email: string; days: { dateYmd: string; hours: number }[] }[] = [];
   for (const u of staff) {
     const byDate = totals.get(u.id) ?? new Map<string, number>();
-    const gaps: { dateYmd: string; hours: number }[] = [];
-    for (const day of days) {
-      const h = byDate.get(day) ?? 0;
-      if (h < REQUIRED_HOURS_PER_DAY) gaps.push({ dateYmd: day, hours: h });
-    }
-    if (gaps.length === 0) continue;
-    rows.push({ name: u.name, email: u.email!.trim(), gaps });
+    const weekDays: { dateYmd: string; hours: number }[] = days.map((dateYmd) => ({
+      dateYmd,
+      hours: byDate.get(dateYmd) ?? 0,
+    }));
+    const hasGap = weekDays.some((d) => d.hours < REQUIRED_HOURS_PER_DAY);
+    if (!hasGap) continue;
+    rows.push({ name: u.name, email: u.email!.trim(), days: weekDays });
   }
   return { weekStartYmd: startYmd, endYmd, weekdays: days, rows };
 }
@@ -167,45 +119,69 @@ export function buildTimecardSummaryContent(
   let totalGapDays = 0;
   let totalHoursMissing = 0;
   for (const r of data.rows) {
-    totalGapDays += r.gaps.length;
-    for (const g of r.gaps) totalHoursMissing += hoursMissing(g.hours);
+    for (const day of r.days) {
+      if (day.hours < REQUIRED_HOURS_PER_DAY) {
+        totalGapDays++;
+        totalHoursMissing += hoursMissing(day.hours);
+      }
+    }
   }
 
   const textLines: string[] = [
     `PMS timecard summary — week to date`,
     `Range: ${wkStart} – ${wkEnd} (weekdays only; ${REQUIRED_HOURS_PER_DAY}h required per weekday)`,
     "",
-    `Overview: ${data.rows.length} employee(s) with gaps · ${totalGapDays} weekday(s) below ${REQUIRED_HOURS_PER_DAY}h · ${totalHoursMissing.toFixed(2)}h missing in total`,
+    `Overview: ${data.rows.length} employee(s) listed (each has at least one short day) · ${totalGapDays} gap-day(s) in total (sum of short weekdays across those people, not headcount) · ${totalHoursMissing.toFixed(2)}h missing in total`,
     "",
   ];
 
   const htmlBlocks: string[] = [];
 
   for (const r of data.rows) {
-    const empMissing = r.gaps.reduce((s, g) => s + hoursMissing(g.hours), 0);
+    const gapCount = r.days.filter((d) => d.hours < REQUIRED_HOURS_PER_DAY).length;
+    const empMissing = r.days.reduce((s, d) => s + hoursMissing(d.hours), 0);
+    const empWeekLogged = r.days.reduce((s, d) => s + d.hours, 0);
     textLines.push(
       `▸ ${r.name}  <${r.email}>`,
-      `   ${r.gaps.length} date(s) under ${REQUIRED_HOURS_PER_DAY}h · ${empMissing.toFixed(2)}h missing (sum of shortfall per day)`,
+      `   ${empWeekLogged.toFixed(2)}h logged this week (${r.days.length} weekday(s) in range) · ${gapCount} under ${REQUIRED_HOURS_PER_DAY}h · ${empMissing.toFixed(2)}h missing on short days`,
     );
-    for (const g of r.gaps) {
-      const d = formatYmdForTimecardDisplay(g.dateYmd, dateDisplayPreset);
-      const miss = hoursMissing(g.hours);
-      const note = g.hours <= 0 ? "no time logged" : `short by ${miss.toFixed(2)}h`;
-      textLines.push(`   • ${d}: logged ${g.hours.toFixed(2)}h → missing ${miss.toFixed(2)}h (${note})`);
+    for (const day of r.days) {
+      const d = formatYmdForTimecardDisplay(day.dateYmd, dateDisplayPreset);
+      const ok = day.hours >= REQUIRED_HOURS_PER_DAY;
+      if (ok) {
+        textLines.push(`   • ${d}: logged ${day.hours.toFixed(2)}h — OK (met ${REQUIRED_HOURS_PER_DAY}h)`);
+      } else {
+        const miss = hoursMissing(day.hours);
+        const note = day.hours <= 0 ? "no time logged" : `short by ${miss.toFixed(2)}h`;
+        textLines.push(`   • ${d}: logged ${day.hours.toFixed(2)}h → missing ${miss.toFixed(2)}h (${note})`);
+      }
     }
     textLines.push("");
 
-    const innerRows = r.gaps
-      .map((g) => {
-        const d = formatYmdForTimecardDisplay(g.dateYmd, dateDisplayPreset);
-        const miss = hoursMissing(g.hours);
-        const isEmpty = g.hours <= 0;
+    const innerRows = r.days
+      .map((day) => {
+        const d = formatYmdForTimecardDisplay(day.dateYmd, dateDisplayPreset);
+        const ok = day.hours >= REQUIRED_HOURS_PER_DAY;
+        const miss = hoursMissing(day.hours);
+        if (ok) {
+          const note =
+            day.hours > REQUIRED_HOURS_PER_DAY
+              ? `OK — above minimum (${day.hours.toFixed(2)}h)`
+              : `OK — met ${REQUIRED_HOURS_PER_DAY}h`;
+          return `<tr style="background:#ecfdf5;border-left:4px solid #22c55e">
+  <td style="padding:8px 10px;font-weight:600">${escHtml(d)}</td>
+  <td style="padding:8px 10px;text-align:right;white-space:nowrap">${day.hours.toFixed(2)}h</td>
+  <td style="padding:8px 10px;text-align:right;white-space:nowrap;color:#166534">0h</td>
+  <td style="padding:8px 10px;font-size:13px;color:#166534">${escHtml(note)}</td>
+</tr>`;
+        }
+        const isEmpty = day.hours <= 0;
         const rowBg = isEmpty ? "#fef2f2" : "#fffbeb";
         const border = isEmpty ? "#fecaca" : "#fde68a";
         const note = isEmpty ? "No hours logged" : `Short by ${miss.toFixed(2)}h`;
         return `<tr style="background:${rowBg};border-left:4px solid ${border}">
   <td style="padding:8px 10px;font-weight:600">${escHtml(d)}</td>
-  <td style="padding:8px 10px;text-align:right;white-space:nowrap">${g.hours.toFixed(2)}h</td>
+  <td style="padding:8px 10px;text-align:right;white-space:nowrap">${day.hours.toFixed(2)}h</td>
   <td style="padding:8px 10px;text-align:right;font-weight:600;white-space:nowrap;color:${isEmpty ? "#b91c1c" : "#b45309"}">${miss.toFixed(2)}h</td>
   <td style="padding:8px 10px;font-size:13px;color:#444">${escHtml(note)}</td>
 </tr>`;
@@ -216,9 +192,12 @@ export function buildTimecardSummaryContent(
   <div style="background:linear-gradient(180deg,#fafafa 0%,#f4f4f5 100%);padding:12px 14px;border-bottom:1px solid #e4e4e7">
     <div style="font-size:15px;font-weight:700;color:#18181b">${escHtml(r.name)}</div>
     <div style="font-size:12px;color:#52525b;margin-top:2px;word-break:break-all">${escHtml(r.email)}</div>
-    <div style="font-size:12px;color:#71717a;margin-top:8px">
-      <strong style="color:#3f3f46">${r.gaps.length}</strong> weekday(s) under ${REQUIRED_HOURS_PER_DAY}h
-      · <strong style="color:#3f3f46">${empMissing.toFixed(2)}h</strong> missing this week
+    <div style="font-size:12px;color:#71717a;margin-top:8px;line-height:1.45">
+      <strong style="color:#3f3f46">${empWeekLogged.toFixed(2)}h</strong> logged this week
+      <span style="color:#a1a1aa">(${r.days.length} weekday${r.days.length === 1 ? "" : "s"} in range)</span>
+      <br />
+      <strong style="color:#3f3f46">${gapCount}</strong> of <strong style="color:#3f3f46">${r.days.length}</strong> under ${REQUIRED_HOURS_PER_DAY}h
+      · <strong style="color:#3f3f46">${empMissing.toFixed(2)}h</strong> missing on short days
     </div>
   </div>
   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;font-size:14px">
@@ -244,13 +223,13 @@ ${innerRows}
   <div style="max-width:680px;margin:0 auto">
     <h1 style="font-size:18px;margin:0 0 6px;font-weight:700">PMS timecard summary</h1>
     <p style="margin:0 0 4px;color:#52525b">Week to date: <strong>${escHtml(wkStart)}</strong> – <strong>${escHtml(wkEnd)}</strong></p>
-    <p style="margin:0 0 16px;font-size:13px;color:#71717a">${REQUIRED_HOURS_PER_DAY}h required per weekday · listed rows are only dates still below that</p>
+    <p style="margin:0 0 16px;font-size:13px;color:#71717a">${REQUIRED_HOURS_PER_DAY}h required per weekday · each card lists every weekday in range: <span style="color:#166534">green</span> = met requirement, amber/red = short</p>
     <div style="background:#fff;border:1px solid #e4e4e7;border-radius:10px;padding:12px 14px;margin-bottom:20px">
       <div style="font-size:13px;font-weight:600;color:#3f3f46">At a glance</div>
       <ul style="margin:8px 0 0;padding-left:18px;color:#52525b;font-size:13px;line-height:1.5">
-        <li><strong>${data.rows.length}</strong> employee(s) with at least one gap</li>
-        <li><strong>${totalGapDays}</strong> employee–weekday(s) under ${REQUIRED_HOURS_PER_DAY}h</li>
-        <li><strong>${totalHoursMissing.toFixed(2)}h</strong> missing in total (sum of per-day shortfalls)</li>
+        <li><strong>${data.rows.length}</strong> employee(s) shown (only people with at least one short weekday)</li>
+        <li><strong>${totalGapDays}</strong> gap-day(s) total — short weekdays summed across those people (not the same as employee count)</li>
+        <li><strong>${totalHoursMissing.toFixed(2)}h</strong> missing in total (sum of shortfalls on short days only)</li>
       </ul>
     </div>
     ${htmlBlocks.join("\n")}

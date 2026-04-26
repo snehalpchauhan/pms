@@ -837,11 +837,14 @@ export default function CompanySettingsView() {
                                             className="font-mono text-sm"
                                         />
                                         <p className="text-xs text-muted-foreground">
-                                            One email address per line. These addresses receive the daily &quot;week to
-                                            date&quot; timecard summary when{" "}
-                                            <code className="text-xs bg-muted px-1 rounded">TIME_ADMIN_SUMMARY_ENABLED=true</code>{" "}
-                                            is set on the server. If this list is empty, the server can fall back to{" "}
-                                            <code className="text-xs bg-muted px-1 rounded">TIME_ADMIN_SUMMARY_TO</code>.
+                                            One address per line. Recipients for consolidated admin digests: enable{" "}
+                                            <code className="text-xs bg-muted px-1 rounded">TIME_DIGEST_ADMIN_DAILY_ENABLED</code>,{" "}
+                                            <code className="text-xs bg-muted px-1 rounded">TIME_DIGEST_ADMIN_WEEKLY_ENABLED</code>, or{" "}
+                                            <code className="text-xs bg-muted px-1 rounded">TIME_DIGEST_ADMIN_MONTHLY_ENABLED</code>{" "}
+                                            on the server (see <code className="text-xs bg-muted px-1 rounded">server/scheduler.ts</code>
+                                            ). Legacy week-to-date job uses{" "}
+                                            <code className="text-xs bg-muted px-1 rounded">TIME_ADMIN_SUMMARY_ENABLED</code>. If empty,
+                                            fall back to <code className="text-xs bg-muted px-1 rounded">TIME_ADMIN_SUMMARY_TO</code>.
                                         </p>
                                     </div>
                                 </CardContent>
