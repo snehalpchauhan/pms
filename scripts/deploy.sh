@@ -54,7 +54,7 @@ Run:
   ./scripts/deploy.sh 1|2|3        # skip menu (for scripts/CI)
 
 Options:
-  1  Code only:  local commit+push, then remote git pull, npm ci, build, restart
+  1  Code only:  local commit+push, then remote git reset to origin, npm ci, build, restart
   2  DB only:     local commit+push, then remote db:push (needs node_modules on server)
   3  Code + DB:   local commit+push, then remote pull, ci, db:push, build, restart
 
@@ -224,11 +224,12 @@ deploy_db() {
 }
 
 deploy_code() {
-  echo "==> Code: git pull, npm ci, db push, build, restart"
+  echo "==> Code: git fetch + reset to origin/$DEPLOY_BRANCH, npm ci, db push, build, restart"
   cd "$DEPLOY_PATH"
   git fetch origin
   git checkout "$DEPLOY_BRANCH"
-  git pull origin "$DEPLOY_BRANCH"
+  # Match GitHub exactly; avoids pull failures from manual edits or untracked files on the server.
+  git reset --hard "origin/$DEPLOY_BRANCH"
   unset NODE_ENV
   npm ci
   load_env
@@ -247,7 +248,7 @@ case "$MODE" in
     cd "$DEPLOY_PATH"
     git fetch origin
     git checkout "$DEPLOY_BRANCH"
-    git pull origin "$DEPLOY_BRANCH"
+    git reset --hard "origin/$DEPLOY_BRANCH"
     unset NODE_ENV
     npm ci
     load_env
