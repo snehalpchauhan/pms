@@ -4,8 +4,8 @@
  * - WebSocket `subscribeUser` for instant rings.
  * - GET /api/chat/pending-invite polling every 3.5s as fallback.
  * - Full-width top banner for incoming calls.
- * - VoiceLink call opens as a FLOATING draggable window (not fullscreen)
- *   so the messages pane stays visible.
+ * - VoiceLink call opens as a FLOATING draggable window so the messages
+ *   pane stays fully visible.
  */
 import {
   createContext,
@@ -58,12 +58,14 @@ export function useVoiceLink() {
   return useContext(VoiceLinkContext);
 }
 
+// ─── Constants ────────────────────────────────────────────────────────────────
+
 const RING_TIMEOUT_MS = 45_000;
 const POLL_MS = 3_500;
-
-// Default floating window size
 const DEFAULT_W = 480;
 const DEFAULT_H = 360;
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function maybeDesktopNotify(callerName: string, channelLabel: string, media: string) {
   if (typeof Notification === "undefined") return;
@@ -77,14 +79,13 @@ function maybeDesktopNotify(callerName: string, channelLabel: string, media: str
   } catch { /* ignore */ }
 }
 
-// ─── Draggable floating window ─────────────────────────────────────────────
-
-interface FloatPos { x: number; y: number }
+// ─── Drag hook ────────────────────────────────────────────────────────────────
 
 function useFloatDrag(ref: React.RefObject<HTMLDivElement | null>) {
-  const pos = useRef<FloatPos>({ x: window.innerWidth - DEFAULT_W - 24, y: 80 });
+  const initX = typeof window !== "undefined" ? window.innerWidth - DEFAULT_W - 24 : 100;
+  const pos = useRef({ x: initX, y: 80 });
   const dragging = useRef(false);
-  const origin = useRef<{ mx: number; my: number; px: number; py: number }>({ mx: 0, my: 0, px: 0, py: 0 });
+  const origin = useRef({ mx: 0, my: 0, px: 0, py: 0 });
 
   const onMouseDown = useCallback((e: ReactMouseEvent) => {
     dragging.current = true;
@@ -137,6 +138,7 @@ export function VoiceLinkProvider({ children }: { children: ReactNode }) {
   const floatRef = useRef<HTMLDivElement>(null);
   const { onMouseDown: onDragStart, initialPos } = useFloatDrag(floatRef);
 
+  // ── Invite deduplication ─────────────────────────────────────────────────
   const applyInvite = useCallback((payload: IncomingCall) => {
     if (callFrameRef.current) return;
     setIncomingCall((prev) => {
@@ -151,6 +153,7 @@ export function VoiceLinkProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  // ── Clear call UI + server invites ───────────────────────────────────────
   const clearCallUiAndServerInvites = useCallback(async (channelId: number | undefined) => {
     setCallFrame(null);
     setMinimized(false);
@@ -162,6 +165,7 @@ export function VoiceLinkProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // ── postMessage from VoiceLink iframe ───────────────────────────────────
   useEffect(() => {
     const handler = (ev: MessageEvent) => {
       if (ev.data?.type === "vl-left") {
@@ -175,6 +179,7 @@ export function VoiceLinkProvider({ children }: { children: ReactNode }) {
 
   const userId = user?.id ? Number(user.id) : null;
 
+  // ── WebSocket (instant ring) ─────────────────────────────────────────────
   useEffect(() => {
     if (!userId) return;
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -193,7 +198,8 @@ export function VoiceLinkProvider({ children }: { children: ReactNode }) {
         if (data.type === "incoming_call" && data.channelId != null) {
           if (callFrameRef.current) return;
           applyInvite({
-            channelId: data.channelId, channelName: data.channelName,
+            channelId: data.channelId,
+            channelName: data.channelName,
             callerName: data.callerName ?? "Someone",
             media: (data.media as "audio" | "video") ?? "audio",
           });
@@ -204,6 +210,7 @@ export function VoiceLinkProvider({ children }: { children: ReactNode }) {
     return () => ws.close();
   }, [userId, applyInvite]);
 
+  // ── Polling fallback ─────────────────────────────────────────────────────
   useEffect(() => {
     if (!userId) return;
     let cancelled = false;
@@ -221,6 +228,7 @@ export function VoiceLinkProvider({ children }: { children: ReactNode }) {
     return () => { cancelled = true; window.clearInterval(id); };
   }, [userId, applyInvite]);
 
+  // ── Ring countdown ───────────────────────────────────────────────────────
   useEffect(() => {
     if (!incomingCall) { setRingCountdown(RING_TIMEOUT_MS / 1000); return; }
     const ch = incomingCall.channelName ? `#${incomingCall.channelName}` : "";
@@ -245,6 +253,7 @@ export function VoiceLinkProvider({ children }: { children: ReactNode }) {
     try { await apiRequest("POST", "/api/chat/pending-invite/dismiss", {}); } catch { /* ignore */ }
   }, []);
 
+  // ── Open call ────────────────────────────────────────────────────────────
   const openVoiceLink = useCallback(
     async (channelId: number, media: "audio" | "video", channelName?: string) => {
       if (callFrameRef.current) {
@@ -277,6 +286,13 @@ export function VoiceLinkProvider({ children }: { children: ReactNode }) {
     void clearCallUiAndServerInvites(ch);
   }, [clearCallUiAndServerInvites]);
 
+  const joinIncoming = useCallback(async () => {
+    if (!incomingRef.current) return;
+    const { channelId, media, channelName } = incomingRef.current;
+    await dismissIncoming();
+    await openVoiceLink(channelId, media, channelName);
+  }, [dismissIncoming, openVoiceLink]);
+
   const iframeAllow = useMemo(() => {
     if (!callFrame?.url) return "microphone *; camera *; display-capture *; autoplay; fullscreen *; encrypted-media *";
     try {
@@ -287,14 +303,7 @@ export function VoiceLinkProvider({ children }: { children: ReactNode }) {
     }
   }, [callFrame?.url]);
 
-  const joinIncoming = useCallback(async () => {
-    if (!incomingRef.current) return;
-    const { channelId, media, channelName } = incomingRef.current;
-    await dismissIncoming();
-    await openVoiceLink(channelId, media, channelName);
-  }, [dismissIncoming, openVoiceLink]);
-
-  // Expanded = full screen; normal = floating window; minimized = title bar only
+  // ── Float window style ───────────────────────────────────────────────────
   const floatStyle = expanded
     ? { position: "fixed" as const, inset: 0 }
     : {
@@ -309,7 +318,7 @@ export function VoiceLinkProvider({ children }: { children: ReactNode }) {
     <VoiceLinkContext.Provider value={{ callFrame, vlBusy, openVoiceLink, closeCall }}>
       {children}
 
-      {/* ── Incoming call banner — top strip ── */}
+      {/* ── Incoming call banner ── */}
       {incomingCall && !callFrame && (
         <div
           className="fixed top-0 left-0 right-0 z-[100] flex flex-wrap items-center gap-3 border-b border-primary/40 bg-gradient-to-r from-primary/20 via-primary/10 to-background px-4 py-3 shadow-lg backdrop-blur-sm"
@@ -350,18 +359,20 @@ export function VoiceLinkProvider({ children }: { children: ReactNode }) {
           className="z-[90] flex flex-col overflow-hidden rounded-xl border border-white/15 bg-black shadow-2xl"
           style={{ ...floatStyle, resize: expanded ? "none" : "both", minWidth: 320, minHeight: 44 }}
         >
-          {/* Title bar — drag handle */}
+          {/* Title bar / drag handle */}
           <div
             className={`flex shrink-0 select-none items-center gap-2 bg-zinc-900 px-3 py-2 ${expanded ? "" : "cursor-grab active:cursor-grabbing"}`}
             onMouseDown={expanded ? undefined : onDragStart}
           >
             <GripHorizontal className="h-3.5 w-3.5 shrink-0 text-white/30" />
-            {callFrame.media === "video" ? <Video className="h-4 w-4 text-white/70" /> : <Phone className="h-4 w-4 text-white/70" />}
+            {callFrame.media === "video"
+              ? <Video className="h-4 w-4 text-white/70" />
+              : <Phone className="h-4 w-4 text-white/70" />
+            }
             <span className="flex-1 truncate text-xs font-medium text-white/80">
               {callFrame.channelName ? `#${callFrame.channelName} · ` : ""}
               <span className="capitalize">{callFrame.media}</span> call
             </span>
-            {/* Minimize */}
             <button
               type="button"
               title={minimized ? "Restore" : "Minimize"}
@@ -370,16 +381,14 @@ export function VoiceLinkProvider({ children }: { children: ReactNode }) {
             >
               <Minus className="h-3.5 w-3.5" />
             </button>
-            {/* Expand / restore */}
             <button
               type="button"
-              title={expanded ? "Restore window" : "Expand to full screen"}
+              title={expanded ? "Restore window" : "Full screen"}
               className="rounded p-1 text-white/50 hover:bg-white/10 hover:text-white"
               onClick={() => { setExpanded((v) => !v); setMinimized(false); }}
             >
               {expanded ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
             </button>
-            {/* Close */}
             <button
               type="button"
               title="Leave & close"
@@ -405,70 +414,3 @@ export function VoiceLinkProvider({ children }: { children: ReactNode }) {
     </VoiceLinkContext.Provider>
   );
 }
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
-import { Phone, Video, X } from "lucide-react";
-import { apiRequest } from "@/lib/queryClient";
-import { useToast } from "@/hooks/use-toast";
-import { useAuth } from "@/hooks/useAuth";
-import { Button } from "@/components/ui/button";
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-interface CallFrame {
-  url: string;
-  media: "audio" | "video";
-  channelId: number;
-  channelName?: string;
-}
-
-interface IncomingCall {
-  channelId: number;
-  channelName?: string;
-  callerName: string;
-  media: "audio" | "video";
-}
-
-interface VoiceLinkContextValue {
-  callFrame: CallFrame | null;
-  vlBusy: "audio" | "video" | null;
-  openVoiceLink: (channelId: number, media: "audio" | "video", channelName?: string) => Promise<void>;
-  closeCall: () => void;
-}
-
-const VoiceLinkContext = createContext<VoiceLinkContextValue>({
-  callFrame: null,
-  vlBusy: null,
-  openVoiceLink: async () => {},
-  closeCall: () => {},
-});
-
-export function useVoiceLink() {
-  return useContext(VoiceLinkContext);
-}
-
-const RING_TIMEOUT_MS = 45_000;
-const POLL_MS = 3_500;
-
-function maybeDesktopNotify(callerName: string, channelLabel: string, media: string) {
-  if (typeof Notification === "undefined") return;
-  if (document.visibilityState === "visible") return;
-  if (Notification.permission !== "granted") return;
-  try {
-    new Notification("Incoming call — PMS", {
-      body: `${callerName} started a ${media} call${channelLabel ? ` in ${channelLabel}` : ""}.`,
-      tag: "pms-voicelink-ring",
-    });
-  } catch {
-    /* ignore */
-  }
-}
-
