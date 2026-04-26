@@ -45,3 +45,10 @@ export function peekInvite(userId: number): CallInvitePayload | null {
 export function dismissInvite(userId: number): void {
   byUser.delete(userId);
 }
+
+/** Remove pending invites for this channel (call ended / host closed UI). */
+export function clearInvitesForChannel(channelId: number): void {
+  for (const [uid, inv] of [...byUser.entries()]) {
+    if (inv.channelId === channelId) byUser.delete(uid);
+  }
+}

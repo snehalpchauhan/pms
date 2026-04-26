@@ -4,8 +4,8 @@ import crypto from "node:crypto";
 import fs from "fs";
 import path from "path";
 import { z } from "zod";
-import { notifyChannelMessages, notifyUsersCall } from "./realtime";
-import { publishCallInvites, peekInvite, dismissInvite } from "./callInvites";
+import { notifyChannelMessages, notifyUsersCall, notifyUsersInviteCleared } from "./realtime";
+import { publishCallInvites, peekInvite, dismissInvite, clearInvitesForChannel } from "./callInvites";
 import { storage } from "./storage";
 import { setupAuth, requireAuth } from "./auth";
 import {
@@ -2325,6 +2325,22 @@ export async function registerRoutes(
     }
   });
 
+  /** User ids to ring / clear for VoiceLink (same rules as voice-link notify). */
+  async function resolveChannelRingMemberIds(channelId: number): Promise<number[]> {
+    const ch = await storage.getChannel(channelId);
+    if (!ch) return [];
+    const channelMembers = await storage.getChannelMembers(channelId);
+    let memberIds = channelMembers.map((m) => m.id);
+    if (ch.type === "public" && ch.projectId != null) {
+      const projectMembers = await storage.getProjectMembers(ch.projectId);
+      memberIds = projectMembers.map((m) => m.id);
+    } else if (memberIds.length === 0 && ch.projectId != null) {
+      const projectMembers = await storage.getProjectMembers(ch.projectId);
+      memberIds = projectMembers.map((m) => m.id);
+    }
+    return memberIds;
+  }
+
   /** Polling fallback for call invites (works if WebSocket is blocked). */
   app.get("/api/chat/pending-invite", requireAuth, (req, res) => {
     const currentUser = req.user as any;
@@ -2335,6 +2351,27 @@ export async function registerRoutes(
   app.post("/api/chat/pending-invite/dismiss", requireAuth, (_req, res) => {
     const currentUser = req.user as any;
     dismissInvite(currentUser.id);
+    res.json({ ok: true });
+  });
+
+  const clearChannelInvitesBodySchema = z.object({
+    channelId: z.coerce.number().int().positive(),
+  });
+
+  /** When a call UI closes, drop pending rings for that channel for everyone who was notified. */
+  app.post("/api/chat/call-invite-clear-channel", requireAuth, async (req, res) => {
+    const currentUser = req.user as any;
+    const parsed = clearChannelInvitesBodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: parsed.error.issues[0]?.message ?? "Invalid body" });
+    }
+    const { channelId } = parsed.data;
+    if (!(await userCanAccessChannel(currentUser.id, channelId))) {
+      return res.status(403).json({ message: "Access denied" });
+    }
+    const memberIds = await resolveChannelRingMemberIds(channelId);
+    clearInvitesForChannel(channelId);
+    notifyUsersInviteCleared(memberIds, channelId);
     res.json({ ok: true });
   });
 
@@ -2387,7 +2424,9 @@ export async function registerRoutes(
         body: JSON.stringify({
           participantName,
           roomName,
-          permissions: { audio: true, video: media === "video", screen: media === "video" },
+          // Always allow full capabilities in-room (Phone vs Video is only how we open UI;
+          // otherwise "audio" calls block camera/screen in VoiceLink session JWT).
+          permissions: { audio: true, video: true, screen: true },
           expiresIn: "2h",
         }),
         signal: ctrl.signal,
@@ -2408,16 +2447,7 @@ export async function registerRoutes(
       // Build the public joinUrl ourselves (VoiceLink App.js reads ?sessionToken= and auto-joins)
       const joinUrl = `${VL_HOST}?sessionToken=${encodeURIComponent(data.sessionToken)}`;
 
-      // Everyone who should be notified (public project channels → all project members)
-      const channelMembers = await storage.getChannelMembers(channelId);
-      let memberIds = channelMembers.map((m) => m.id);
-      if (channel.type === "public" && channel.projectId != null) {
-        const projectMembers = await storage.getProjectMembers(channel.projectId);
-        memberIds = projectMembers.map((m) => m.id);
-      } else if (memberIds.length === 0 && channel.projectId != null) {
-        const projectMembers = await storage.getProjectMembers(channel.projectId);
-        memberIds = projectMembers.map((m) => m.id);
-      }
+      const memberIds = await resolveChannelRingMemberIds(channelId);
       const ringPayload = {
         channelId,
         channelName: channel.name ?? "",

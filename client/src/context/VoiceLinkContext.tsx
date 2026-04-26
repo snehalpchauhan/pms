@@ -10,6 +10,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -102,13 +103,34 @@ export function VoiceLinkProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  /** Close call UI, clear local ring, server pending invite, and broadcast invite-clear for this channel. */
+  const clearCallUiAndServerInvites = useCallback(async (channelId: number | undefined) => {
+    setCallFrame(null);
+    setIncomingCall(null);
+    try {
+      await apiRequest("POST", "/api/chat/pending-invite/dismiss", {});
+    } catch {
+      /* ignore */
+    }
+    if (channelId != null) {
+      try {
+        await apiRequest("POST", "/api/chat/call-invite-clear-channel", { channelId });
+      } catch {
+        /* ignore */
+      }
+    }
+  }, []);
+
   useEffect(() => {
     const handler = (ev: MessageEvent) => {
-      if (ev.data?.type === "vl-left") setCallFrame(null);
+      if (ev.data?.type === "vl-left") {
+        const ch = callFrameRef.current?.channelId;
+        void clearCallUiAndServerInvites(ch);
+      }
     };
     window.addEventListener("message", handler);
     return () => window.removeEventListener("message", handler);
-  }, []);
+  }, [clearCallUiAndServerInvites]);
 
   const userId = user?.id ? Number(user.id) : null;
 
@@ -128,6 +150,10 @@ export function VoiceLinkProvider({ children }: { children: ReactNode }) {
           callerName?: string;
           media?: string;
         };
+        if (data.type === "call_invite_cleared" && data.channelId != null) {
+          setIncomingCall((prev) => (prev?.channelId === data.channelId ? null : prev));
+          return;
+        }
         if (data.type === "incoming_call" && data.channelId != null) {
           if (callFrameRef.current) return;
           applyInvite({
@@ -231,7 +257,22 @@ export function VoiceLinkProvider({ children }: { children: ReactNode }) {
     [toast],
   );
 
-  const closeCall = useCallback(() => setCallFrame(null), []);
+  const closeCall = useCallback(() => {
+    const ch = callFrameRef.current?.channelId;
+    void clearCallUiAndServerInvites(ch);
+  }, [clearCallUiAndServerInvites]);
+
+  const iframeAllow = useMemo(() => {
+    if (!callFrame?.url) {
+      return "microphone *; camera *; display-capture *; autoplay; fullscreen *; encrypted-media *";
+    }
+    try {
+      const o = new URL(callFrame.url).origin;
+      return `microphone ${o}; camera ${o}; display-capture ${o}; autoplay; fullscreen ${o}; encrypted-media ${o}`;
+    } catch {
+      return "microphone *; camera *; display-capture *; autoplay; fullscreen *; encrypted-media *";
+    }
+  }, [callFrame?.url]);
 
   const joinIncoming = useCallback(async () => {
     if (!incomingRef.current) return;
@@ -305,7 +346,7 @@ export function VoiceLinkProvider({ children }: { children: ReactNode }) {
             key={callFrame.url}
             src={callFrame.url}
             className="flex-1 w-full border-0"
-            allow="camera; microphone; display-capture; autoplay"
+            allow={iframeAllow}
             title="VoiceLink call"
           />
         </div>

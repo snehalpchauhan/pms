@@ -108,6 +108,16 @@ export function notifyUsersCall(
   }
 }
 
+/** Tell clients to hide incoming-call UI for this channel (call ended / cleared). */
+export function notifyUsersInviteCleared(memberUserIds: number[], channelId: number) {
+  const payload = JSON.stringify({ type: "call_invite_cleared", channelId });
+  for (const uid of memberUserIds) {
+    const sockets = userSubscribers.get(uid);
+    if (!sockets?.size) continue;
+    sockets.forEach((ws) => sendToWs(ws, payload));
+  }
+}
+
 /** @deprecated Use notifyUsersCall for call events. Kept for channel-level fallback. */
 export function notifyChannelCall(channelId: number, callerName: string, media: "audio" | "video") {
   const set = channelSubscribers.get(channelId);
