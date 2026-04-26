@@ -24,6 +24,9 @@ import { isValidProjectColor, sanitizeProjectColor } from "@shared/projectColors
 import { timeLogNoteMeetsMinWords } from "@shared/timeLogDescription";
 import type { Project } from "@shared/schema";
 
+/** When `VOICELINK_BASE_URL` is unset, join links use this host (set env to override or point staging elsewhere). */
+const VOICELINK_BASE_URL_DEFAULT = "https://voicelink.vnnovate.net";
+
 /** Closed projects are hidden from normal API use; admins manage them via /api/admin/projects. */
 async function requireOpenProjectForApi(res: express.Response, projectId: number): Promise<Project | null> {
   const project = await storage.getProject(projectId);
@@ -2340,7 +2343,8 @@ export async function registerRoutes(
     const me = await storage.getUser(currentUser.id);
     const displayName = (me?.name || "User").trim().slice(0, 120);
 
-    const base = (process.env.VOICELINK_BASE_URL || "").trim().replace(/\/$/, "");
+    const baseEnv = (process.env.VOICELINK_BASE_URL ?? "").trim();
+    const base = (baseEnv !== "" ? baseEnv : VOICELINK_BASE_URL_DEFAULT).replace(/\/$/, "");
     const apiCreate = (process.env.VOICELINK_API_CREATE_ROOM_URL || "").trim();
     const apiKey = (process.env.VOICELINK_API_KEY || "").trim();
 
@@ -2382,13 +2386,6 @@ export async function registerRoutes(
         console.error("[voice-link] VOICELINK_API_CREATE_ROOM_URL request failed:", e);
         return res.status(502).json({ message: "Could not reach VoiceLink API" });
       }
-    }
-
-    if (!base) {
-      return res.status(503).json({
-        message:
-          "VoiceLink is not configured. Set VOICELINK_BASE_URL for simple join links, or VOICELINK_API_CREATE_ROOM_URL if your VoiceLink server creates rooms via HTTP.",
-      });
     }
 
     const q = new URLSearchParams({
