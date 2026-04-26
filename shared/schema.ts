@@ -36,6 +36,11 @@ export const companySettings = pgTable("company_settings", {
    * Recipients of the consolidated "admin" timecard gap summary email (JSON array of email strings).
    */
   timecardSummaryRecipientEmails: jsonb("timecard_summary_recipient_emails").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+  /**
+   * IANA timezone for timecard-related cron schedules (e.g. Asia/Kolkata).
+   * When null/empty, node-cron uses the process default (usually the server OS timezone).
+   */
+  emailDigestTimezone: text("email_digest_timezone"),
 });
 
 export const users = pgTable("users", {

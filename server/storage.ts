@@ -130,6 +130,7 @@ export interface IStorage {
       timeLogMaxHoursPerEntry: string | null;
       timecardDateDisplayFormat: string;
       timecardSummaryRecipientEmails: string[];
+      emailDigestTimezone: string | null;
     }>,
   ): Promise<CompanySettings>;
 
@@ -681,6 +682,7 @@ export class DatabaseStorage implements IStorage {
       timeLogMaxHoursPerEntry: string | null;
       timecardDateDisplayFormat: string;
       timecardSummaryRecipientEmails: string[];
+      emailDigestTimezone?: string | null;
     }>,
   ): Promise<CompanySettings> {
     const current = await this.getCompanySettings();

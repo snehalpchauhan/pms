@@ -380,6 +380,8 @@ export async function registerRoutes(
       .optional(),
     timecardDateDisplayFormat: z.enum(["DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD"]).optional(),
     timecardSummaryRecipientEmails: z.array(z.string().email()).max(50).optional(),
+    /** IANA zone for timecard crons, e.g. Asia/Kolkata; empty string clears to server default */
+    emailDigestTimezone: z.union([z.string().max(80), z.literal("")]).optional(),
   });
 
   app.get("/api/company-settings", requireAuth, async (_req, res) => {
@@ -406,6 +408,7 @@ export async function registerRoutes(
       timecardSummaryRecipientEmails: Array.isArray(row.timecardSummaryRecipientEmails)
         ? row.timecardSummaryRecipientEmails
         : [],
+      emailDigestTimezone: row.emailDigestTimezone?.trim() ?? "",
     });
   });
 
@@ -434,7 +437,8 @@ export async function registerRoutes(
       body.timeLogMinDescriptionWords === undefined &&
       body.timeLogMaxHoursPerEntry === undefined &&
       body.timecardDateDisplayFormat === undefined &&
-      body.timecardSummaryRecipientEmails === undefined
+      body.timecardSummaryRecipientEmails === undefined &&
+      body.emailDigestTimezone === undefined
     ) {
       return res.status(400).json({ message: "No changes provided" });
     }
@@ -456,6 +460,7 @@ export async function registerRoutes(
       timeLogMaxHoursPerEntry?: string | null;
       timecardDateDisplayFormat?: string;
       timecardSummaryRecipientEmails?: string[];
+      emailDigestTimezone?: string | null;
     } = {};
 
     if (body.companyName !== undefined) updates.companyName = body.companyName;
@@ -519,6 +524,9 @@ export async function registerRoutes(
     if (body.timecardSummaryRecipientEmails !== undefined) {
       updates.timecardSummaryRecipientEmails = body.timecardSummaryRecipientEmails;
     }
+    if (body.emailDigestTimezone !== undefined) {
+      updates.emailDigestTimezone = body.emailDigestTimezone.trim() === "" ? null : body.emailDigestTimezone.trim();
+    }
 
     const updated = await storage.updateCompanySettings(updates);
     if (
@@ -551,6 +559,7 @@ export async function registerRoutes(
       timecardSummaryRecipientEmails: Array.isArray(updated.timecardSummaryRecipientEmails)
         ? updated.timecardSummaryRecipientEmails
         : [],
+      emailDigestTimezone: updated.emailDigestTimezone?.trim() ?? "",
     });
   });
 

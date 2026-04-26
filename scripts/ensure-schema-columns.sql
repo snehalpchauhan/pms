@@ -17,6 +17,7 @@ ALTER TABLE company_settings ADD COLUMN IF NOT EXISTS browser_title text;
 
 ALTER TABLE company_settings ADD COLUMN IF NOT EXISTS timecard_date_display_format text NOT NULL DEFAULT 'DD/MM/YYYY';
 ALTER TABLE company_settings ADD COLUMN IF NOT EXISTS timecard_summary_recipient_emails jsonb NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE company_settings ADD COLUMN IF NOT EXISTS email_digest_timezone text;
 
 ALTER TABLE users ADD COLUMN IF NOT EXISTS project_sidebar_order jsonb;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS project_quick_menu_ids jsonb;

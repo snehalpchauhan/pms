@@ -37,6 +37,19 @@ import {
 } from "@shared/workflowColumns";
 import { TIMECARD_DATE_FORMAT_PRESETS, type TimecardDateFormatPreset } from "@shared/timecardDateFormat";
 
+/** IANA zones for timecard cron schedules (node-cron); empty = server OS default. */
+const EMAIL_DIGEST_TIMEZONE_PRESETS = [
+    "UTC",
+    "Asia/Kolkata",
+    "Asia/Dubai",
+    "Asia/Singapore",
+    "Europe/London",
+    "Europe/Paris",
+    "America/New_York",
+    "America/Los_Angeles",
+    "Australia/Sydney",
+] as const;
+
 type UserRole = "admin" | "manager" | "employee" | "client";
 
 const ROLE_COLORS: Record<UserRole, string> = {
@@ -88,6 +101,7 @@ type CompanySettingsDto = {
     timeLogMaxHoursPerEntry: number | null;
     timecardDateDisplayFormat: TimecardDateFormatPreset;
     timecardSummaryRecipientEmails: string[];
+    emailDigestTimezone?: string;
 };
 
 /** Mirrors server `ms365FullyConfigured` for UI (tenant, client id, secret). */
@@ -162,6 +176,7 @@ export default function CompanySettingsView() {
     const [timeLogMaxHoursPerEntry, setTimeLogMaxHoursPerEntry] = useState<string>("");
     const [timecardDateDisplayFormat, setTimecardDateDisplayFormat] = useState<TimecardDateFormatPreset>("DD/MM/YYYY");
     const [timecardSummaryEmailsText, setTimecardSummaryEmailsText] = useState<string>("");
+    const [emailDigestTimezone, setEmailDigestTimezone] = useState("");
 
     const [projectsSubTab, setProjectsSubTab] = useState<"active" | "closed">("active");
     const [projectsSearch, setProjectsSearch] = useState("");
@@ -231,6 +246,7 @@ export default function CompanySettingsView() {
             (companyData.timecardDateDisplayFormat as TimecardDateFormatPreset) || "DD/MM/YYYY",
         );
         setTimecardSummaryEmailsText((companyData.timecardSummaryRecipientEmails ?? []).join("\n"));
+        setEmailDigestTimezone(companyData.emailDigestTimezone?.trim() ?? "");
     }, [companyData]);
 
     const displayLogoSrc =
@@ -270,6 +286,7 @@ export default function CompanySettingsView() {
                 timeLogMaxHoursPerEntry: timeLogMaxHoursPayload,
                 timecardDateDisplayFormat,
                 timecardSummaryRecipientEmails: emailLines,
+                emailDigestTimezone: emailDigestTimezone.trim(),
             };
             if (removeStoredMs365Secret) {
                 body.ms365ClientSecret = null;
@@ -845,6 +862,30 @@ export default function CompanySettingsView() {
                                             ). Legacy week-to-date job uses{" "}
                                             <code className="text-xs bg-muted px-1 rounded">TIME_ADMIN_SUMMARY_ENABLED</code>. If empty,
                                             fall back to <code className="text-xs bg-muted px-1 rounded">TIME_ADMIN_SUMMARY_TO</code>.
+                                        </p>
+                                    </div>
+                                    <div className="space-y-2 max-w-lg">
+                                        <Label htmlFor="email-digest-timezone">Timecard email digest timezone (IANA)</Label>
+                                        <Input
+                                            id="email-digest-timezone"
+                                            className="font-mono text-sm max-w-md"
+                                            placeholder="e.g. Asia/Kolkata"
+                                            value={emailDigestTimezone}
+                                            onChange={(e) => setEmailDigestTimezone(e.target.value)}
+                                            disabled={!isAdmin || companyLoading}
+                                            list="email-digest-timezone-presets"
+                                        />
+                                        <datalist id="email-digest-timezone-presets">
+                                            {EMAIL_DIGEST_TIMEZONE_PRESETS.map((z) => (
+                                                <option key={z} value={z} />
+                                            ))}
+                                        </datalist>
+                                        <p className="text-xs text-muted-foreground">
+                                            When set, all timecard-related crons (daily at 00:00, Friday weekly at 18:00, digests,
+                                            etc.) use this zone unless overridden by{" "}
+                                            <code className="text-xs bg-muted px-1 rounded">TIME_EMAIL_CRON_TIMEZONE</code> on
+                                            the server. Restart <code className="text-xs bg-muted px-1 rounded">pms.service</code>{" "}
+                                            after changing. Leave empty to use the server&apos;s default timezone.
                                         </p>
                                     </div>
                                 </CardContent>
