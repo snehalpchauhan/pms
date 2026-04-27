@@ -10,10 +10,11 @@ import { Upload, Bell, Mail, Shield, Camera, User, Loader2 } from "lucide-react"
 import { Switch } from "@/components/ui/switch";
 import { useAuth } from "@/hooks/useAuth";
 import { getUserInitials } from "@/lib/utils";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { PROFILE_TAB_EVENT } from "@/components/Layout";
 
 const AVATAR_MAX_BYTES = 800 * 1024;
 const AVATAR_ACCEPT = "image/png,image/jpeg,image/jpg,image/webp";
@@ -41,6 +42,7 @@ export default function UserProfileView() {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [avatarBusy, setAvatarBusy] = useState(false);
+  const [tab, setTab] = useState<"profile" | "security" | "notifications">("profile");
 
   const { data: loginConfig } = useQuery({
     queryKey: ["/api/auth/login-config"],
@@ -62,6 +64,18 @@ export default function UserProfileView() {
 
   const hideSecuritySection =
     Boolean(loginConfig?.ms365Enabled) && (user.role === "employee" || user.role === "manager");
+
+  useEffect(() => {
+    const onTab = (e: Event) => {
+      const d = (e as CustomEvent<string>).detail;
+      if (d === "profile" || d === "security" || d === "notifications") {
+        if (d === "security" && hideSecuritySection) return;
+        setTab(d);
+      }
+    };
+    window.addEventListener(PROFILE_TAB_EVENT, onTab);
+    return () => window.removeEventListener(PROFILE_TAB_EVENT, onTab);
+  }, [hideSecuritySection]);
 
   const initials = getUserInitials(user.name, user.username);
   const avatarSrc = user.avatar?.trim() || undefined;
@@ -146,7 +160,7 @@ export default function UserProfileView() {
       </div>
 
       <div className="flex-1 overflow-hidden">
-        <Tabs defaultValue="profile" className="h-full flex flex-col">
+        <Tabs value={tab} onValueChange={(v) => setTab(v as any)} className="h-full flex flex-col">
           <div className="px-6 border-b border-border bg-muted/10">
             <TabsList className="bg-transparent h-12 gap-6 p-0">
               <TabsTrigger

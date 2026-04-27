@@ -55,6 +55,8 @@ interface SidebarProps {
 }
 
 const SETTINGS_SIDEBAR_TABS = ["general", "login", "users", "projects", "billing"] as const;
+const PROFILE_SIDEBAR_TABS = ["profile", "security", "notifications"] as const;
+export const PROFILE_TAB_EVENT = "pms:profileTab";
 
 function directChannelWithPeer(
   channels: Channel[],
@@ -93,10 +95,21 @@ export function Sidebar({ currentView, currentChannelId, onViewChange, currentPr
   const [editProjectOpen, setEditProjectOpen] = useState(false);
   const [deleteProjectOpen, setDeleteProjectOpen] = useState(false);
   const [deleteProjectLoading, setDeleteProjectLoading] = useState(false);
+  const [profileSidebarTab, setProfileSidebarTab] = useState<(typeof PROFILE_SIDEBAR_TABS)[number]>("profile");
 
   useEffect(() => {
     setSettingsSidebarTab(settingsSidebarTabFromHash(!!isSettingsAdmin));
   }, [isSettingsAdmin]);
+
+  useEffect(() => {
+    const onProfileTab = (e: Event) => {
+      const d = (e as CustomEvent<string>).detail;
+      if (!PROFILE_SIDEBAR_TABS.includes(d as (typeof PROFILE_SIDEBAR_TABS)[number])) return;
+      setProfileSidebarTab(d as (typeof PROFILE_SIDEBAR_TABS)[number]);
+    };
+    window.addEventListener(PROFILE_TAB_EVENT, onProfileTab);
+    return () => window.removeEventListener(PROFILE_TAB_EVENT, onProfileTab);
+  }, []);
 
   useEffect(() => {
     const onHash = () => setSettingsSidebarTab(settingsSidebarTabFromHash(!!isSettingsAdmin));
@@ -466,15 +479,44 @@ export function Sidebar({ currentView, currentChannelId, onViewChange, currentPr
                     </div>
                     <ScrollArea className="flex-1 px-3 py-4">
                         <div className="space-y-1">
-                            <Button variant="ghost" className="w-full justify-start font-medium bg-background shadow-sm text-primary">
+                            <Button
+                              variant="ghost"
+                              className={cn(
+                                "w-full justify-start font-medium",
+                                profileSidebarTab === "profile"
+                                  ? "bg-background shadow-sm text-primary"
+                                  : "text-muted-foreground",
+                              )}
+                              onClick={() => window.dispatchEvent(new CustomEvent(PROFILE_TAB_EVENT, { detail: "profile" }))}
+                            >
                                 <User className="w-4 h-4 mr-2" />
                                 My Profile
                             </Button>
-                            <Button variant="ghost" className="w-full justify-start font-medium text-muted-foreground">
+                            <Button
+                              variant="ghost"
+                              className={cn(
+                                "w-full justify-start font-medium",
+                                profileSidebarTab === "security"
+                                  ? "bg-background shadow-sm text-primary"
+                                  : "text-muted-foreground",
+                              )}
+                              onClick={() => window.dispatchEvent(new CustomEvent(PROFILE_TAB_EVENT, { detail: "security" }))}
+                            >
                                 <Shield className="w-4 h-4 mr-2" />
                                 Security
                             </Button>
-                            <Button variant="ghost" className="w-full justify-start font-medium text-muted-foreground">
+                            <Button
+                              variant="ghost"
+                              className={cn(
+                                "w-full justify-start font-medium",
+                                profileSidebarTab === "notifications"
+                                  ? "bg-background shadow-sm text-primary"
+                                  : "text-muted-foreground",
+                              )}
+                              onClick={() =>
+                                window.dispatchEvent(new CustomEvent(PROFILE_TAB_EVENT, { detail: "notifications" }))
+                              }
+                            >
                                 <Bell className="w-4 h-4 mr-2" />
                                 Notifications
                             </Button>
