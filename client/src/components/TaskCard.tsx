@@ -42,6 +42,17 @@ export function TaskCard({ task, onClick, disableDrag = false }: TaskCardProps) 
   const isClientViewing = currentUser?.role === "client";
   /** Violet card outline applies to ALL viewers of client-request tasks. */
   const showClientRequestHighlight = isClientRequest;
+  /** Banner text: staff see "Client Request"; clients see "Your Request" or "[Name]'s Request". */
+  const clientRequestBannerLabel: string | null = (() => {
+    if (!isClientRequest) return null;
+    if (!isClientViewing) return "Client Request";
+    if (task.ownerId != null && Number(task.ownerId) === Number(currentUser?.id)) return "Your Request";
+    if (task.ownerId != null) {
+      const owner = users[String(task.ownerId)];
+      return owner ? `${owner.name.split(" ")[0]}'s Request` : "Client Request";
+    }
+    return "Client Request";
+  })();
   const discussionCommentCount = task.comments.filter((c) => !isSystemTaskComment(c)).length;
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: task.id,
@@ -78,6 +89,12 @@ export function TaskCard({ task, onClick, disableDrag = false }: TaskCardProps) 
           showClientRequestHighlight && !overInvested && "border-violet-400/70 ring-1 ring-violet-400/30 bg-violet-50/40 dark:bg-violet-950/20",
         )}
       >
+        {clientRequestBannerLabel && (
+          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-100/80 dark:bg-violet-900/30 border-b border-violet-200/60 dark:border-violet-800/40">
+            <span className="w-1.5 h-1.5 rounded-full bg-violet-500 shrink-0" />
+            <span className="text-[10px] font-semibold text-violet-700 dark:text-violet-300 uppercase tracking-wider">{clientRequestBannerLabel}</span>
+          </div>
+        )}
         {task.coverImage && (
           <div className="h-32 w-full overflow-hidden border-b border-border/50">
             <img
