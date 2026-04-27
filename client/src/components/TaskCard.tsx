@@ -42,6 +42,18 @@ export function TaskCard({ task, onClick, disableDrag = false }: TaskCardProps) 
   const isClientRequest = task.tags.includes("[Client Request]");
   /** Show the client-request highlight only to non-client users (staff/managers/admins). */
   const showClientRequestHighlight = isClientRequest && currentUser?.role !== "client";
+  /** For client users viewing a client-request task: who created it? */
+  const isClientViewing = currentUser?.role === "client";
+  const isMyTask = isClientViewing && isClientRequest && task.ownerId != null && Number(task.ownerId) === Number(currentUser?.id);
+  const clientCreatorLabel: string | null = (() => {
+    if (!isClientViewing || !isClientRequest) return null;
+    if (task.ownerId != null && Number(task.ownerId) === Number(currentUser?.id)) return "You created";
+    if (task.ownerId != null) {
+      const owner = users[String(task.ownerId)];
+      return owner ? `${owner.name.split(" ")[0]} created` : "Client created";
+    }
+    return "Client created";
+  })();
   const discussionCommentCount = task.comments.filter((c) => !isSystemTaskComment(c)).length;
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: task.id,
@@ -96,11 +108,26 @@ export function TaskCard({ task, onClick, disableDrag = false }: TaskCardProps) 
         <CardHeader className="p-3 pb-0 space-y-2">
           <div className="flex justify-between items-start">
             <div className="flex gap-2 flex-wrap items-center">
-              {task.tags.map((tag) => (
-                <Badge key={tag} variant="secondary" className="text-[10px] h-5 px-1.5 font-normal text-muted-foreground bg-muted/50">
-                  {tag}
-                </Badge>
-              ))}
+              {task.tags
+                .filter((tag) => !(isClientViewing && tag === "[Client Request]"))
+                .map((tag) => (
+                  <Badge key={tag} variant="secondary" className="text-[10px] h-5 px-1.5 font-normal text-muted-foreground bg-muted/50">
+                    {tag}
+                  </Badge>
+                ))}
+              {clientCreatorLabel && (
+                <span
+                  className={cn(
+                    "inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full shrink-0",
+                    isMyTask
+                      ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
+                      : "bg-muted/80 text-muted-foreground",
+                  )}
+                >
+                  <span className={cn("w-1 h-1 rounded-full shrink-0", isMyTask ? "bg-blue-500" : "bg-muted-foreground/60")} />
+                  {clientCreatorLabel}
+                </span>
+              )}
               {overInvested && (
                 <span
                   className="inline-flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-400"
