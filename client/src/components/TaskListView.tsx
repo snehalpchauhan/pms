@@ -6,7 +6,6 @@ import { isTaskOverInvested, parseTaskHoursField } from "@/lib/taskHours";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
-import { useAppData } from "@/hooks/useAppData";
 import { isToday, isTomorrow, isThisWeek, isPast } from "date-fns";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -23,7 +22,6 @@ export default function TaskListView({ tasks, project, onTaskClick, completeColu
     const [groupBy, setGroupBy] = useState<"none" | "dueDate">("dueDate");
     const [listScope, setListScope] = useState<"active" | "completed">("active");
     const { user: currentUser } = useAuth();
-    const { users } = useAppData();
 
     const doneId = completeColumnId || "done";
     const isTaskDone = (t: Task) => String(t.status) === String(doneId);
@@ -117,17 +115,6 @@ export default function TaskListView({ tasks, project, onTaskClick, completeColu
                     const isClientRequest = task.tags.includes("[Client Request]");
                     // Violet row styling applies to ALL viewers of client-request tasks
                     const showClientRequestHighlight = isClientRequest;
-                    const isClientViewing = currentUser?.role === "client";
-                    const isMyTask = isClientViewing && isClientRequest && task.ownerId != null && Number(task.ownerId) === Number(currentUser?.id);
-                    const clientCreatorLabel: string | null = (() => {
-                        if (!isClientViewing || !isClientRequest) return null;
-                        if (task.ownerId != null && Number(task.ownerId) === Number(currentUser?.id)) return "You created";
-                        if (task.ownerId != null) {
-                            const owner = users[String(task.ownerId)];
-                            return owner ? `${owner.name.split(" ")[0]} created` : "Client created";
-                        }
-                        return "Client created";
-                    })();
                     return (
                         <div
                             key={task.id}
@@ -143,20 +130,6 @@ export default function TaskListView({ tasks, project, onTaskClick, completeColu
                                 <span className="font-medium text-sm text-foreground group-hover:text-primary transition-colors">
                                     {task.title}
                                 </span>
-                                {/* Staff: violet left-border on the row is the visual cue — no inline pill needed */}
-                                {clientCreatorLabel && (
-                                    <span
-                                        className={cn(
-                                            "inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full shrink-0",
-                                            isMyTask
-                                                ? "bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300"
-                                                : "bg-violet-50 text-violet-600/80 dark:bg-violet-950/40 dark:text-violet-400",
-                                        )}
-                                    >
-                                        <span className={cn("w-1 h-1 rounded-full shrink-0", isMyTask ? "bg-violet-500" : "bg-violet-400/70")} />
-                                        {clientCreatorLabel}
-                                    </span>
-                                )}
                                 {task.tags.filter(t => t !== "[Client Request]").length > 0 && (
                                     <Badge
                                         variant="outline"

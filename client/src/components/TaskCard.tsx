@@ -6,10 +6,9 @@ import { CSS } from "@dnd-kit/utilities";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { MessageSquare, Paperclip, Calendar, MoreHorizontal, Clock, AlertTriangle } from "lucide-react";
+import { MessageSquare, Paperclip, Calendar, Clock, AlertTriangle } from "lucide-react";
 import { isTaskOverInvested, parseTaskHoursField } from "@/lib/taskHours";
 import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
 import { format } from "date-fns";
 
 interface TaskCardProps {
@@ -43,19 +42,6 @@ export function TaskCard({ task, onClick, disableDrag = false }: TaskCardProps) 
   const isClientViewing = currentUser?.role === "client";
   /** Violet card outline applies to ALL viewers of client-request tasks. */
   const showClientRequestHighlight = isClientRequest;
-  /** Violet "Client Request" banner shown only to staff — clients see the creator label instead. */
-  const showClientRequestBanner = isClientRequest && !isClientViewing;
-  /** For client users: is this task owned by the logged-in client? */
-  const isMyTask = isClientViewing && isClientRequest && task.ownerId != null && Number(task.ownerId) === Number(currentUser?.id);
-  const clientCreatorLabel: string | null = (() => {
-    if (!isClientViewing || !isClientRequest) return null;
-    if (task.ownerId != null && Number(task.ownerId) === Number(currentUser?.id)) return "You created";
-    if (task.ownerId != null) {
-      const owner = users[String(task.ownerId)];
-      return owner ? `${owner.name.split(" ")[0]} created` : "Client created";
-    }
-    return "Client created";
-  })();
   const discussionCommentCount = task.comments.filter((c) => !isSystemTaskComment(c)).length;
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: task.id,
@@ -92,28 +78,6 @@ export function TaskCard({ task, onClick, disableDrag = false }: TaskCardProps) 
           showClientRequestHighlight && !overInvested && "border-violet-400/70 ring-1 ring-violet-400/30 bg-violet-50/40 dark:bg-violet-950/20",
         )}
       >
-        {showClientRequestBanner && (
-          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-100/80 dark:bg-violet-900/30 border-b border-violet-200/60 dark:border-violet-800/40">
-            <span className="w-1.5 h-1.5 rounded-full bg-violet-500 shrink-0" />
-            <span className="text-[10px] font-semibold text-violet-700 dark:text-violet-300 uppercase tracking-wider">Client Request</span>
-          </div>
-        )}
-        {isClientViewing && isClientRequest && clientCreatorLabel && (
-          <div className={cn(
-            "flex items-center gap-1.5 px-3 py-1.5 border-b",
-            isMyTask
-              ? "bg-violet-100/80 dark:bg-violet-900/30 border-violet-200/60 dark:border-violet-800/40"
-              : "bg-violet-50/60 dark:bg-violet-950/40 border-violet-200/40 dark:border-violet-800/20",
-          )}>
-            <span className={cn("w-1.5 h-1.5 rounded-full shrink-0", isMyTask ? "bg-violet-500" : "bg-violet-400/70")} />
-            <span className={cn(
-              "text-[10px] font-semibold uppercase tracking-wider",
-              isMyTask ? "text-violet-700 dark:text-violet-300" : "text-violet-600/80 dark:text-violet-400",
-            )}>
-              {clientCreatorLabel}
-            </span>
-          </div>
-        )}
         {task.coverImage && (
           <div className="h-32 w-full overflow-hidden border-b border-border/50">
             <img
