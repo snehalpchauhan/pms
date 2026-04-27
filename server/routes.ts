@@ -1373,12 +1373,48 @@ export async function registerRoutes(
       await storage.setTaskAssignees(task.id, assigneeIds);
     }
     res.status(201).json(task);
-    // Notify staff when a client creates a task
+    // Notify staff when a client creates a task (fire-and-forget after response is sent)
     if (currentUser.role === "client") {
+      // Gather checklist items the client submitted (sent in request body)
+      const submittedChecklist: { text?: string }[] = Array.isArray(req.body.checklist)
+        ? req.body.checklist
+        : [];
+      const checklistItems = submittedChecklist
+        .map((c) => (typeof c?.text === "string" ? c.text.trim() : ""))
+        .filter(Boolean);
+
+      // Build plain-text body
+      const descriptionText = task.description?.trim() || "(No description)";
+      let textBody = `${currentUser.name} (client) added a new task in project "${openForTask.name}".\n\n`;
+      textBody += `Task: ${task.title}\n\n`;
+      textBody += `Description:\n${descriptionText}\n\n`;
+      if (checklistItems.length > 0) {
+        textBody += `Checklist:\n${checklistItems.map((t) => `• ${t}`).join("\n")}\n\n`;
+      }
+      textBody += `Log in to PMS to review it.`;
+
+      // Build HTML body
+      const escHtml = (s: string) =>
+        s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      let htmlBody = `<p><strong>${escHtml(currentUser.name)}</strong> (client) added a new task in project <strong>${escHtml(openForTask.name)}</strong>.</p>`;
+      htmlBody += `<h2 style="margin:16px 0 4px">${escHtml(task.title)}</h2>`;
+      if (task.description?.trim()) {
+        htmlBody += `<p style="color:#444;margin:0 0 12px">${escHtml(task.description.trim()).replace(/\n/g, "<br>")}</p>`;
+      }
+      if (checklistItems.length > 0) {
+        htmlBody += `<p style="margin:12px 0 4px;font-weight:600">Checklist</p><ul style="margin:0;padding-left:20px">`;
+        for (const item of checklistItems) {
+          htmlBody += `<li>${escHtml(item)}</li>`;
+        }
+        htmlBody += `</ul>`;
+      }
+      htmlBody += `<p style="margin-top:16px;color:#666">Log in to PMS to review it.</p>`;
+
       notifyStaffOfClientActivity({
         projectId: task.projectId,
         subject: `PMS: New client task — ${task.title}`,
-        text: `${currentUser.name} (client) added a new task in project "${openForTask.name}":\n\n"${task.title}"\n\nLog in to PMS to review it.`,
+        text: textBody,
+        html: htmlBody,
       }).catch(() => {});
     }
   });
@@ -1786,17 +1822,6 @@ export async function registerRoutes(
       type: "system",
     });
     res.status(201).json(item);
-    // Notify staff when a client adds a checklist item
-    if (currentUser.role === "client") {
-      storage.getTask(item.taskId).then((t) => {
-        if (!t) return;
-        notifyStaffOfClientActivity({
-          projectId: t.projectId,
-          subject: `PMS: Client updated checklist — ${t.title}`,
-          text: `${currentUser.name} (client) added a checklist item to task "${t.title}":\n\n• ${item.text}\n\nLog in to PMS to review it.`,
-        }).catch(() => {});
-      }).catch(() => {});
-    }
   });
 
   app.patch("/api/checklist/:id", requireAuth, async (req, res) => {
@@ -1880,17 +1905,6 @@ export async function registerRoutes(
       type: "system",
     });
     res.json({ message: "Deleted" });
-    // Notify staff when a client removes a checklist item
-    if (currentUser.role === "client") {
-      storage.getTask(removedTaskId).then((t) => {
-        if (!t) return;
-        notifyStaffOfClientActivity({
-          projectId: t.projectId,
-          subject: `PMS: Client updated checklist — ${t.title}`,
-          text: `${currentUser.name} (client) removed a checklist item from task "${t.title}":\n\n• ${removedText}\n\nLog in to PMS to review it.`,
-        }).catch(() => {});
-      }).catch(() => {});
-    }
   });
 
   const taskAttachmentUploadSchema = z.object({
