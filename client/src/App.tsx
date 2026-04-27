@@ -27,6 +27,7 @@ import { Button } from "@/components/ui/button";
 import { useCompanyBranding } from "@/hooks/useCompanyBranding";
 import { readInitialWorkspaceState, persistWorkspaceState, type WorkspaceView } from "@/lib/workspacePersistence";
 import { VoiceLinkProvider } from "@/context/VoiceLinkContext";
+import { AppErrorBoundary } from "@/components/AppErrorBoundary";
 
 export interface ClientPermissions {
   role: string;
@@ -432,7 +433,9 @@ function AppContent() {
 
   return (
     <AppDataProvider>
-      <AuthenticatedApp />
+      <AppErrorBoundary>
+        <AuthenticatedApp />
+      </AppErrorBoundary>
     </AppDataProvider>
   );
 }
