@@ -115,8 +115,8 @@ export default function TaskListView({ tasks, project, onTaskClick, completeColu
                     const actual = task.totalHours ?? 0;
                     const overInvested = isTaskOverInvested(estimated, actual);
                     const isClientRequest = task.tags.includes("[Client Request]");
-                    const showClientRequestHighlight = isClientRequest && currentUser?.role !== "client";
-                    // For client users: show who created this task
+                    // Violet row styling applies to ALL viewers of client-request tasks
+                    const showClientRequestHighlight = isClientRequest;
                     const isClientViewing = currentUser?.role === "client";
                     const isMyTask = isClientViewing && isClientRequest && task.ownerId != null && Number(task.ownerId) === Number(currentUser?.id);
                     const clientCreatorLabel: string | null = (() => {
@@ -143,22 +143,17 @@ export default function TaskListView({ tasks, project, onTaskClick, completeColu
                                 <span className="font-medium text-sm text-foreground group-hover:text-primary transition-colors">
                                     {task.title}
                                 </span>
-                                {showClientRequestHighlight && (
-                                    <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-violet-700 dark:text-violet-300 bg-violet-100 dark:bg-violet-900/40 px-1.5 py-0.5 rounded-full shrink-0">
-                                        <span className="w-1 h-1 rounded-full bg-violet-500" />
-                                        Client
-                                    </span>
-                                )}
+                                {/* Staff: violet left-border on the row is the visual cue — no inline pill needed */}
                                 {clientCreatorLabel && (
                                     <span
                                         className={cn(
                                             "inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full shrink-0",
                                             isMyTask
-                                                ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
-                                                : "bg-muted/80 text-muted-foreground",
+                                                ? "bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300"
+                                                : "bg-violet-50 text-violet-600/80 dark:bg-violet-950/40 dark:text-violet-400",
                                         )}
                                     >
-                                        <span className={cn("w-1 h-1 rounded-full shrink-0", isMyTask ? "bg-blue-500" : "bg-muted-foreground/60")} />
+                                        <span className={cn("w-1 h-1 rounded-full shrink-0", isMyTask ? "bg-violet-500" : "bg-violet-400/70")} />
                                         {clientCreatorLabel}
                                     </span>
                                 )}

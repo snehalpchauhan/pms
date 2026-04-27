@@ -40,10 +40,12 @@ export function TaskCard({ task, onClick, disableDrag = false }: TaskCardProps) 
   const actual = task.totalHours ?? 0;
   const overInvested = isTaskOverInvested(estimated, actual);
   const isClientRequest = task.tags.includes("[Client Request]");
-  /** Show the client-request highlight only to non-client users (staff/managers/admins). */
-  const showClientRequestHighlight = isClientRequest && currentUser?.role !== "client";
-  /** For client users viewing a client-request task: who created it? */
   const isClientViewing = currentUser?.role === "client";
+  /** Violet card outline applies to ALL viewers of client-request tasks. */
+  const showClientRequestHighlight = isClientRequest;
+  /** Violet "Client Request" banner shown only to staff — clients see the creator label instead. */
+  const showClientRequestBanner = isClientRequest && !isClientViewing;
+  /** For client users: is this task owned by the logged-in client? */
   const isMyTask = isClientViewing && isClientRequest && task.ownerId != null && Number(task.ownerId) === Number(currentUser?.id);
   const clientCreatorLabel: string | null = (() => {
     if (!isClientViewing || !isClientRequest) return null;
@@ -90,10 +92,26 @@ export function TaskCard({ task, onClick, disableDrag = false }: TaskCardProps) 
           showClientRequestHighlight && !overInvested && "border-violet-400/70 ring-1 ring-violet-400/30 bg-violet-50/40 dark:bg-violet-950/20",
         )}
       >
-        {showClientRequestHighlight && (
+        {showClientRequestBanner && (
           <div className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-100/80 dark:bg-violet-900/30 border-b border-violet-200/60 dark:border-violet-800/40">
             <span className="w-1.5 h-1.5 rounded-full bg-violet-500 shrink-0" />
             <span className="text-[10px] font-semibold text-violet-700 dark:text-violet-300 uppercase tracking-wider">Client Request</span>
+          </div>
+        )}
+        {isClientViewing && isClientRequest && clientCreatorLabel && (
+          <div className={cn(
+            "flex items-center gap-1.5 px-3 py-1.5 border-b",
+            isMyTask
+              ? "bg-violet-100/80 dark:bg-violet-900/30 border-violet-200/60 dark:border-violet-800/40"
+              : "bg-violet-50/60 dark:bg-violet-950/40 border-violet-200/40 dark:border-violet-800/20",
+          )}>
+            <span className={cn("w-1.5 h-1.5 rounded-full shrink-0", isMyTask ? "bg-violet-500" : "bg-violet-400/70")} />
+            <span className={cn(
+              "text-[10px] font-semibold uppercase tracking-wider",
+              isMyTask ? "text-violet-700 dark:text-violet-300" : "text-violet-600/80 dark:text-violet-400",
+            )}>
+              {clientCreatorLabel}
+            </span>
           </div>
         )}
         {task.coverImage && (
@@ -115,19 +133,6 @@ export function TaskCard({ task, onClick, disableDrag = false }: TaskCardProps) 
                     {tag}
                   </Badge>
                 ))}
-              {clientCreatorLabel && (
-                <span
-                  className={cn(
-                    "inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full shrink-0",
-                    isMyTask
-                      ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
-                      : "bg-muted/80 text-muted-foreground",
-                  )}
-                >
-                  <span className={cn("w-1 h-1 rounded-full shrink-0", isMyTask ? "bg-blue-500" : "bg-muted-foreground/60")} />
-                  {clientCreatorLabel}
-                </span>
-              )}
               {overInvested && (
                 <span
                   className="inline-flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-400"
