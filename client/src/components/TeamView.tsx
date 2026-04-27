@@ -325,21 +325,22 @@ export default function TeamView({ project, currentUserRole }: TeamViewProps) {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {group.members.map(user => {
-                const presence = effectivePresenceStatus(user.status, user.lastSeenAt);
-                const isOwnerMember =
-                  user.isProjectOwner === true ||
-                  (resolvedOwnerIdStr != null && String(user.id) === resolvedOwnerIdStr);
-                const targetIsAdmin = user.role === "admin";
-                const targetIsClient = user.role === "client";
-                const canRemoveThisMember =
-                  canInviteRemoveMembers &&
-                  !isOwnerMember &&
-                  // Managers/employees/owners cannot remove admins; only admins can.
-                  (!targetIsAdmin || currentUserRole === "admin");
-                const canOpenMemberMenu = canTransferOwner || canRemoveThisMember;
-                return (
-                <div key={user.id} className="space-y-0">
+                {group.members.map((user) => {
+                  const presence = effectivePresenceStatus(user.status, user.lastSeenAt);
+                  const isOwnerMember =
+                    user.isProjectOwner === true ||
+                    (resolvedOwnerIdStr != null && String(user.id) === resolvedOwnerIdStr);
+                  const targetIsAdmin = user.role === "admin";
+                  const targetIsClient = user.role === "client";
+                  const canRemoveThisMember =
+                    canInviteRemoveMembers &&
+                    !isOwnerMember &&
+                    // Managers/employees/owners cannot remove admins; only admins can.
+                    (!targetIsAdmin || currentUserRole === "admin");
+                  const canOpenMemberMenu = canTransferOwner || canRemoveThisMember;
+
+                  return (
+                    <div key={user.id} className="space-y-0">
                     <Card className={cn("hover:shadow-md transition-shadow border-border/60 relative group",
                         ((user.role === 'client' || user.role === 'manager' || user.role === 'employee') && canManageClientSettings) && "rounded-b-none border-b-0"
                     )}>
@@ -478,18 +479,21 @@ export default function TeamView({ project, currentUserRole }: TeamViewProps) {
                             </div>
                         </div>
                     )}
-                </div>
-                );
-            })}
-            
-            {canInviteRemoveMembers && (
-                <button type="button" onClick={() => setIsInviteOpen(true)} className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-border/50 rounded-xl hover:bg-muted/10 transition-colors h-full min-h-[160px] gap-2 group">
-                    <div className="w-10 h-10 rounded-full bg-muted/50 flex items-center justify-center group-hover:bg-primary/10 group-hover:text-primary transition-colors">
-                        <Plus className="w-5 h-5 text-muted-foreground group-hover:text-primary" />
                     </div>
-                    <span className="font-medium text-muted-foreground group-hover:text-primary transition-colors">Add Team Member</span>
-                </button>
-            )}
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+
+          {canInviteRemoveMembers && (
+            <div className="pt-2">
+              <Button type="button" variant="outline" onClick={() => setIsInviteOpen(true)}>
+                <Plus className="w-4 h-4 mr-2" />
+                Add team member
+              </Button>
+            </div>
+          )}
         </div>
 
         <Dialog
@@ -537,11 +541,8 @@ export default function TeamView({ project, currentUserRole }: TeamViewProps) {
                             </span>
                           </label>
                         );
-                })}
-              </div>
-            </div>
-          ))}
-        </div>
+                      })}
+                    </div>
                   </ScrollArea>
                 )}
                 {selectedUserIds.size > 0 && (
