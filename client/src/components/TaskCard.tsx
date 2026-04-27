@@ -1,5 +1,6 @@
 import { Task, Priority, isSystemTaskComment } from "@/lib/mockData";
 import { useAppData } from "@/hooks/useAppData";
+import { useAuth } from "@/hooks/useAuth";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
@@ -34,9 +35,13 @@ const PriorityBadge = ({ priority }: { priority: Priority }) => {
 
 export function TaskCard({ task, onClick, disableDrag = false }: TaskCardProps) {
   const { users } = useAppData();
+  const { user: currentUser } = useAuth();
   const estimated = parseTaskHoursField(task.estimatedHours);
   const actual = task.totalHours ?? 0;
   const overInvested = isTaskOverInvested(estimated, actual);
+  const isClientRequest = task.tags.includes("[Client Request]");
+  /** Show the client-request highlight only to non-client users (staff/managers/admins). */
+  const showClientRequestHighlight = isClientRequest && currentUser?.role !== "client";
   const discussionCommentCount = task.comments.filter((c) => !isSystemTaskComment(c)).length;
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: task.id,
@@ -70,8 +75,15 @@ export function TaskCard({ task, onClick, disableDrag = false }: TaskCardProps) 
         className={cn(
           "cursor-grab active:cursor-grabbing hover:shadow-md transition-shadow border-border/60 hover:border-primary/50 overflow-hidden group-hover:translate-y-[-2px]",
           overInvested && "border-amber-500/70 ring-1 ring-amber-500/40",
+          showClientRequestHighlight && !overInvested && "border-violet-400/70 ring-1 ring-violet-400/30 bg-violet-50/40 dark:bg-violet-950/20",
         )}
       >
+        {showClientRequestHighlight && (
+          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-100/80 dark:bg-violet-900/30 border-b border-violet-200/60 dark:border-violet-800/40">
+            <span className="w-1.5 h-1.5 rounded-full bg-violet-500 shrink-0" />
+            <span className="text-[10px] font-semibold text-violet-700 dark:text-violet-300 uppercase tracking-wider">Client Request</span>
+          </div>
+        )}
         {task.coverImage && (
           <div className="h-32 w-full overflow-hidden border-b border-border/50">
             <img

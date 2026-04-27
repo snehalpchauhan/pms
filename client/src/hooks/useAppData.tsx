@@ -202,5 +202,6 @@ export function convertTask(t: any): Task {
     attachments: taskLevelAttachments,
     estimatedHours: getEstimatedHoursFromTaskPayload(t),
     totalHours: parseTaskHoursField(t.totalHours) ?? 0,
+    createdAt: t.createdAt ? String(t.createdAt) : undefined,
   };
 }

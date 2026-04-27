@@ -5,6 +5,7 @@ import { CheckCircle2, Circle, Clock, MoreHorizontal, Timer, AlertTriangle } fro
 import { isTaskOverInvested, parseTaskHoursField } from "@/lib/taskHours";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
+import { useAuth } from "@/hooks/useAuth";
 import { isToday, isTomorrow, isThisWeek, isPast } from "date-fns";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -20,6 +21,7 @@ interface TaskListViewProps {
 export default function TaskListView({ tasks, project, onTaskClick, completeColumnId }: TaskListViewProps) {
     const [groupBy, setGroupBy] = useState<"none" | "dueDate">("dueDate");
     const [listScope, setListScope] = useState<"active" | "completed">("active");
+    const { user: currentUser } = useAuth();
 
     const doneId = completeColumnId || "done";
     const isTaskDone = (t: Task) => String(t.status) === String(doneId);
@@ -110,12 +112,15 @@ export default function TaskListView({ tasks, project, onTaskClick, completeColu
                     const estimated = parseTaskHoursField(task.estimatedHours);
                     const actual = task.totalHours ?? 0;
                     const overInvested = isTaskOverInvested(estimated, actual);
+                    const isClientRequest = task.tags.includes("[Client Request]");
+                    const showClientRequestHighlight = isClientRequest && currentUser?.role !== "client";
                     return (
                         <div
                             key={task.id}
                             className={cn(
                                 "grid grid-cols-12 gap-4 p-4 items-center hover:bg-muted/20 transition-colors cursor-pointer group",
                                 overInvested && "bg-amber-500/5 border-l-2 border-l-amber-500",
+                                showClientRequestHighlight && !overInvested && "bg-violet-50/40 dark:bg-violet-950/20 border-l-2 border-l-violet-400",
                             )}
                             onClick={() => onTaskClick && onTaskClick(task)}
                         >
@@ -124,12 +129,18 @@ export default function TaskListView({ tasks, project, onTaskClick, completeColu
                                 <span className="font-medium text-sm text-foreground group-hover:text-primary transition-colors">
                                     {task.title}
                                 </span>
-                                {task.tags.length > 0 && (
+                                {showClientRequestHighlight && (
+                                    <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-violet-700 dark:text-violet-300 bg-violet-100 dark:bg-violet-900/40 px-1.5 py-0.5 rounded-full shrink-0">
+                                        <span className="w-1 h-1 rounded-full bg-violet-500" />
+                                        Client
+                                    </span>
+                                )}
+                                {task.tags.filter(t => t !== "[Client Request]").length > 0 && (
                                     <Badge
                                         variant="outline"
                                         className="text-[10px] h-5 px-1.5 font-normal text-muted-foreground hidden sm:inline-flex"
                                     >
-                                        {task.tags[0]}
+                                        {task.tags.find(t => t !== "[Client Request]")}
                                     </Badge>
                                 )}
                             </div>

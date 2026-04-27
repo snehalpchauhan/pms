@@ -34,7 +34,7 @@ import { cn, getUserInitials } from "@/lib/utils";
 import { useState, useEffect, useMemo, useRef } from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { format } from "date-fns";
+import { format, formatDistanceToNow } from "date-fns";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -1258,7 +1258,18 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                         {task.id.toUpperCase()}
                     </Badge>
                     <Separator orientation="vertical" className="h-4" />
-                    <span className="text-sm text-muted-foreground">Last updated 2 hours ago</span>
+                    <span className="text-sm text-muted-foreground">
+                      {task.createdAt
+                        ? (() => {
+                            try {
+                              const d = new Date(task.createdAt);
+                              if (!isNaN(d.getTime()))
+                                return `Created ${formatDistanceToNow(d, { addSuffix: true })}`;
+                            } catch { /* ignore */ }
+                            return null;
+                          })()
+                        : null}
+                    </span>
                  </div>
              </div>
              

@@ -84,6 +84,8 @@ export interface Task {
   /** Planned effort (hours); compare to totalHours from time entries. */
   estimatedHours?: number;
   totalHours?: number;
+  /** ISO timestamp when task was created (from server). */
+  createdAt?: string;
 }
 
 export interface Column {
