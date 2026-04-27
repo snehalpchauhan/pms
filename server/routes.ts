@@ -1456,8 +1456,17 @@ export async function registerRoutes(
 
     if (currentUser.role === "client") {
       const membership = await storage.getProjectMembership(before.projectId, currentUser.id);
-      if (!membership || membership.clientTaskAccess !== "full") {
-        return res.status(403).json({ message: "Not authorized to edit tasks" });
+      if (!membership) return res.status(403).json({ message: "Access denied" });
+      const access = membership.clientTaskAccess ?? "feedback";
+      const isOwner = before.ownerId != null && Number(before.ownerId) === Number(currentUser.id);
+      const isAssigneeOnlyPatch = Array.isArray(assignees) && Object.keys(updates).length === 0;
+
+      // Clients with full access can edit anything. Clients with contribute access
+      // can update assignees on tasks THEY own (so they can assign work to the team).
+      if (access !== "full") {
+        if (!(access === "contribute" && isOwner && isAssigneeOnlyPatch)) {
+          return res.status(403).json({ message: "Not authorized to edit tasks" });
+        }
       }
     }
 

@@ -538,6 +538,7 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
   // - Contribute clients: allowed only on tasks they created
   // - Feedback clients: read-only
   const canModifyChecklist = !isClient || isFullAccess || (isContribute && isTaskOwner);
+  const canEditAssignees = !isClient || isFullAccess || (isContribute && isTaskOwner);
 
   const canDeleteTask = useMemo(() => {
     if (!currentUser) return false;
@@ -1539,7 +1540,7 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                                                 <AvatarFallback>{user.name[0]}</AvatarFallback>
                                             </Avatar>
                                             <span className="text-xs font-medium truncate max-w-[80px]">{user.name}</span>
-                                            {(!isClient || isFullAccess) && (
+                                            {canEditAssignees && (
                                                 <button type="button" onClick={() => void toggleAssignee(id)} className="ml-1 text-muted-foreground hover:text-destructive">
                                                     <X className="w-3 h-3" />
                                                 </button>
@@ -1547,7 +1548,7 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                                         </div>
                                     ) : null;
                                 })}
-                                {(!isClient || isFullAccess) && (
+                                {canEditAssignees && (
                                     <Popover>
                                         <PopoverTrigger asChild>
                                             <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full border border-dashed border-border/50">

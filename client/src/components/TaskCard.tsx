@@ -48,7 +48,7 @@ export function TaskCard({ task, onClick, disableDrag = false }: TaskCardProps) 
   /** Banner text: staff see "Client Request"; clients see "Your Request" or "[Name]'s Request". */
   const clientRequestBannerLabel: string | null = (() => {
     if (!isClientRequest) return null;
-    if (!isClientViewing) return "Client Request";
+    if (!isClientViewing) return owner ? `${owner.name.split(" ")[0]}'s Request` : "Client Request";
     if (task.ownerId != null && Number(task.ownerId) === Number(currentUser?.id)) return "Your Request";
     if (task.ownerId != null) {
       return owner ? `${owner.name.split(" ")[0]}'s Request` : "Client Request";
