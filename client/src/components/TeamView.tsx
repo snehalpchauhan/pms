@@ -3,7 +3,7 @@ import { useAppData, effectivePresenceStatus } from "@/hooks/useAppData";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
-import { Mail, Plus, Shield, User, Briefcase, Trash2, Clock, Crown } from "lucide-react";
+import { Mail, Plus, Shield, User, Briefcase, Trash2, Clock, Crown, MoreHorizontal } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
@@ -293,11 +293,13 @@ export default function TeamView({ project, currentUserRole }: TeamViewProps) {
                   user.isProjectOwner === true ||
                   (resolvedOwnerIdStr != null && String(user.id) === resolvedOwnerIdStr);
                 const targetIsAdmin = user.role === "admin";
+                const targetIsClient = user.role === "client";
                 const canRemoveThisMember =
                   canInviteRemoveMembers &&
                   !isOwnerMember &&
                   // Managers/employees/owners cannot remove admins; only admins can.
                   (!targetIsAdmin || currentUserRole === "admin");
+                const canOpenMemberMenu = canTransferOwner || canRemoveThisMember;
                 return (
                 <div key={user.id} className="space-y-0">
                     <Card className={cn("hover:shadow-md transition-shadow border-border/60 relative group",
@@ -336,7 +338,7 @@ export default function TeamView({ project, currentUserRole }: TeamViewProps) {
                                 </div>
 
                                 <div className="flex items-center gap-1 shrink-0">
-                                  {canTransferOwner && (
+                                  {canOpenMemberMenu && (
                                     <DropdownMenu>
                                       <DropdownMenuTrigger asChild>
                                         <Button
@@ -347,17 +349,21 @@ export default function TeamView({ project, currentUserRole }: TeamViewProps) {
                                           aria-label={`Member actions for ${user.name}`}
                                           disabled={transferOwnerLoadingId === String(user.id)}
                                         >
-                                          <Crown className="w-4 h-4" />
+                                          <MoreHorizontal className="w-4 h-4" />
                                         </Button>
                                       </DropdownMenuTrigger>
                                       <DropdownMenuContent align="end">
-                                        <DropdownMenuItem
-                                          disabled={isOwnerMember || transferOwnerLoadingId === String(user.id)}
-                                          onClick={() => void handleTransferOwner(String(user.id))}
-                                        >
-                                          Make project owner
-                                        </DropdownMenuItem>
-                                        <DropdownMenuSeparator />
+                                        {canTransferOwner && (
+                                          <>
+                                            <DropdownMenuItem
+                                              disabled={isOwnerMember || targetIsClient || transferOwnerLoadingId === String(user.id)}
+                                              onClick={() => void handleTransferOwner(String(user.id))}
+                                            >
+                                              Make project owner
+                                            </DropdownMenuItem>
+                                            <DropdownMenuSeparator />
+                                          </>
+                                        )}
                                         <DropdownMenuItem
                                           disabled={!canRemoveThisMember}
                                           className={cn(canRemoveThisMember ? "text-destructive focus:text-destructive" : "")}
@@ -370,19 +376,6 @@ export default function TeamView({ project, currentUserRole }: TeamViewProps) {
                                         </DropdownMenuItem>
                                       </DropdownMenuContent>
                                     </DropdownMenu>
-                                  )}
-
-                                  {!canTransferOwner && canRemoveThisMember && (
-                                      <Button
-                                          type="button"
-                                          variant="ghost"
-                                          size="icon"
-                                          className="h-8 w-8 text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
-                                          aria-label={`Remove ${user.name} from project`}
-                                          onClick={() => setMemberToRemove(user)}
-                                      >
-                                          <Trash2 className="w-4 h-4" />
-                                      </Button>
                                   )}
                                 </div>
                             </div>
