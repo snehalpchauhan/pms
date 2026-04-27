@@ -945,6 +945,26 @@ export async function registerRoutes(
     res.json(updated);
   });
 
+  // Transfer project ownership (admin only).
+  app.post("/api/projects/:id/transfer-owner", requireAuth, async (req, res) => {
+    const currentUser = req.user as any;
+    if (currentUser.role !== "admin") {
+      return res.status(403).json({ message: "Only admins can transfer project ownership" });
+    }
+    const projectId = Number(req.params.id);
+    const newOwnerId = Number(req.body?.newOwnerId);
+    if (!Number.isInteger(projectId) || projectId <= 0) return res.status(400).json({ message: "Invalid project id" });
+    if (!Number.isInteger(newOwnerId) || newOwnerId <= 0) return res.status(400).json({ message: "Invalid newOwnerId" });
+    const project = await requireOpenProjectForApi(res, projectId);
+    if (!project) return;
+    const newOwnerUser = await storage.getUser(newOwnerId);
+    if (!newOwnerUser) return res.status(404).json({ message: "User not found" });
+    await storage.addProjectMember(projectId, newOwnerId);
+    const updated = await storage.updateProject(projectId, { ownerId: newOwnerId });
+    if (!updated) return res.status(404).json({ message: "Project not found" });
+    res.json({ message: "Owner updated", ownerId: newOwnerId });
+  });
+
   app.delete("/api/projects/:id", requireAuth, async (req, res) => {
     const currentUser = req.user as any;
     if (currentUser.role === "client") {
@@ -1093,10 +1113,6 @@ export async function registerRoutes(
     const projectRecord = await requireOpenProjectForApi(res, projectId);
     if (!projectRecord) return;
 
-    if (projectRecord.ownerId != null && Number(projectRecord.ownerId) === targetUserId) {
-      return res.status(400).json({ message: "Cannot remove the project owner from the team" });
-    }
-
     const isAdmin = currentUser.role === "admin";
     const isManager = currentUser.role === "manager";
     const isProjectOwner =
@@ -1116,6 +1132,46 @@ export async function registerRoutes(
     const targetMembership = await storage.getProjectMembership(projectId, targetUserId);
     if (!targetMembership) {
       return res.status(404).json({ message: "User is not a member of this project" });
+    }
+
+    const targetUser = await storage.getUser(targetUserId);
+    if (!targetUser) return res.status(404).json({ message: "User not found" });
+
+    // Managers/employees/project owners must never remove an admin from project access.
+    if (targetUser.role === "admin" && !isAdmin) {
+      return res.status(403).json({ message: "Only an admin can remove another admin from a project" });
+    }
+
+    const isRemovingOwner = projectRecord.ownerId != null && Number(projectRecord.ownerId) === targetUserId;
+    if (isRemovingOwner) {
+      // Only admins can remove the project owner; must transfer ownership first.
+      if (!isAdmin) {
+        return res.status(403).json({ message: "Only an admin can remove the project owner" });
+      }
+
+      const requestedNewOwnerIdRaw = (req.body as any)?.newOwnerId;
+      const requestedNewOwnerId = Number(requestedNewOwnerIdRaw);
+      const newOwnerId =
+        Number.isInteger(requestedNewOwnerId) && requestedNewOwnerId > 0 ? requestedNewOwnerId : Number(currentUser.id);
+
+      if (!Number.isInteger(newOwnerId) || newOwnerId <= 0) {
+        return res.status(400).json({ message: "Invalid newOwnerId" });
+      }
+      if (Number(newOwnerId) === Number(targetUserId)) {
+        return res.status(400).json({ message: "newOwnerId must be different from the current owner" });
+      }
+
+      const newOwnerUser = await storage.getUser(newOwnerId);
+      if (!newOwnerUser) return res.status(404).json({ message: "New owner user not found" });
+
+      // Ensure new owner is a member.
+      await storage.addProjectMember(projectId, newOwnerId);
+
+      const updated = await storage.updateProject(projectId, { ownerId: newOwnerId });
+      if (!updated) return res.status(404).json({ message: "Project not found" });
+
+      await storage.removeProjectMember(projectId, targetUserId);
+      return res.json({ message: "Owner removed; ownership transferred", newOwnerId });
     }
 
     await storage.removeProjectMember(projectId, targetUserId);

@@ -227,6 +227,7 @@ export class DatabaseStorage implements IStorage {
       color: string;
       description: string | null;
       columns: unknown;
+      ownerId: number | null;
       closedAt: Date | null;
       closureDescription: string | null;
       closurePaymentReceived: boolean;
