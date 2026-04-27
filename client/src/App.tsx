@@ -218,7 +218,23 @@ function AuthenticatedApp() {
       if (newTask.estimatedHours != null && newTask.estimatedHours >= 0) {
         body.estimatedHours = newTask.estimatedHours;
       }
-      await apiRequest("POST", "/api/tasks", body);
+      if (newTask.recurrence) {
+        body.recurrence = newTask.recurrence;
+      }
+      const res = await apiRequest("POST", "/api/tasks", body);
+      const createdTask = await res.json();
+
+      // Create checklist items if any were added during task creation
+      if (newTask.checklist && newTask.checklist.length > 0 && createdTask?.id) {
+        for (const item of newTask.checklist) {
+          try {
+            await apiRequest("POST", `/api/tasks/${createdTask.id}/checklist`, { text: item.text });
+          } catch (checklistErr) {
+            console.error("Failed to create checklist item:", checklistErr);
+          }
+        }
+      }
+
       queryClient.invalidateQueries({ queryKey: ["/api/projects", numericProjectId, "tasks"] });
     } catch (e) {
       console.error("Failed to create task:", e);
