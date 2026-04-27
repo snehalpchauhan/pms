@@ -42,10 +42,10 @@ function formatSegment(part: string, i: number): ReactNode {
   const normalized = part.replace(/\\\+/g, "+");
 
   if (normalized.startsWith("++") && normalized.endsWith("++") && normalized.length > 4) {
-    return <u className="underline underline-offset-2">{normalized.slice(2, -2)}</u>;
+    return <u className="underline underline-offset-2">{formatChatLine(normalized.slice(2, -2), i)}</u>;
   }
   if (normalized.startsWith("**") && normalized.endsWith("**") && normalized.length > 4) {
-    return <strong>{normalized.slice(2, -2)}</strong>;
+    return <strong>{formatChatLine(normalized.slice(2, -2), i)}</strong>;
   }
   if (
     normalized.startsWith("*") &&
@@ -53,7 +53,7 @@ function formatSegment(part: string, i: number): ReactNode {
     !normalized.startsWith("**") &&
     normalized.length > 2
   ) {
-    return <em>{normalized.slice(1, -1)}</em>;
+    return <em>{formatChatLine(normalized.slice(1, -1), i)}</em>;
   }
   const img = /^!\[([^\]]*)\]\(([^)]+)\)$/.exec(normalized);
   if (img) {
