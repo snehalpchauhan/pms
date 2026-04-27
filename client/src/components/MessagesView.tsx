@@ -1,6 +1,6 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { Hash, Phone, Video, Info, Lock, Loader2 } from "lucide-react";
+import { Hash, Phone, Video, Info, Lock, Loader2, MoreHorizontal, Pencil, Trash2, Check, X } from "lucide-react";
 import { Message, Project } from "@/lib/mockData";
 import { useEffect, useCallback, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
@@ -13,6 +13,14 @@ import { formatChatMarkdown } from "@/lib/chatMarkdown";
 import { ChatRichComposer } from "@/components/ChatRichComposer";
 import { EditChannelModal } from "@/components/EditChannelModal";
 import { useVoiceLink } from "@/context/VoiceLinkContext";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
 
 interface MessagesViewProps {
   project: Project;
@@ -34,6 +42,8 @@ export default function MessagesView({ project, channelId, onChannelDeleted }: M
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [editChannelOpen, setEditChannelOpen] = useState(false);
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editingText, setEditingText] = useState("");
   const canManageChannel = user?.role === "admin" || user?.role === "manager";
   const activeChannelId = channelId || channels.find((c) => c.projectId === project.id && c.type !== "direct")?.id;
   const activeChannel = channels.find((c) => c.id === activeChannelId);
@@ -133,6 +143,7 @@ export default function MessagesView({ project, channelId, onChannelDeleted }: M
     authorId: String(m.authorId),
     content: m.content,
     createdAt: formatMessageTime(m.createdAt),
+    editedAt: m.editedAt ?? null,
   }));
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -184,6 +195,63 @@ export default function MessagesView({ project, channelId, onChannelDeleted }: M
       }
     },
     [numericChannelId, queryClient, toast, user],
+  );
+
+  const startEditMessage = useCallback((msg: Message) => {
+    setEditingMessageId(String(msg.id));
+    setEditingText(String(msg.content ?? ""));
+  }, []);
+
+  const cancelEditMessage = useCallback(() => {
+    setEditingMessageId(null);
+    setEditingText("");
+  }, []);
+
+  const saveEditMessage = useCallback(async () => {
+    if (!editingMessageId) return;
+    const trimmed = editingText.trim();
+    if (!trimmed) {
+      toast({ title: "Message cannot be empty", variant: "destructive" });
+      return;
+    }
+    try {
+      await apiRequest("PATCH", `/api/messages/${editingMessageId}`, { content: trimmed });
+      setEditingMessageId(null);
+      setEditingText("");
+      if (numericChannelId != null) {
+        await queryClient.refetchQueries({ queryKey: ["/api/channels", numericChannelId, "messages"] });
+      }
+    } catch (e) {
+      toast({
+        title: "Could not edit message",
+        description: e instanceof Error ? e.message : "Try again.",
+        variant: "destructive",
+      });
+    }
+  }, [editingMessageId, editingText, numericChannelId, queryClient, toast]);
+
+  const deleteMessage = useCallback(
+    async (msgId: string) => {
+      if (numericChannelId == null) return;
+      // optimistic remove
+      const prev = queryClient.getQueryData<any[]>(["/api/channels", numericChannelId, "messages"]);
+      queryClient.setQueryData(["/api/channels", numericChannelId, "messages"], (old: unknown) => {
+        const arr = Array.isArray(old) ? old : [];
+        return arr.filter((m: any) => String(m.id) !== String(msgId));
+      });
+      try {
+        await apiRequest("DELETE", `/api/messages/${msgId}`);
+        await queryClient.refetchQueries({ queryKey: ["/api/channels", numericChannelId, "messages"] });
+      } catch (e) {
+        queryClient.setQueryData(["/api/channels", numericChannelId, "messages"], prev);
+        toast({
+          title: "Could not delete message",
+          description: e instanceof Error ? e.message : "Try again.",
+          variant: "destructive",
+        });
+      }
+    },
+    [numericChannelId, queryClient, toast],
   );
 
   if (!activeChannel && !isDM) {
@@ -343,7 +411,37 @@ export default function MessagesView({ project, channelId, onChannelDeleted }: M
                       )}
                     >
                       <span className="font-semibold text-xs text-foreground">{isMine ? "You" : author?.name ?? "Unknown"}</span>
-                      <span className="text-[10px] text-muted-foreground">{msg.createdAt}</span>
+                      <span className="text-[10px] text-muted-foreground">
+                        {msg.createdAt}
+                        {msg.editedAt ? <span className="ml-1">(edited)</span> : null}
+                      </span>
+                      {isMine && (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button
+                              type="button"
+                              className="h-6 w-6 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                              aria-label="Message actions"
+                            >
+                              <MoreHorizontal className="w-4 h-4" />
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => startEditMessage(msg)}>
+                              <Pencil className="w-4 h-4 mr-2" />
+                              Edit
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              className="text-destructive focus:text-destructive"
+                              onClick={() => void deleteMessage(String(msg.id))}
+                            >
+                              <Trash2 className="w-4 h-4 mr-2" />
+                              Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
                     </div>
                   )}
                   <div
@@ -360,7 +458,39 @@ export default function MessagesView({ project, channelId, onChannelDeleted }: M
                         isMine && " [&_a]:text-primary-foreground/90 [&_a]:underline [&_u]:text-primary-foreground/95",
                       )}
                     >
-                      {formatChatMarkdown(msg.content)}
+                      {editingMessageId === String(msg.id) ? (
+                        <div className="space-y-2">
+                          <Input
+                            value={editingText}
+                            onChange={(e) => setEditingText(e.target.value)}
+                            className={cn(
+                              "bg-background/10 border-white/20 text-primary-foreground placeholder:text-primary-foreground/60",
+                              !isMine && "bg-background border-border text-foreground placeholder:text-muted-foreground",
+                            )}
+                            autoFocus
+                          />
+                          <div className="flex justify-end gap-2">
+                            <button
+                              type="button"
+                              className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md bg-background/10 hover:bg-background/20"
+                              onClick={cancelEditMessage}
+                            >
+                              <X className="w-3 h-3" />
+                              Cancel
+                            </button>
+                            <button
+                              type="button"
+                              className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md bg-background/10 hover:bg-background/20"
+                              onClick={() => void saveEditMessage()}
+                            >
+                              <Check className="w-3 h-3" />
+                              Save
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        formatChatMarkdown(msg.content)
+                      )}
                     </div>
                   </div>
                 </div>

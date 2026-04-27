@@ -48,7 +48,9 @@ export function dismissInvite(userId: number): void {
 
 /** Remove pending invites for this channel (call ended / host closed UI). */
 export function clearInvitesForChannel(channelId: number): void {
-  for (const [uid, inv] of [...byUser.entries()]) {
-    if (inv.channelId === channelId) byUser.delete(uid);
-  }
+  const toDelete: number[] = [];
+  byUser.forEach((inv, uid) => {
+    if (inv.channelId === channelId) toDelete.push(uid);
+  });
+  for (const uid of toDelete) byUser.delete(uid);
 }

@@ -173,6 +173,8 @@ export const messages = pgTable("messages", {
   authorId: integer("author_id").notNull().references(() => users.id),
   content: text("content").notNull(),
   createdAt: timestamp("created_at").defaultNow(),
+  /** Set when author edits content; shown as "edited" in UI. */
+  editedAt: timestamp("edited_at"),
 });
 
 export const timeEntries = pgTable("time_entries", {
@@ -208,7 +210,7 @@ export const insertChecklistItemSchema = createInsertSchema(checklistItems).omit
 export const insertAttachmentSchema = createInsertSchema(attachments).omit({ id: true });
 export const insertCommentSchema = createInsertSchema(comments).omit({ id: true, createdAt: true, editedAt: true });
 export const insertChannelSchema = createInsertSchema(channels).omit({ id: true });
-export const insertMessageSchema = createInsertSchema(messages).omit({ id: true, createdAt: true });
+export const insertMessageSchema = createInsertSchema(messages).omit({ id: true, createdAt: true, editedAt: true });
 export const insertTimeEntrySchema = createInsertSchema(timeEntries).omit({ id: true });
 
 // Types

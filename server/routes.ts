@@ -2546,6 +2546,57 @@ export async function registerRoutes(
     res.status(201).json(message);
   });
 
+  const patchMessageBodySchema = z.object({
+    content: z.string().min(1).max(20_000),
+  });
+
+  app.patch("/api/messages/:id", requireAuth, async (req, res) => {
+    const currentUser = req.user as any;
+    const messageId = Number(req.params.id);
+    if (!Number.isInteger(messageId) || messageId <= 0) {
+      return res.status(400).json({ message: "Invalid message" });
+    }
+    const parsed = patchMessageBodySchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: parsed.error.issues[0]?.message ?? "Invalid body" });
+    const before = await storage.getMessage(messageId);
+    if (!before) return res.status(404).json({ message: "Message not found" });
+    if (!(await userCanAccessChannel(currentUser.id, before.channelId))) {
+      return res.status(403).json({ message: "Access denied" });
+    }
+    const isOwner = Number(before.authorId) === Number(currentUser.id);
+    const canModerate = currentUser.role === "admin" || currentUser.role === "manager";
+    if (!isOwner && !canModerate) {
+      return res.status(403).json({ message: "Only the author or an admin/manager can edit this message" });
+    }
+    const content = parsed.data.content.trim();
+    if (!content) return res.status(400).json({ message: "Message content is required" });
+    const updated = await storage.updateMessage(messageId, { content, editedAt: new Date() });
+    if (!updated) return res.status(404).json({ message: "Message not found" });
+    notifyChannelMessages(updated.channelId);
+    res.json(updated);
+  });
+
+  app.delete("/api/messages/:id", requireAuth, async (req, res) => {
+    const currentUser = req.user as any;
+    const messageId = Number(req.params.id);
+    if (!Number.isInteger(messageId) || messageId <= 0) {
+      return res.status(400).json({ message: "Invalid message" });
+    }
+    const before = await storage.getMessage(messageId);
+    if (!before) return res.status(404).json({ message: "Message not found" });
+    if (!(await userCanAccessChannel(currentUser.id, before.channelId))) {
+      return res.status(403).json({ message: "Access denied" });
+    }
+    const isOwner = Number(before.authorId) === Number(currentUser.id);
+    const canModerate = currentUser.role === "admin" || currentUser.role === "manager";
+    if (!isOwner && !canModerate) {
+      return res.status(403).json({ message: "Only the author or an admin/manager can delete this message" });
+    }
+    await storage.deleteMessage(messageId);
+    notifyChannelMessages(before.channelId);
+    res.status(204).end();
+  });
+
   const chatUploadSchema = z.object({
     fileDataUrl: z.string().min(1),
   });

@@ -115,6 +115,8 @@ export interface Message {
     authorId: string;
     content: string;
     createdAt: string;
+    /** ISO timestamp or null; when set, UI shows "(edited)". */
+    editedAt?: string | null;
 }
 
 export interface Channel {

@@ -94,6 +94,9 @@ export interface IStorage {
 
   getMessages(channelId: number): Promise<Message[]>;
   createMessage(message: InsertMessage): Promise<Message>;
+  getMessage(id: number): Promise<Message | undefined>;
+  updateMessage(id: number, updates: { content: string; editedAt: Date }): Promise<Message | undefined>;
+  deleteMessage(id: number): Promise<void>;
 
   createTimeEntry(entry: InsertTimeEntry): Promise<TimeEntry>;
   getTimeEntriesByTask(taskId: number): Promise<(TimeEntry & { userName: string })[]>;
@@ -569,6 +572,24 @@ export class DatabaseStorage implements IStorage {
   async createMessage(message: InsertMessage): Promise<Message> {
     const [created] = await db.insert(messages).values(message).returning();
     return created;
+  }
+
+  async getMessage(id: number): Promise<Message | undefined> {
+    const [row] = await db.select().from(messages).where(eq(messages.id, id)).limit(1);
+    return row;
+  }
+
+  async updateMessage(id: number, updates: { content: string; editedAt: Date }): Promise<Message | undefined> {
+    const [row] = await db
+      .update(messages)
+      .set({ content: updates.content, editedAt: updates.editedAt })
+      .where(eq(messages.id, id))
+      .returning();
+    return row;
+  }
+
+  async deleteMessage(id: number): Promise<void> {
+    await db.delete(messages).where(eq(messages.id, id));
   }
 
   async createTimeEntry(entry: InsertTimeEntry): Promise<TimeEntry> {
