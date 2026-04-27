@@ -7,7 +7,8 @@ import Link from "@tiptap/extension-link";
 import Underline from "@tiptap/extension-underline";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { List, Smile, Paperclip, Loader2 } from "lucide-react";
+import { Smile, Paperclip, Loader2 } from "lucide-react";
+
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { editorHtmlToMarkdown } from "@/lib/editorHtmlToMarkdown";
@@ -186,19 +187,8 @@ export function ChatRichComposer({ channelId, placeholder, onSend }: ChatRichCom
       <EditorContent editor={editor} />
       <div className="flex justify-between items-center mt-2 pt-2 border-t border-border/40">
         <div className="flex items-center gap-0.5">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 text-muted-foreground hover:text-foreground"
-            type="button"
-            onMouseDown={(e) => {
-              e.preventDefault();
-              editor.chain().focus().toggleBulletList().run();
-            }}
-            title="Bullet list"
-          >
-            <List className="w-4 h-4" />
-          </Button>
+          {/* Bullet list toggle hidden — current Turndown output makes rendering inconsistent. */}
+
           <Button
             variant="ghost"
             size="icon"
