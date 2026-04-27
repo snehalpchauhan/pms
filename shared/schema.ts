@@ -79,6 +79,8 @@ export const projectMembers = pgTable("project_members", {
   userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   clientShowTimecards: boolean("client_show_timecards").default(false),
   clientTaskAccess: text("client_task_access").default("feedback"),
+  /** When true, this manager/employee receives an email whenever a client creates a new task on this project. */
+  notifyClientNewTask: boolean("notify_client_new_task").default(false),
 }, (t) => [primaryKey({ columns: [t.projectId, t.userId] })]);
 
 export const tasks = pgTable("tasks", {

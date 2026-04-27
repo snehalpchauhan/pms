@@ -21,3 +21,5 @@ ALTER TABLE company_settings ADD COLUMN IF NOT EXISTS email_digest_timezone text
 
 ALTER TABLE users ADD COLUMN IF NOT EXISTS project_sidebar_order jsonb;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS project_quick_menu_ids jsonb;
+
+ALTER TABLE project_members ADD COLUMN IF NOT EXISTS notify_client_new_task boolean NOT NULL DEFAULT false;

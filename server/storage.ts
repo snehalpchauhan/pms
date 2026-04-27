@@ -43,13 +43,13 @@ export interface IStorage {
   ): Promise<Project | undefined>;
   deleteProject(id: number): Promise<void>;
   getProjectMembers(projectId: number): Promise<User[]>;
-  getProjectMembersWithSettings(projectId: number): Promise<(User & { clientShowTimecards: boolean; clientTaskAccess: string })[]>;
+  getProjectMembersWithSettings(projectId: number): Promise<(User & { clientShowTimecards: boolean; clientTaskAccess: string; notifyClientNewTask: boolean })[]>;
   addProjectMember(projectId: number, userId: number): Promise<void>;
   removeProjectMember(projectId: number, userId: number): Promise<void>;
   getUserProjects(userId: number): Promise<Project[]>;
   getProjectMembership(projectId: number, userId: number): Promise<ProjectMember | undefined>;
   getUserMemberships(userId: number): Promise<ProjectMember[]>;
-  updateProjectMemberClientSettings(projectId: number, userId: number, settings: { clientShowTimecards?: boolean; clientTaskAccess?: string }): Promise<void>;
+  updateProjectMemberClientSettings(projectId: number, userId: number, settings: { clientShowTimecards?: boolean; clientTaskAccess?: string; notifyClientNewTask?: boolean }): Promise<void>;
   projectHasClientWithTimecards(projectId: number): Promise<boolean>;
 
   getTasksByProject(projectId: number): Promise<Task[]>;
@@ -249,12 +249,13 @@ export class DatabaseStorage implements IStorage {
     return rows.map(r => r.user);
   }
 
-  async getProjectMembersWithSettings(projectId: number): Promise<(User & { clientShowTimecards: boolean; clientTaskAccess: string })[]> {
+  async getProjectMembersWithSettings(projectId: number): Promise<(User & { clientShowTimecards: boolean; clientTaskAccess: string; notifyClientNewTask: boolean })[]> {
     const rows = await db
       .select({
         user: users,
         clientShowTimecards: projectMembers.clientShowTimecards,
         clientTaskAccess: projectMembers.clientTaskAccess,
+        notifyClientNewTask: projectMembers.notifyClientNewTask,
       })
       .from(projectMembers)
       .innerJoin(users, eq(projectMembers.userId, users.id))
@@ -263,6 +264,7 @@ export class DatabaseStorage implements IStorage {
       ...r.user,
       clientShowTimecards: r.clientShowTimecards ?? false,
       clientTaskAccess: r.clientTaskAccess ?? "feedback",
+      notifyClientNewTask: r.notifyClientNewTask ?? false,
     }));
   }
 
@@ -297,7 +299,7 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(projectMembers).where(eq(projectMembers.userId, userId));
   }
 
-  async updateProjectMemberClientSettings(projectId: number, userId: number, settings: { clientShowTimecards?: boolean; clientTaskAccess?: string }): Promise<void> {
+  async updateProjectMemberClientSettings(projectId: number, userId: number, settings: { clientShowTimecards?: boolean; clientTaskAccess?: string; notifyClientNewTask?: boolean }): Promise<void> {
     await db
       .update(projectMembers)
       .set(settings)

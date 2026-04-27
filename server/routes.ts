@@ -7,6 +7,7 @@ import { z } from "zod";
 import { notifyChannelMessages, notifyUsersCall, notifyUsersInviteCleared } from "./realtime";
 import { publishCallInvites, peekInvite, dismissInvite, clearInvitesForChannel } from "./callInvites";
 import { storage } from "./storage";
+import { sendEmail } from "./email";
 import { setupAuth, requireAuth } from "./auth";
 import {
   registerMicrosoftAuth,
@@ -1127,7 +1128,30 @@ export async function registerRoutes(
     const userId = Number(req.params.userId);
     const openProj = await requireOpenProjectForApi(res, projectId);
     if (!openProj) return;
-    const { clientShowTimecards, clientTaskAccess } = req.body;
+    const { clientShowTimecards, clientTaskAccess, notifyClientNewTask } = req.body;
+
+    // Ensure target user is a member of this project
+    const targetUser = await storage.getUser(userId);
+    if (!targetUser) {
+      return res.status(404).json({ message: "User not found" });
+    }
+    const targetMembership = await storage.getProjectMembership(projectId, userId);
+    if (!targetMembership) {
+      return res.status(404).json({ message: "User is not a member of this project" });
+    }
+
+    const isClientTarget = targetUser.role === "client";
+    const isStaffTarget = targetUser.role === "manager" || targetUser.role === "employee";
+
+    // clientShowTimecards and clientTaskAccess only apply to client members
+    if ((clientShowTimecards !== undefined || clientTaskAccess !== undefined) && !isClientTarget) {
+      return res.status(400).json({ message: "clientShowTimecards / clientTaskAccess only apply to client members" });
+    }
+
+    // notifyClientNewTask only applies to manager / employee members
+    if (notifyClientNewTask !== undefined && !isStaffTarget) {
+      return res.status(400).json({ message: "notifyClientNewTask only applies to manager / employee members" });
+    }
 
     // Validate clientTaskAccess enum if provided
     const validAccessValues = ["view-only", "feedback", "contribute", "full"];
@@ -1135,20 +1159,21 @@ export async function registerRoutes(
       return res.status(400).json({ message: "Invalid clientTaskAccess value" });
     }
 
-    // Ensure target user is a client
-    const targetUser = await storage.getUser(userId);
-    if (!targetUser || targetUser.role !== "client") {
-      return res.status(400).json({ message: "Target user must have client role" });
+    const settingsToUpdate: { clientShowTimecards?: boolean; clientTaskAccess?: string; notifyClientNewTask?: boolean } = {};
+    if (isClientTarget) {
+      if (clientShowTimecards !== undefined) settingsToUpdate.clientShowTimecards = clientShowTimecards;
+      if (clientTaskAccess !== undefined) settingsToUpdate.clientTaskAccess = clientTaskAccess;
+    }
+    if (isStaffTarget && notifyClientNewTask !== undefined) {
+      settingsToUpdate.notifyClientNewTask = notifyClientNewTask;
     }
 
-    // Ensure target user is a member of this project
-    const targetMembership = await storage.getProjectMembership(projectId, userId);
-    if (!targetMembership) {
-      return res.status(404).json({ message: "User is not a member of this project" });
+    if (Object.keys(settingsToUpdate).length === 0) {
+      return res.status(400).json({ message: "No settings to update" });
     }
 
-    await storage.updateProjectMemberClientSettings(projectId, userId, { clientShowTimecards, clientTaskAccess });
-    res.json({ message: "Client settings updated" });
+    await storage.updateProjectMemberClientSettings(projectId, userId, settingsToUpdate);
+    res.json({ message: "Settings updated" });
   });
 
   // Check if project has a client with timecards enabled
@@ -1348,6 +1373,14 @@ export async function registerRoutes(
       await storage.setTaskAssignees(task.id, assigneeIds);
     }
     res.status(201).json(task);
+    // Notify staff when a client creates a task
+    if (currentUser.role === "client") {
+      notifyStaffOfClientActivity({
+        projectId: task.projectId,
+        subject: `PMS: New client task — ${task.title}`,
+        text: `${currentUser.name} (client) added a new task in project "${openForTask.name}":\n\n"${task.title}"\n\nLog in to PMS to review it.`,
+      }).catch(() => {});
+    }
   });
 
   app.delete("/api/tasks/:id", requireAuth, async (req, res) => {
@@ -1653,6 +1686,36 @@ export async function registerRoutes(
     res.json({ message: "Revision requested" });
   });
 
+  /**
+   * Fire-and-forget: notify staff members (manager/employee) on a project who have
+   * notifyClientNewTask=true whenever a client performs an action that changes task content.
+   * Errors are swallowed so they never fail the HTTP response.
+   */
+  async function notifyStaffOfClientActivity(opts: {
+    projectId: number;
+    subject: string;
+    text: string;
+    html?: string;
+  }): Promise<void> {
+    try {
+      const members = await storage.getProjectMembersWithSettings(opts.projectId);
+      const toNotify = members.filter(
+        (m) =>
+          (m.role === "manager" || m.role === "employee") &&
+          m.notifyClientNewTask === true &&
+          typeof m.email === "string" &&
+          m.email.trim() !== "",
+      );
+      for (const m of toNotify) {
+        sendEmail({ to: m.email!.trim(), subject: opts.subject, text: opts.text, html: opts.html }).catch(
+          (e) => console.error("[email] notifyStaffOfClientActivity send failed:", e),
+        );
+      }
+    } catch (e) {
+      console.error("[email] notifyStaffOfClientActivity failed:", e);
+    }
+  }
+
   // Helper: check if a client has full access to a task's project
   async function clientHasFullAccess(userId: number, taskId: number): Promise<boolean> {
     const task = await storage.getTask(taskId);
@@ -1691,9 +1754,21 @@ export async function registerRoutes(
     const currentUser = req.user as any;
     const tid = Number(req.params.taskId);
     if (currentUser.role === "client") {
-      // Both "contribute" and "full" clients can create checklist items
-      const ok = await clientHasContributeOrFullAccess(currentUser.id, tid);
-      if (!ok) return res.status(403).json({ message: "Not authorized" });
+      const taskRow = await storage.getTask(tid);
+      if (!taskRow) return res.status(404).json({ message: "Task not found" });
+      const membership = await storage.getProjectMembership(taskRow.projectId, currentUser.id);
+      if (!membership) return res.status(403).json({ message: "Not authorized" });
+      const access = membership.clientTaskAccess ?? "feedback";
+      if (access === "full") {
+        // Full access: can add to any task on the project
+      } else if (access === "contribute") {
+        // Contribute: can only add to tasks they own
+        if (taskRow.ownerId == null || Number(taskRow.ownerId) !== Number(currentUser.id)) {
+          return res.status(403).json({ message: "Contribute clients can only modify checklists on their own tasks" });
+        }
+      } else {
+        return res.status(403).json({ message: "Not authorized" });
+      }
     } else {
       const taskRow = await storage.getTask(tid);
       if (!taskRow) return res.status(404).json({ message: "Task not found" });
@@ -1711,6 +1786,17 @@ export async function registerRoutes(
       type: "system",
     });
     res.status(201).json(item);
+    // Notify staff when a client adds a checklist item
+    if (currentUser.role === "client") {
+      storage.getTask(item.taskId).then((t) => {
+        if (!t) return;
+        notifyStaffOfClientActivity({
+          projectId: t.projectId,
+          subject: `PMS: Client updated checklist — ${t.title}`,
+          text: `${currentUser.name} (client) added a checklist item to task "${t.title}":\n\n• ${item.text}\n\nLog in to PMS to review it.`,
+        }).catch(() => {});
+      }).catch(() => {});
+    }
   });
 
   app.patch("/api/checklist/:id", requireAuth, async (req, res) => {
@@ -1718,9 +1804,21 @@ export async function registerRoutes(
     const item = await storage.getChecklistItem(Number(req.params.id));
     if (!item) return res.status(404).json({ message: "Not found" });
     if (currentUser.role === "client") {
-      // Both "contribute" and "full" clients can modify checklist items
-      const ok = await clientHasContributeOrFullAccess(currentUser.id, item.taskId);
-      if (!ok) return res.status(403).json({ message: "Not authorized" });
+      const taskRow = await storage.getTask(item.taskId);
+      if (!taskRow) return res.status(404).json({ message: "Not found" });
+      const membership = await storage.getProjectMembership(taskRow.projectId, currentUser.id);
+      if (!membership) return res.status(403).json({ message: "Not authorized" });
+      const access = membership.clientTaskAccess ?? "feedback";
+      if (access === "full") {
+        // Full access: can toggle any checklist item
+      } else if (access === "contribute") {
+        // Contribute: can only toggle items on tasks they own
+        if (taskRow.ownerId == null || Number(taskRow.ownerId) !== Number(currentUser.id)) {
+          return res.status(403).json({ message: "Contribute clients can only modify checklists on their own tasks" });
+        }
+      } else {
+        return res.status(403).json({ message: "Not authorized" });
+      }
     } else {
       const taskRow = await storage.getTask(item.taskId);
       if (!taskRow) return res.status(404).json({ message: "Not found" });
@@ -1749,9 +1847,21 @@ export async function registerRoutes(
     const item = await storage.getChecklistItem(Number(req.params.id));
     if (!item) return res.status(404).json({ message: "Not found" });
     if (currentUser.role === "client") {
-      // Both "contribute" and "full" clients can remove checklist items
-      const ok = await clientHasContributeOrFullAccess(currentUser.id, item.taskId);
-      if (!ok) return res.status(403).json({ message: "Not authorized" });
+      const taskRow = await storage.getTask(item.taskId);
+      if (!taskRow) return res.status(404).json({ message: "Not found" });
+      const membership = await storage.getProjectMembership(taskRow.projectId, currentUser.id);
+      if (!membership) return res.status(403).json({ message: "Not authorized" });
+      const access = membership.clientTaskAccess ?? "feedback";
+      if (access === "full") {
+        // Full access: can remove any checklist item
+      } else if (access === "contribute") {
+        // Contribute: can only remove items on tasks they own
+        if (taskRow.ownerId == null || Number(taskRow.ownerId) !== Number(currentUser.id)) {
+          return res.status(403).json({ message: "Contribute clients can only modify checklists on their own tasks" });
+        }
+      } else {
+        return res.status(403).json({ message: "Not authorized" });
+      }
     } else {
       const taskRow = await storage.getTask(item.taskId);
       if (!taskRow) return res.status(404).json({ message: "Not found" });
@@ -1760,14 +1870,27 @@ export async function registerRoutes(
       }
     }
     const snippet = item.text.length > 80 ? `${item.text.slice(0, 77)}...` : item.text;
+    const removedText = item.text;
+    const removedTaskId = item.taskId;
     await storage.deleteChecklistItem(Number(req.params.id));
     await storage.createComment({
-      taskId: item.taskId,
+      taskId: removedTaskId,
       authorId: currentUser.id,
       content: `Checklist item removed: ${snippet}`,
       type: "system",
     });
     res.json({ message: "Deleted" });
+    // Notify staff when a client removes a checklist item
+    if (currentUser.role === "client") {
+      storage.getTask(removedTaskId).then((t) => {
+        if (!t) return;
+        notifyStaffOfClientActivity({
+          projectId: t.projectId,
+          subject: `PMS: Client updated checklist — ${t.title}`,
+          text: `${currentUser.name} (client) removed a checklist item from task "${t.title}":\n\n• ${removedText}\n\nLog in to PMS to review it.`,
+        }).catch(() => {});
+      }).catch(() => {});
+    }
   });
 
   const taskAttachmentUploadSchema = z.object({
@@ -2365,7 +2488,7 @@ export async function registerRoutes(
     res.json({ invite });
   });
 
-  app.post("/api/chat/pending-invite/dismiss", requireAuth, (_req, res) => {
+  app.post("/api/chat/pending-invite/dismiss", requireAuth, (req, res) => {
     const currentUser = req.user as any;
     dismissInvite(currentUser.id);
     res.json({ ok: true });
