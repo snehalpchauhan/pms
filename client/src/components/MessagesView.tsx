@@ -326,17 +326,7 @@ export default function MessagesView({ project, channelId, onChannelDeleted }: M
 
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-5">
         <div className="space-y-4 max-w-4xl mx-auto pb-4">
-          {!isDM && (
-            <div className="pb-6 text-center sm:text-left border-b border-border/30 mb-6">
-              <div className="w-16 h-16 bg-muted/50 rounded-2xl flex items-center justify-center mb-4 mx-auto sm:mx-0">
-                <Hash className="w-8 h-8 text-muted-foreground" />
-              </div>
-              <h1 className="text-2xl font-bold mb-2">Welcome to #{activeChannel?.name}!</h1>
-              <p className="text-muted-foreground text-sm">
-                Start of <span className="font-medium text-foreground">#{activeChannel?.name}</span> in {project.name}.
-              </p>
-            </div>
-          )}
+          {/* Intentionally no "Welcome to" intro block; header already provides context. */}
 
           {channelMessages.map((msg, idx) => {
             const author = users[msg.authorId];
