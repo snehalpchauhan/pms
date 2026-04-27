@@ -1663,6 +1663,16 @@ export async function registerRoutes(
     return !!(membership && membership.clientTaskAccess === "full");
   }
 
+  /** Returns true for clients with "contribute" OR "full" task access on the project of the given task. */
+  async function clientHasContributeOrFullAccess(userId: number, taskId: number): Promise<boolean> {
+    const task = await storage.getTask(taskId);
+    if (!task) return false;
+    const project = await storage.getProject(task.projectId);
+    if (!project || project.closedAt != null) return false;
+    const membership = await storage.getProjectMembership(task.projectId, userId);
+    return !!(membership && (membership.clientTaskAccess === "contribute" || membership.clientTaskAccess === "full"));
+  }
+
   /** Admins bypass membership; clients rely on route-specific rules; closed projects never pass. */
   async function requireStaffProjectMembership(
     user: { id: number; role?: string },
@@ -1681,7 +1691,8 @@ export async function registerRoutes(
     const currentUser = req.user as any;
     const tid = Number(req.params.taskId);
     if (currentUser.role === "client") {
-      const ok = await clientHasFullAccess(currentUser.id, tid);
+      // Both "contribute" and "full" clients can create checklist items
+      const ok = await clientHasContributeOrFullAccess(currentUser.id, tid);
       if (!ok) return res.status(403).json({ message: "Not authorized" });
     } else {
       const taskRow = await storage.getTask(tid);
