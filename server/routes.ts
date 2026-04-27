@@ -8,6 +8,7 @@ import { notifyChannelMessages, notifyUsersCall, notifyUsersInviteCleared } from
 import { publishCallInvites, peekInvite, dismissInvite, clearInvitesForChannel } from "./callInvites";
 import { storage } from "./storage";
 import { sendEmail } from "./email";
+import { buildClientNewTaskEmail } from "./emailTemplates";
 import { setupAuth, requireAuth } from "./auth";
 import {
   registerMicrosoftAuth,
@@ -1375,7 +1376,6 @@ export async function registerRoutes(
     res.status(201).json(task);
     // Notify staff when a client creates a task (fire-and-forget after response is sent)
     if (currentUser.role === "client") {
-      // Gather checklist items the client submitted (sent in request body)
       const submittedChecklist: { text?: string }[] = Array.isArray(req.body.checklist)
         ? req.body.checklist
         : [];
@@ -1383,39 +1383,16 @@ export async function registerRoutes(
         .map((c) => (typeof c?.text === "string" ? c.text.trim() : ""))
         .filter(Boolean);
 
-      // Build plain-text body
-      const descriptionText = task.description?.trim() || "(No description)";
-      let textBody = `${currentUser.name} (client) added a new task in project "${openForTask.name}".\n\n`;
-      textBody += `Task: ${task.title}\n\n`;
-      textBody += `Description:\n${descriptionText}\n\n`;
-      if (checklistItems.length > 0) {
-        textBody += `Checklist:\n${checklistItems.map((t) => `• ${t}`).join("\n")}\n\n`;
-      }
-      textBody += `Log in to PMS to review it.`;
+      const { subject, text, html } = buildClientNewTaskEmail({
+        clientName: currentUser.name,
+        projectName: openForTask.name,
+        taskTitle: task.title,
+        taskDescription: task.description ?? "",
+        checklistItems,
+        appUrl: process.env.APP_URL,
+      });
 
-      // Build HTML body
-      const escHtml = (s: string) =>
-        s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-      let htmlBody = `<p><strong>${escHtml(currentUser.name)}</strong> (client) added a new task in project <strong>${escHtml(openForTask.name)}</strong>.</p>`;
-      htmlBody += `<h2 style="margin:16px 0 4px">${escHtml(task.title)}</h2>`;
-      if (task.description?.trim()) {
-        htmlBody += `<p style="color:#444;margin:0 0 12px">${escHtml(task.description.trim()).replace(/\n/g, "<br>")}</p>`;
-      }
-      if (checklistItems.length > 0) {
-        htmlBody += `<p style="margin:12px 0 4px;font-weight:600">Checklist</p><ul style="margin:0;padding-left:20px">`;
-        for (const item of checklistItems) {
-          htmlBody += `<li>${escHtml(item)}</li>`;
-        }
-        htmlBody += `</ul>`;
-      }
-      htmlBody += `<p style="margin-top:16px;color:#666">Log in to PMS to review it.</p>`;
-
-      notifyStaffOfClientActivity({
-        projectId: task.projectId,
-        subject: `PMS: New client task — ${task.title}`,
-        text: textBody,
-        html: htmlBody,
-      }).catch(() => {});
+      notifyStaffOfClientActivity({ projectId: task.projectId, subject, text, html }).catch(() => {});
     }
   });
 
