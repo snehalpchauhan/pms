@@ -23,16 +23,18 @@ TabsList.displayName = TabsPrimitive.List.displayName
 const TabsTrigger = React.forwardRef<
   React.ElementRef<typeof TabsPrimitive.Trigger>,
   React.ComponentPropsWithoutRef<typeof TabsPrimitive.Trigger>
->(({ className, ...props }, ref) => (
+>(({ className, type, ...props }, ref) => (
   <TabsPrimitive.Trigger
     ref={ref}
+    {...props}
     // Prevent accidental form submissions when Tabs are rendered inside a <form>.
-    type={(props as any).type ?? "button"}
+    // NOTE: `type` must be applied AFTER spreading props; otherwise an undefined
+    // `props.type` can override the default and revert to the browser default ("submit").
+    type={(type as any) ?? "button"}
     className={cn(
       "inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow",
       className
     )}
-    {...props}
   />
 ))
 TabsTrigger.displayName = TabsPrimitive.Trigger.displayName
