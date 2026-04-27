@@ -7,7 +7,7 @@ import Link from "@tiptap/extension-link";
 import Underline from "@tiptap/extension-underline";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Plus, Smile, Paperclip, Loader2 } from "lucide-react";
+import { List, Smile, Paperclip, Loader2 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { editorHtmlToMarkdown } from "@/lib/editorHtmlToMarkdown";
@@ -197,7 +197,7 @@ export function ChatRichComposer({ channelId, placeholder, onSend }: ChatRichCom
             }}
             title="Bullet list"
           >
-            <Plus className="w-4 h-4" />
+            <List className="w-4 h-4" />
           </Button>
           <Button
             variant="ghost"

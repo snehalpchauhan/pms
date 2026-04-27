@@ -37,21 +37,25 @@ function formatPlainWithUrls(text: string, keyBase: string): ReactNode[] {
 }
 
 function formatSegment(part: string, i: number): ReactNode {
-  if (part.startsWith("++") && part.endsWith("++") && part.length > 4) {
-    return <u className="underline underline-offset-2">{part.slice(2, -2)}</u>;
+  // Some inputs may escape "+" as "\+" (e.g. when copied through other systems).
+  // Normalize first so underline/bold parsing still works.
+  const normalized = part.replace(/\\\+/g, "+");
+
+  if (normalized.startsWith("++") && normalized.endsWith("++") && normalized.length > 4) {
+    return <u className="underline underline-offset-2">{normalized.slice(2, -2)}</u>;
   }
-  if (part.startsWith("**") && part.endsWith("**") && part.length > 4) {
-    return <strong>{part.slice(2, -2)}</strong>;
+  if (normalized.startsWith("**") && normalized.endsWith("**") && normalized.length > 4) {
+    return <strong>{normalized.slice(2, -2)}</strong>;
   }
   if (
-    part.startsWith("*") &&
-    part.endsWith("*") &&
-    !part.startsWith("**") &&
-    part.length > 2
+    normalized.startsWith("*") &&
+    normalized.endsWith("*") &&
+    !normalized.startsWith("**") &&
+    normalized.length > 2
   ) {
-    return <em>{part.slice(1, -1)}</em>;
+    return <em>{normalized.slice(1, -1)}</em>;
   }
-  const img = /^!\[([^\]]*)\]\(([^)]+)\)$/.exec(part);
+  const img = /^!\[([^\]]*)\]\(([^)]+)\)$/.exec(normalized);
   if (img) {
     return (
       <img
@@ -61,7 +65,7 @@ function formatSegment(part: string, i: number): ReactNode {
       />
     );
   }
-  const link = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(part);
+  const link = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(normalized);
   if (link) {
     return (
       <a href={link[2]} target="_blank" rel="noopener noreferrer" className="underline text-primary">
@@ -69,7 +73,7 @@ function formatSegment(part: string, i: number): ReactNode {
       </a>
     );
   }
-  return <span>{formatPlainWithUrls(part, `p${i}`)}</span>;
+  return <span>{formatPlainWithUrls(normalized, `p${i}`)}</span>;
 }
 
 /** Renders a small markdown subset: ++underline++, **bold**, *italic*, ![alt](url), [text](url), URLs, newlines. */
