@@ -43,6 +43,7 @@ interface MemberWithSettings {
   lastSeenAt?: string | Date | null;
   clientShowTimecards?: boolean;
   clientTaskAccess?: string;
+  notifyClientNewTask?: boolean;
   /** Set by GET /api/projects/:id/members when this user is the project creator (owner). */
   isProjectOwner?: boolean;
 }
@@ -207,14 +208,14 @@ export default function TeamView({ project, currentUserRole }: TeamViewProps) {
         }
     };
 
-    const handleClientSettingChange = async (userId: string, settings: { clientShowTimecards?: boolean; clientTaskAccess?: string }) => {
+    const handleClientSettingChange = async (userId: string, settings: { clientShowTimecards?: boolean; clientTaskAccess?: string; notifyClientNewTask?: boolean }) => {
       try {
         await apiRequest("PATCH", `/api/projects/${numericProjectId}/members/${userId}/client-settings`, settings);
         queryClient.invalidateQueries({ queryKey: ["/api/projects", numericProjectId, "members-with-settings"] });
         queryClient.invalidateQueries({ queryKey: ["/api/projects", numericProjectId, "has-client-timecards"] });
-        toast({ title: "Client settings updated" });
+        toast({ title: "Settings updated" });
       } catch {
-        toast({ title: "Failed to update client settings", variant: "destructive" });
+        toast({ title: "Failed to update settings", variant: "destructive" });
       }
     };
 
@@ -268,7 +269,9 @@ export default function TeamView({ project, currentUserRole }: TeamViewProps) {
                   !isOwnerMember;
                 return (
                 <div key={user.id} className="space-y-0">
-                    <Card className={cn("hover:shadow-md transition-shadow border-border/60 relative group", user.role === 'client' && canManageClientSettings && "rounded-b-none border-b-0")}>
+                    <Card className={cn("hover:shadow-md transition-shadow border-border/60 relative group",
+                        ((user.role === 'client' || user.role === 'manager' || user.role === 'employee') && canManageClientSettings) && "rounded-b-none border-b-0"
+                    )}>
                         <CardHeader className="flex flex-row items-center gap-4 pb-2">
                             <Avatar className="h-12 w-12 border border-border">
                                 <AvatarImage src={user.avatar} />
@@ -351,6 +354,27 @@ export default function TeamView({ project, currentUserRole }: TeamViewProps) {
                                         <SelectItem value="full">Full</SelectItem>
                                     </SelectContent>
                                 </Select>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Staff notification settings row — visible to admin/manager only, for manager/employee members */}
+                    {(user.role === 'manager' || user.role === 'employee') && canManageClientSettings && (
+                        <div className="bg-muted/40 border border-border/60 border-t-0 rounded-b-xl px-4 py-3 space-y-2" data-testid={`staff-settings-${user.id}`}>
+                            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Notifications</p>
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                    <Mail className="w-3.5 h-3.5 text-muted-foreground" />
+                                    <div>
+                                        <span className="text-xs font-medium">Notify on client task</span>
+                                        <p className="text-[10px] text-muted-foreground leading-tight">Email when a client adds a task or updates a checklist</p>
+                                    </div>
+                                </div>
+                                <Switch
+                                    checked={user.notifyClientNewTask === true}
+                                    onCheckedChange={(checked) => handleClientSettingChange(String(user.id), { notifyClientNewTask: checked })}
+                                    data-testid={`switch-notify-client-task-${user.id}`}
+                                />
                             </div>
                         </div>
                     )}
