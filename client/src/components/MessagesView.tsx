@@ -324,7 +324,7 @@ export default function MessagesView({ project, channelId, onChannelDeleted }: M
         </div>
       </header>
 
-      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-6">
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-5">
         <div className="space-y-4 max-w-4xl mx-auto pb-4">
           <div className="pb-6 text-center sm:text-left border-b border-border/30 mb-6">
             {isDM ? (
@@ -393,7 +393,7 @@ export default function MessagesView({ project, channelId, onChannelDeleted }: M
                         isMine ? "flex-row-reverse" : "flex-row",
                       )}
                     >
-                      <span className="font-semibold text-xs text-foreground">{isMine ? "You" : author?.name ?? "Unknown"}</span>
+                    <span className="font-semibold text-[11px] text-foreground">{isMine ? "You" : author?.name ?? "Unknown"}</span>
                       <span className="text-[10px] text-muted-foreground">
                         {msg.createdAt}
                         {msg.editedAt ? <span className="ml-1">(edited)</span> : null}
@@ -402,7 +402,7 @@ export default function MessagesView({ project, channelId, onChannelDeleted }: M
                   )}
                   <div
                     className={cn(
-                      "rounded-2xl px-3.5 py-2 text-[15px] leading-relaxed shadow-sm border",
+                      "rounded-2xl px-3.5 py-2 text-[14px] leading-relaxed shadow-sm border",
                       isMine
                         ? "bg-primary text-primary-foreground border-primary/20 rounded-tr-md"
                         : "bg-muted/80 text-foreground border-border/60 rounded-tl-md",
