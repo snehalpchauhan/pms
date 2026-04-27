@@ -41,6 +41,25 @@ function formatSegment(part: string, i: number): ReactNode {
   // Normalize first so underline/bold/italic parsing still works.
   const normalized = part.replace(/\\([+*])/g, "$1");
 
+  // Combined tokens (e.g. TipTap produces underline+bold).
+  // Examples: **++text++**, ++**text**++
+  const boldUnderlineInner = /^\*\*\+\+([\s\S]+)\+\+\*\*$/.exec(normalized);
+  if (boldUnderlineInner) {
+    return (
+      <strong>
+        <u className="underline underline-offset-2">{formatChatLine(boldUnderlineInner[1], i)}</u>
+      </strong>
+    );
+  }
+  const underlineBoldInner = /^\+\+\*\*([\s\S]+)\*\*\+\+$/.exec(normalized);
+  if (underlineBoldInner) {
+    return (
+      <u className="underline underline-offset-2">
+        <strong>{formatChatLine(underlineBoldInner[1], i)}</strong>
+      </u>
+    );
+  }
+
   if (normalized.startsWith("++") && normalized.endsWith("++") && normalized.length > 4) {
     return <u className="underline underline-offset-2">{formatChatLine(normalized.slice(2, -2), i)}</u>;
   }
