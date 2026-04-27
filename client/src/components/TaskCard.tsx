@@ -38,7 +38,10 @@ export function TaskCard({ task, onClick, disableDrag = false }: TaskCardProps) 
   const estimated = parseTaskHoursField(task.estimatedHours);
   const actual = task.totalHours ?? 0;
   const overInvested = isTaskOverInvested(estimated, actual);
-  const isClientRequest = task.tags.includes("[Client Request]");
+  const owner = task.ownerId != null ? users[String(task.ownerId)] : null;
+  // Client-request styling is based on who owns the task (owner is a client),
+  // not on a magic tag. Keep tag fallback for older data.
+  const isClientRequest = owner?.role === "client" || task.tags.includes("[Client Request]");
   const isClientViewing = currentUser?.role === "client";
   /** Violet card outline applies to ALL viewers of client-request tasks. */
   const showClientRequestHighlight = isClientRequest;
@@ -48,7 +51,6 @@ export function TaskCard({ task, onClick, disableDrag = false }: TaskCardProps) 
     if (!isClientViewing) return "Client Request";
     if (task.ownerId != null && Number(task.ownerId) === Number(currentUser?.id)) return "Your Request";
     if (task.ownerId != null) {
-      const owner = users[String(task.ownerId)];
       return owner ? `${owner.name.split(" ")[0]}'s Request` : "Client Request";
     }
     return "Client Request";
@@ -108,7 +110,7 @@ export function TaskCard({ task, onClick, disableDrag = false }: TaskCardProps) 
           <div className="flex justify-between items-start">
             <div className="flex gap-2 flex-wrap items-center">
               {task.tags
-                .filter((tag) => !(isClientViewing && tag === "[Client Request]"))
+                .filter((tag) => !(tag === "[Client Request]"))
                 .map((tag) => (
                   <Badge key={tag} variant="secondary" className="text-[10px] h-5 px-1.5 font-normal text-muted-foreground bg-muted/50">
                     {tag}

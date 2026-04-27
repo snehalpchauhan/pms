@@ -112,7 +112,10 @@ export default function TaskListView({ tasks, project, onTaskClick, completeColu
                     const estimated = parseTaskHoursField(task.estimatedHours);
                     const actual = task.totalHours ?? 0;
                     const overInvested = isTaskOverInvested(estimated, actual);
-                    const isClientRequest = task.tags.includes("[Client Request]");
+                    const owner = task.ownerId != null ? users[String(task.ownerId)] : null;
+                    // Determine client-request by task owner (owner is a client), not a tag.
+                    // Keep tag fallback for older tasks.
+                    const isClientRequest = owner?.role === "client" || task.tags.includes("[Client Request]");
                     // Violet row styling applies to ALL viewers of client-request tasks
                     const showClientRequestHighlight = isClientRequest;
                     return (
