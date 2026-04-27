@@ -1460,11 +1460,15 @@ export async function registerRoutes(
       const access = membership.clientTaskAccess ?? "feedback";
       const isOwner = before.ownerId != null && Number(before.ownerId) === Number(currentUser.id);
       const isAssigneeOnlyPatch = Array.isArray(assignees) && Object.keys(updates).length === 0;
+      const isTagsOnlyPatch =
+        !Array.isArray(assignees) &&
+        Object.keys(updates).length === 1 &&
+        Object.prototype.hasOwnProperty.call(updates, "tags");
 
       // Clients with full access can edit anything. Clients with contribute access
-      // can update assignees on tasks THEY own (so they can assign work to the team).
+      // can update assignees or tags on tasks THEY own (so they can assign work and manage labels).
       if (access !== "full") {
-        if (!(access === "contribute" && isOwner && isAssigneeOnlyPatch)) {
+        if (!(access === "contribute" && isOwner && (isAssigneeOnlyPatch || isTagsOnlyPatch))) {
           return res.status(403).json({ message: "Not authorized to edit tasks" });
         }
       }

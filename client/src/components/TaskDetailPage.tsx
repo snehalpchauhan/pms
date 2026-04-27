@@ -539,6 +539,7 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
   // - Feedback clients: read-only
   const canModifyChecklist = !isClient || isFullAccess || (isContribute && isTaskOwner);
   const canEditAssignees = !isClient || isFullAccess || (isContribute && isTaskOwner);
+  const canEditTags = !isClient || isFullAccess || (isContribute && isTaskOwner);
 
   const canDeleteTask = useMemo(() => {
     if (!currentUser) return false;
@@ -689,7 +690,7 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
 
   const addTag = async () => {
     const t = newTagInput.trim();
-    if (!t || !canEditTaskFields) return;
+    if (!t || !canEditTags) return;
     if (tags.includes(t)) {
       setNewTagInput("");
       setTagPopoverOpen(false);
@@ -709,7 +710,7 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
   };
 
   const removeTag = async (tag: string) => {
-    if (!canEditTaskFields) return;
+    if (!canEditTags) return;
     const prev = [...tags];
     const next = tags.filter((x) => x !== tag);
     setTags(next);
@@ -1244,7 +1245,7 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
   };
 
   const toggleAssignee = async (userId: string) => {
-    if (!canEditTaskFields || !Number.isInteger(numericTaskId) || numericTaskId <= 0) return;
+    if (!canEditAssignees || !Number.isInteger(numericTaskId) || numericTaskId <= 0) return;
     const next = assignees.includes(userId)
       ? assignees.filter((id) => id !== userId)
       : [...assignees, userId];
@@ -1701,7 +1702,7 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                                       className="bg-background hover:bg-muted border-border/50 shadow-sm font-medium gap-1 pr-1"
                                     >
                                       {tag}
-                                      {canEditTaskFields && (
+                                      {canEditTags && (
                                         <button
                                           type="button"
                                           className="rounded-full p-0.5 hover:bg-muted-foreground/20"
@@ -1713,7 +1714,7 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                                       )}
                                     </Badge>
                                 ))}
-                                {canEditTaskFields && (
+                                {canEditTags && (
                                     <Popover open={tagPopoverOpen} onOpenChange={setTagPopoverOpen}>
                                       <PopoverTrigger asChild>
                                         <Button variant="ghost" size="icon" className="h-6 w-6 rounded-full border border-dashed border-border/50" type="button">
