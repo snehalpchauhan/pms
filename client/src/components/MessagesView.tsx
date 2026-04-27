@@ -393,7 +393,7 @@ export default function MessagesView({ project, channelId, onChannelDeleted }: M
                         isMine ? "flex-row-reverse" : "flex-row",
                       )}
                     >
-                    <span className="font-semibold text-[11px] text-foreground">{isMine ? "You" : author?.name ?? "Unknown"}</span>
+                    <span className="font-semibold text-[10px] text-foreground">{isMine ? "You" : author?.name ?? "Unknown"}</span>
                       <span className="text-[10px] text-muted-foreground">
                         {msg.createdAt}
                         {msg.editedAt ? <span className="ml-1">(edited)</span> : null}
@@ -402,7 +402,7 @@ export default function MessagesView({ project, channelId, onChannelDeleted }: M
                   )}
                   <div
                     className={cn(
-                      "rounded-2xl px-3.5 py-2 text-[14px] leading-relaxed shadow-sm border",
+                      "rounded-2xl px-3.5 py-2 text-[13px] leading-relaxed shadow-sm border",
                       isMine
                         ? "bg-primary text-primary-foreground border-primary/20 rounded-tr-md"
                         : "bg-muted/80 text-foreground border-border/60 rounded-tl-md",

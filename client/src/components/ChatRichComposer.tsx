@@ -67,9 +67,10 @@ export function ChatRichComposer({ channelId, placeholder, onSend, initialMarkdo
       editorProps: {
         attributes: {
           class: cn(
-            "tiptap chat-rich-editor min-h-[5rem] px-0 py-1 text-[14px] text-foreground outline-none",
-            "prose prose-sm max-w-none dark:prose-invert",
+            "tiptap chat-rich-editor min-h-[5rem] px-0 py-1 text-[13px] text-foreground outline-none",
+            "prose max-w-none dark:prose-invert",
             "prose-p:my-1 prose-ul:my-1 prose-li:my-0",
+            "prose-p:text-[13px] prose-li:text-[13px] prose-a:text-[13px]",
             "[&_img]:max-h-40 [&_img]:rounded-md [&_img]:border [&_img]:border-border/60",
           ),
         },
