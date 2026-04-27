@@ -117,6 +117,8 @@ export interface Message {
     createdAt: string;
     /** ISO timestamp or null; when set, UI shows "(edited)". */
     editedAt?: string | null;
+    /** ISO timestamp or null; when set, UI shows "Message deleted". */
+    deletedAt?: string | null;
 }
 
 export interface Channel {

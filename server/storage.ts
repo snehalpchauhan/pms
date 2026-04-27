@@ -96,7 +96,7 @@ export interface IStorage {
   createMessage(message: InsertMessage): Promise<Message>;
   getMessage(id: number): Promise<Message | undefined>;
   updateMessage(id: number, updates: { content: string; editedAt: Date }): Promise<Message | undefined>;
-  deleteMessage(id: number): Promise<void>;
+  softDeleteMessage(id: number, deletedAt: Date): Promise<Message | undefined>;
 
   createTimeEntry(entry: InsertTimeEntry): Promise<TimeEntry>;
   getTimeEntriesByTask(taskId: number): Promise<(TimeEntry & { userName: string })[]>;
@@ -588,8 +588,13 @@ export class DatabaseStorage implements IStorage {
     return row;
   }
 
-  async deleteMessage(id: number): Promise<void> {
-    await db.delete(messages).where(eq(messages.id, id));
+  async softDeleteMessage(id: number, deletedAt: Date): Promise<Message | undefined> {
+    const [row] = await db
+      .update(messages)
+      .set({ content: "", deletedAt })
+      .where(eq(messages.id, id))
+      .returning();
+    return row;
   }
 
   async createTimeEntry(entry: InsertTimeEntry): Promise<TimeEntry> {

@@ -136,6 +136,7 @@ export default function MessagesView({ project, channelId, onChannelDeleted }: M
     content: m.content,
     createdAt: formatMessageTime(m.createdAt),
     editedAt: m.editedAt ?? null,
+    deletedAt: m.deletedAt ?? null,
   }));
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -196,6 +197,7 @@ export default function MessagesView({ project, channelId, onChannelDeleted }: M
   );
 
   const startEditMessage = useCallback((msg: Message) => {
+    if ((msg as any).deletedAt) return;
     setEditingMessageId(String(msg.id));
     setEditingInitialMarkdown(String(msg.content ?? ""));
     requestAnimationFrame(() => {
@@ -211,11 +213,14 @@ export default function MessagesView({ project, channelId, onChannelDeleted }: M
   const deleteMessage = useCallback(
     async (msgId: string) => {
       if (numericChannelId == null) return;
-      // optimistic remove
+      // optimistic soft-delete (keep row so UI can show placeholder)
       const prev = queryClient.getQueryData<any[]>(["/api/channels", numericChannelId, "messages"]);
       queryClient.setQueryData(["/api/channels", numericChannelId, "messages"], (old: unknown) => {
         const arr = Array.isArray(old) ? old : [];
-        return arr.filter((m: any) => String(m.id) !== String(msgId));
+        return arr.map((m: any) => {
+          if (String(m.id) !== String(msgId)) return m;
+          return { ...m, content: "", deletedAt: new Date().toISOString() };
+        });
       });
       try {
         await apiRequest("DELETE", `/api/messages/${msgId}`);
@@ -409,10 +414,16 @@ export default function MessagesView({ project, channelId, onChannelDeleted }: M
                         isMine && " [&_a]:text-primary-foreground/90 [&_a]:underline [&_u]:text-primary-foreground/95",
                       )}
                     >
-                      {formatChatMarkdown(msg.content)}
+                      {msg.deletedAt ? (
+                        <span className={cn("italic opacity-80", isMine ? "text-primary-foreground/90" : "text-muted-foreground")}>
+                          Message deleted
+                        </span>
+                      ) : (
+                        formatChatMarkdown(msg.content)
+                      )}
                     </div>
                   </div>
-                  {isMine && (
+                  {isMine && !msg.deletedAt && (
                     <div className={cn("mt-1 flex items-center gap-1 px-1", isMine ? "justify-end" : "justify-start")}>
                       <Button
                         variant="ghost"

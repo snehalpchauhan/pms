@@ -2560,6 +2560,7 @@ export async function registerRoutes(
     if (!parsed.success) return res.status(400).json({ message: parsed.error.issues[0]?.message ?? "Invalid body" });
     const before = await storage.getMessage(messageId);
     if (!before) return res.status(404).json({ message: "Message not found" });
+    if (before.deletedAt) return res.status(400).json({ message: "Message is deleted" });
     if (!(await userCanAccessChannel(currentUser.id, before.channelId))) {
       return res.status(403).json({ message: "Access denied" });
     }
@@ -2584,6 +2585,7 @@ export async function registerRoutes(
     }
     const before = await storage.getMessage(messageId);
     if (!before) return res.status(404).json({ message: "Message not found" });
+    if (before.deletedAt) return res.status(204).end();
     if (!(await userCanAccessChannel(currentUser.id, before.channelId))) {
       return res.status(403).json({ message: "Access denied" });
     }
@@ -2592,9 +2594,9 @@ export async function registerRoutes(
     if (!isOwner && !canModerate) {
       return res.status(403).json({ message: "Only the author or an admin/manager can delete this message" });
     }
-    await storage.deleteMessage(messageId);
+    const deleted = await storage.softDeleteMessage(messageId, new Date());
     notifyChannelMessages(before.channelId);
-    res.status(204).end();
+    res.status(200).json(deleted ?? { ok: true });
   });
 
   const chatUploadSchema = z.object({
