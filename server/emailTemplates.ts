@@ -46,18 +46,33 @@ function buildTaskLink(appUrl?: string, projectId?: number, taskId?: number): st
   return `${base}/?view=tasks&project=${encodeURIComponent(String(projectId))}&task=${encodeURIComponent(String(taskId))}`;
 }
 
-function wrapPmsEmailHtml(opts: { title: string; eyebrow: string; bodyHtml: string; ctaHref?: string; ctaText?: string; footerText: string }): string {
-  const { title, eyebrow, bodyHtml, ctaHref, ctaText, footerText } = opts;
+function wrapPmsEmailHtml(opts: {
+  title: string;
+  eyebrow: string;
+  bodyHtml: string;
+  ctaHref?: string;
+  ctaText?: string;
+  ctaFallbackText?: string;
+  footerText: string;
+}): string {
+  const { title, eyebrow, bodyHtml, ctaHref, ctaText, ctaFallbackText, footerText } = opts;
   const cta = ctaHref && ctaText
     ? `
       <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:22px">
         <tr>
           <td align="left">
-            <a href="${ctaHref}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:10px;font-size:14px;font-weight:700">
+            <a href="${ctaHref}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:12px;font-size:14px;font-weight:800;border:1px solid #1d4ed8">
               ${escHtml(ctaText)}
             </a>
           </td>
         </tr>
+        ${ctaFallbackText ? `
+        <tr>
+          <td style="padding-top:10px;font-size:12px;line-height:1.55;color:#64748b">
+            If this button doesn&rsquo;t work, copy and paste this link:<br>
+            <span style="word-break:break-all;color:#2563eb">${escHtml(ctaFallbackText)}</span>
+          </td>
+        </tr>` : ""}
       </table>`
     : "";
 
@@ -67,9 +82,9 @@ function wrapPmsEmailHtml(opts: { title: string; eyebrow: string; bodyHtml: stri
 <body style="margin:0;padding:0;background:#f6f7fb;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial,Helvetica,sans-serif;color:#0f172a">
   <table width="100%" cellpadding="0" cellspacing="0" style="background:#f6f7fb;padding:28px 0">
     <tr><td align="center">
-      <table width="640" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:14px;overflow:hidden;border:1px solid #e5e7eb;max-width:640px">
+      <table width="640" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #dbeafe;max-width:640px;box-shadow:0 8px 30px rgba(2,6,23,.08)">
         <tr>
-          <td style="padding:18px 22px;background:linear-gradient(90deg,#eff6ff,#ffffff)">
+          <td style="padding:18px 22px;background:linear-gradient(90deg,#eff6ff,#ffffff);border-bottom:1px solid #e0f2fe">
             <div style="font-size:12px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#2563eb">${escHtml(eyebrow)}</div>
             <div style="margin-top:6px;font-size:20px;font-weight:800;line-height:1.25;color:#0f172a">${escHtml(title)}</div>
           </td>
@@ -81,7 +96,7 @@ function wrapPmsEmailHtml(opts: { title: string; eyebrow: string; bodyHtml: stri
           </td>
         </tr>
         <tr>
-          <td style="padding:16px 22px;border-top:1px solid #eef2f7;background:#fafafa">
+          <td style="padding:16px 22px;border-top:1px solid #e0f2fe;background:#f8fafc">
             <div style="font-size:12px;line-height:1.6;color:#64748b">${escHtml(footerText)}</div>
           </td>
         </tr>
@@ -176,8 +191,7 @@ export function buildClientNewTaskEmail(opts: ClientNewTaskEmailOpts): {
     </div>
     <div style="height:16px"></div>
     ${descriptionBlock}
-    ${checklistBlock}
-    ${loginUrl ? `<div style="font-size:12px;color:#64748b;margin-top:8px">If the button doesn’t work: ${escHtml(taskUrl || loginUrl)}</div>` : ""}`;
+    ${checklistBlock}`;
 
   const html = wrapPmsEmailHtml({
     eyebrow: "New task",
@@ -185,6 +199,7 @@ export function buildClientNewTaskEmail(opts: ClientNewTaskEmailOpts): {
     bodyHtml,
     ctaHref: taskUrl || loginUrl || undefined,
     ctaText: taskUrl ? "Open task in PMS" : loginUrl ? "Log in to PMS" : undefined,
+    ctaFallbackText: taskUrl || loginUrl || undefined,
     footerText:
       `You received this because “Notify on client task” is enabled for ${projectName}. ` +
       `You can change this in Members & Access.`,
@@ -226,7 +241,7 @@ export function buildClientReopenTaskEmail(opts: ClientReopenTaskEmailOpts): {
       <div style="margin-top:6px;border:1px solid #e5e7eb;border-radius:12px;padding:12px 14px;background:#ffffff;color:#334155;line-height:1.7;font-size:14px">
         ${escHtml(reason).replace(/\n/g, "<br>")}
       </div>` : ""}
-    ${(taskUrl || loginUrl) ? `<div style="font-size:12px;color:#64748b;margin-top:10px">If the button doesn’t work: ${escHtml(taskUrl || loginUrl)}</div>` : ""}`;
+    `;
 
   const html = wrapPmsEmailHtml({
     eyebrow: "Task re-opened",
@@ -234,6 +249,7 @@ export function buildClientReopenTaskEmail(opts: ClientReopenTaskEmailOpts): {
     bodyHtml,
     ctaHref: taskUrl || loginUrl || undefined,
     ctaText: taskUrl ? "Open task in PMS" : loginUrl ? "Log in to PMS" : undefined,
+    ctaFallbackText: taskUrl || loginUrl || undefined,
     footerText:
       `You received this because “Notify on client task” is enabled for ${projectName}. ` +
       `You can change this in Members & Access.`,
