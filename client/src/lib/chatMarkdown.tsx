@@ -41,6 +41,16 @@ function formatSegment(part: string, i: number): ReactNode {
   // Normalize first so underline/bold/italic parsing still works.
   const normalized = part.replace(/\\([+*])/g, "$1");
 
+  // Bold + Italic: ***text***
+  const boldItalic = /^\*\*\*([\s\S]+)\*\*\*$/.exec(normalized);
+  if (boldItalic) {
+    return (
+      <strong>
+        <em>{formatChatLine(boldItalic[1], i)}</em>
+      </strong>
+    );
+  }
+
   // Combined tokens (e.g. TipTap produces underline+bold).
   // Examples: **++text++**, ++**text**++
   const boldUnderlineInner = /^\*\*\+\+([\s\S]+)\+\+\*\*$/.exec(normalized);
@@ -60,8 +70,34 @@ function formatSegment(part: string, i: number): ReactNode {
     );
   }
 
+  // Italic + Underline: *++text++*
+  const italicUnderlineInner = /^\*\+\+([\s\S]+)\+\+\*$/.exec(normalized);
+  if (italicUnderlineInner) {
+    return (
+      <em>
+        <u className="underline underline-offset-2">{formatChatLine(italicUnderlineInner[1], i)}</u>
+      </em>
+    );
+  }
+  // Underline + Italic: ++*text*++
+  const underlineItalicInner = /^\+\+\*([\s\S]+)\*\+\+$/.exec(normalized);
+  if (underlineItalicInner) {
+    return (
+      <u className="underline underline-offset-2">
+        <em>{formatChatLine(underlineItalicInner[1], i)}</em>
+      </u>
+    );
+  }
+
   if (normalized.startsWith("++") && normalized.endsWith("++") && normalized.length > 4) {
     return <u className="underline underline-offset-2">{formatChatLine(normalized.slice(2, -2), i)}</u>;
+  }
+  if (normalized.startsWith("***") && normalized.endsWith("***") && normalized.length > 6) {
+    return (
+      <strong>
+        <em>{formatChatLine(normalized.slice(3, -3), i)}</em>
+      </strong>
+    );
   }
   if (normalized.startsWith("**") && normalized.endsWith("**") && normalized.length > 4) {
     return <strong>{formatChatLine(normalized.slice(2, -2), i)}</strong>;
@@ -74,6 +110,7 @@ function formatSegment(part: string, i: number): ReactNode {
   ) {
     return <em>{formatChatLine(normalized.slice(1, -1), i)}</em>;
   }
+
   const img = /^!\[([^\]]*)\]\(([^)]+)\)$/.exec(normalized);
   if (img) {
     return (
@@ -141,9 +178,12 @@ export function formatChatMarkdown(text: string): ReactNode {
 function formatChatLine(line: string, lineKey: number): ReactNode {
   // Normalize escaped markers BEFORE splitting, otherwise tokens won't match.
   const normalizedLine = line.replace(/\\([+*])/g, "$1");
+  // Order matters: longer/combined tokens must come BEFORE the simpler ones
+  // so e.g. `***Hiii***` isn't split into stray `*` + `**Hiii**` + `**`.
   const parts = normalizedLine.split(
-    /(\+\+[^+]+\+\+|\*\*[^*]+\*\*|\*[^*]+\*|!\[[^\]]*\]\([^)]+\)|\[[^\]]+\]\([^)]+\))/g,
+    /(\*\*\+\+[^+*]+\+\+\*\*|\+\+\*\*[^+*]+\*\*\+\+|\*\+\+[^+*]+\+\+\*|\+\+\*[^+*]+\*\+\+|\*\*\*[^*]+\*\*\*|\+\+[^+]+\+\+|\*\*[^*]+\*\*|\*[^*]+\*|!\[[^\]]*\]\([^)]+\)|\[[^\]]+\]\([^)]+\))/g,
   );
+
   return (
     <>
       {parts.map((part, i) => (
