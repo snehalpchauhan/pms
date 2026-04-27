@@ -137,11 +137,15 @@ export default function MessagesView({ project, channelId, onChannelDeleted }: M
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = "auto") => {
     const el = scrollContainerRef.current;
     if (!el) return;
-    el.scrollTo({ top: el.scrollHeight, behavior: "auto" });
-  }, [channelMessages.length, numericChannelId]);
+    el.scrollTo({ top: el.scrollHeight, behavior });
+  }, []);
+
+  useEffect(() => {
+    scrollToBottom("auto");
+  }, [channelMessages.length, numericChannelId, scrollToBottom]);
 
   const handleComposerSend = useCallback(
     async (content: string) => {
@@ -367,7 +371,10 @@ export default function MessagesView({ project, channelId, onChannelDeleted }: M
       </div>
 
       <div className="p-4 pt-2 shrink-0 border-t border-border/40">
-        <div className="max-w-4xl mx-auto bg-background rounded-xl border border-border shadow-sm p-4">
+        <div
+          className="max-w-4xl mx-auto bg-background rounded-xl border border-border shadow-sm p-4"
+          onMouseDown={() => scrollToBottom("smooth")}
+        >
           <ChatRichComposer
             key={numericChannelId != null ? `ch-${numericChannelId}` : `pending-${activeChannelId ?? "x"}`}
             channelId={numericChannelId}
