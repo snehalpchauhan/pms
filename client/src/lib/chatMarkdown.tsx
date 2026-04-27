@@ -80,20 +80,49 @@ function formatSegment(part: string, i: number): ReactNode {
 export function formatChatMarkdown(text: string): ReactNode {
   if (!text) return null;
   const lines = text.split("\n");
-  return (
-    <>
-      {lines.map((line, li) => (
-        <span key={li}>
-          {li > 0 ? <br /> : null}
-          {formatChatLine(line, li)}
-        </span>
-      ))}
-    </>
-  );
+  const nodes: ReactNode[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i] ?? "";
+    const isBullet = line.trimStart().startsWith("- ");
+    if (!isBullet) {
+      nodes.push(
+        <span key={`l-${i}`}>
+          {nodes.length > 0 ? <br /> : null}
+          {formatChatLine(line, i)}
+        </span>,
+      );
+      i += 1;
+      continue;
+    }
+
+    // Group consecutive "- " lines into a <ul>.
+    const items: string[] = [];
+    while (i < lines.length && (lines[i] ?? "").trimStart().startsWith("- ")) {
+      const raw = lines[i] ?? "";
+      const trimmed = raw.trimStart().slice(2); // remove "- "
+      items.push(trimmed);
+      i += 1;
+    }
+
+    nodes.push(
+      <ul key={`ul-${i}`} className="list-disc pl-5 my-2 space-y-1">
+        {items.map((t, idx) => (
+          <li key={idx} className="leading-relaxed">
+            {formatChatLine(t, idx)}
+          </li>
+        ))}
+      </ul>,
+    );
+  }
+
+  return <>{nodes}</>;
 }
 
 function formatChatLine(line: string, lineKey: number): ReactNode {
-  const parts = line.split(
+  // Normalize escaped "+" BEFORE splitting, otherwise the underline token won't match.
+  const normalizedLine = line.replace(/\\\+/g, "+");
+  const parts = normalizedLine.split(
     /(\+\+[^+]+\+\+|\*\*[^*]+\*\*|\*[^*]+\*|!\[[^\]]*\]\([^)]+\)|\[[^\]]+\]\([^)]+\))/g,
   );
   return (
