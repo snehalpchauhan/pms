@@ -88,9 +88,9 @@ export default function CalendarView({ project, tasks, onTaskClick }: CalendarVi
 
                 <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as ViewMode)} className="w-[200px]">
                     <TabsList className="grid w-full grid-cols-3 h-8">
-                        <TabsTrigger value="month" className="text-xs">Month</TabsTrigger>
-                        <TabsTrigger value="week" className="text-xs">Week</TabsTrigger>
-                        <TabsTrigger value="day" className="text-xs">Day</TabsTrigger>
+                        <TabsTrigger value="month" type="button" className="text-xs">Month</TabsTrigger>
+                        <TabsTrigger value="week" type="button" className="text-xs">Week</TabsTrigger>
+                        <TabsTrigger value="day" type="button" className="text-xs">Day</TabsTrigger>
                     </TabsList>
                 </Tabs>
             </div>

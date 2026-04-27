@@ -153,15 +153,15 @@ export default function ProjectTasksView({ project, tasks, clientPermissions }: 
             >
                 <div className="px-6 py-4 border-b border-border/40 flex items-center justify-between shrink-0 bg-background/50 backdrop-blur-sm z-10">
                     <TabsList className="grid w-[300px] grid-cols-3">
-                        <TabsTrigger value="board">
+                        <TabsTrigger value="board" type="button">
                             <FolderKanban className="w-4 h-4 mr-2" />
                             Board
                         </TabsTrigger>
-                        <TabsTrigger value="list">
+                        <TabsTrigger value="list" type="button">
                             <ListTodo className="w-4 h-4 mr-2" />
                             List
                         </TabsTrigger>
-                        <TabsTrigger value="calendar">
+                        <TabsTrigger value="calendar" type="button">
                             <Calendar className="w-4 h-4 mr-2" />
                             Calendar
                         </TabsTrigger>
