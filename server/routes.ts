@@ -40,6 +40,28 @@ import type { Project } from "@shared/schema";
 const VL_HOST = (process.env.VOICELINK_CLIENT_URL || "https://voicelink.vnnovate.net").replace(/\/$/, "");
 const VL_API = (process.env.VOICELINK_INTERNAL_API || VL_HOST).replace(/\/$/, "");
 
+// ── Privacy helpers ─────────────────────────────────────────────────────────
+// Requirement: employees/managers must never see client emails in any API.
+function sanitizeUserForViewer(
+  viewer: { id: number; role?: string } | undefined,
+  user: any,
+): any {
+  if (!user) return user;
+  const viewerRole = viewer?.role ?? "";
+  const isAdminViewer = viewerRole === "admin";
+  const isSelf = viewer != null && Number(viewer.id) === Number(user.id);
+  const isClientTarget = user?.role === "client";
+  if (!isAdminViewer && !isSelf && isClientTarget) {
+    // Keep shape stable; just remove email for non-admin viewers.
+    return { ...user, email: null };
+  }
+  return user;
+}
+
+function sanitizeUsersForViewer(viewer: { id: number; role?: string } | undefined, users: any[]): any[] {
+  return users.map((u) => sanitizeUserForViewer(viewer, u));
+}
+
 /** Closed projects are hidden from normal API use; admins manage them via /api/admin/projects. */
 async function requireOpenProjectForApi(res: express.Response, projectId: number): Promise<Project | null> {
   const project = await storage.getProject(projectId);
@@ -580,9 +602,11 @@ export async function registerRoutes(
   });
 
   // Users
-  app.get("/api/users", requireAuth, async (_req, res) => {
+  app.get("/api/users", requireAuth, async (req, res) => {
+    const currentUser = req.user as any;
     const allUsers = await storage.getAllUsers();
-    res.json(allUsers.map(({ password, ...u }) => u));
+    const safe = allUsers.map(({ password, ...u }) => u);
+    res.json(sanitizeUsersForViewer(currentUser, safe));
   });
 
   const createUserSchema = z.object({
@@ -1007,10 +1031,13 @@ export async function registerRoutes(
     const ownerId = projectRow?.ownerId ?? null;
     const members = await storage.getProjectMembersWithSettings(projectId);
     res.json(
-      members.map(({ password, ...u }) => ({
-        ...u,
+      members.map(({ password, ...u }) => {
+        const sanitized = sanitizeUserForViewer(currentUser, u);
+        return {
+        ...sanitized,
         isProjectOwner: ownerId != null && Number(u.id) === Number(ownerId),
-      })),
+        };
+      }),
     );
   });
 
@@ -1260,7 +1287,7 @@ export async function registerRoutes(
 
         return {
           ...task,
-          assignees: assignees.map(({ password, ...u }) => u),
+          assignees: sanitizeUsersForViewer(currentUser, assignees.map(({ password, ...u }) => u)),
           checklist,
           attachments: taskAttachments,
           comments: taskComments,
@@ -1304,7 +1331,7 @@ export async function registerRoutes(
     }
     res.json({
       ...task,
-      assignees: assignees.map(({ password, ...u }) => u),
+      assignees: sanitizeUsersForViewer(currentUser, assignees.map(({ password, ...u }) => u)),
       checklist,
       attachments: taskAttachments,
       comments: taskComments,
@@ -2201,7 +2228,7 @@ export async function registerRoutes(
     const channelsWithMembers = await Promise.all(
       allChannels.map(async (channel) => {
         const members = await storage.getChannelMembers(channel.id);
-        const memberUsers = members.map(({ password, ...u }) => u);
+        const memberUsers = sanitizeUsersForViewer(currentUser, members.map(({ password, ...u }) => u));
         const memberCountDisplay =
           channel.type === "public" && channel.projectId != null
             ? (projectMemberCountMap.get(channel.projectId) ?? 0)
