@@ -7,30 +7,38 @@ function escapeHtml(text: string): string {
     .replace(/'/g, "&#39;");
 }
 
+function escapeHtmlAttr(text: string): string {
+  // conservative: reuse escapeHtml
+  return escapeHtml(text);
+}
+
 function inlineMarkdownToHtml(md: string): string {
+  // Escape once up-front so later replacements can safely inject tags.
+  const escaped = escapeHtml(String(md ?? ""));
+
   // images: ![alt](url)
-  let s = md.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_m, alt, url) => {
-    const safeAlt = escapeHtml(String(alt ?? ""));
-    const safeUrl = escapeHtml(String(url ?? ""));
+  let s = escaped.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_m, alt, url) => {
+    const safeAlt = String(alt ?? "");
+    const safeUrl = escapeHtmlAttr(String(url ?? ""));
     return `<img src="${safeUrl}" alt="${safeAlt}" />`;
   });
 
   // links: [text](url)
   s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_m, text, url) => {
-    const safeText = escapeHtml(String(text ?? ""));
-    const safeUrl = escapeHtml(String(url ?? ""));
+    const safeText = String(text ?? "");
+    const safeUrl = escapeHtmlAttr(String(url ?? ""));
     return `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer">${safeText}</a>`;
   });
 
   // underline: ++text++
-  s = s.replace(/\+\+([\s\S]+?)\+\+/g, (_m, inner) => `<u>${escapeHtml(String(inner ?? ""))}</u>`);
+  s = s.replace(/\+\+([\s\S]+?)\+\+/g, (_m, inner) => `<u>${String(inner ?? "")}</u>`);
 
   // bold: **text**
-  s = s.replace(/\*\*([\s\S]+?)\*\*/g, (_m, inner) => `<strong>${escapeHtml(String(inner ?? ""))}</strong>`);
+  s = s.replace(/\*\*([\s\S]+?)\*\*/g, (_m, inner) => `<strong>${String(inner ?? "")}</strong>`);
 
   // italic: *text*
   // keep this last to avoid interfering with **bold**
-  s = s.replace(/(^|[^*])\*([^*\n]+)\*/g, (_m, lead, inner) => `${lead}<em>${escapeHtml(String(inner ?? ""))}</em>`);
+  s = s.replace(/(^|[^*])\*([^*\n]+)\*/g, (_m, lead, inner) => `${lead}<em>${String(inner ?? "")}</em>`);
 
   return s;
 }
