@@ -18,6 +18,13 @@ import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -58,6 +65,7 @@ export default function TeamView({ project, currentUserRole }: TeamViewProps) {
     const [addMemberLoading, setAddMemberLoading] = useState(false);
     const [memberToRemove, setMemberToRemove] = useState<MemberWithSettings | null>(null);
     const [removeLoading, setRemoveLoading] = useState(false);
+    const [transferOwnerLoadingId, setTransferOwnerLoadingId] = useState<string | null>(null);
 
     const numericProjectId = Number(project.id);
 
@@ -89,6 +97,7 @@ export default function TeamView({ project, currentUserRole }: TeamViewProps) {
     const canManageClientSettings = currentUserRole === "manager" || currentUserRole === "admin";
     const canInviteRemoveMembers =
       currentUserRole === "manager" || currentUserRole === "admin" || isProjectOwnerUser;
+    const canTransferOwner = currentUserRole === "admin";
 
     const sortedMembers = useMemo(() => {
       return [...membersWithSettings].sort((a, b) => {
@@ -133,6 +142,25 @@ export default function TeamView({ project, currentUserRole }: TeamViewProps) {
         toast({ title: "Could not remove member", description: detail, variant: "destructive" });
       } finally {
         setRemoveLoading(false);
+      }
+    };
+
+    const handleTransferOwner = async (newOwnerId: string) => {
+      if (!canTransferOwner) return;
+      const n = Number(newOwnerId);
+      if (!Number.isInteger(n) || n <= 0) return;
+      setTransferOwnerLoadingId(String(newOwnerId));
+      try {
+        await apiRequest("POST", `/api/projects/${numericProjectId}/transfer-owner`, { newOwnerId: n });
+        queryClient.invalidateQueries({ queryKey: ["/api/projects", numericProjectId, "members-with-settings"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/projects", numericProjectId, "members"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+        toast({ title: "Project owner updated" });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "Could not change owner";
+        toast({ title: "Could not change owner", description: msg, variant: "destructive" });
+      } finally {
+        setTransferOwnerLoadingId(null);
       }
     };
 
@@ -264,9 +292,12 @@ export default function TeamView({ project, currentUserRole }: TeamViewProps) {
                 const isOwnerMember =
                   user.isProjectOwner === true ||
                   (resolvedOwnerIdStr != null && String(user.id) === resolvedOwnerIdStr);
+                const targetIsAdmin = user.role === "admin";
                 const canRemoveThisMember =
                   canInviteRemoveMembers &&
-                  !isOwnerMember;
+                  !isOwnerMember &&
+                  // Managers/employees/owners cannot remove admins; only admins can.
+                  (!targetIsAdmin || currentUserRole === "admin");
                 return (
                 <div key={user.id} className="space-y-0">
                     <Card className={cn("hover:shadow-md transition-shadow border-border/60 relative group",
@@ -295,7 +326,7 @@ export default function TeamView({ project, currentUserRole }: TeamViewProps) {
                                 <Mail className="w-4 h-4 mr-2" />
                                 {user.email || 'No email'}
                             </div>
-                            <div className="flex items-center justify-between">
+                            <div className="flex items-center justify-between gap-2">
                                 <div className="flex items-center gap-2">
                                     <div className={`w-2 h-2 rounded-full ${
                                         presence === 'online' ? 'bg-emerald-500' :
@@ -303,19 +334,57 @@ export default function TeamView({ project, currentUserRole }: TeamViewProps) {
                                     }`} />
                                     <span className="text-xs font-medium capitalize">{presence}</span>
                                 </div>
-                                
-                                {canRemoveThisMember && (
-                                    <Button
-                                        type="button"
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-8 w-8 text-destructive opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-                                        aria-label={`Remove ${user.name} from project`}
-                                        onClick={() => setMemberToRemove(user)}
-                                    >
-                                        <Trash2 className="w-4 h-4" />
-                                    </Button>
-                                )}
+
+                                <div className="flex items-center gap-1 shrink-0">
+                                  {canTransferOwner && (
+                                    <DropdownMenu>
+                                      <DropdownMenuTrigger asChild>
+                                        <Button
+                                          type="button"
+                                          variant="ghost"
+                                          size="icon"
+                                          className="h-8 w-8 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity"
+                                          aria-label={`Member actions for ${user.name}`}
+                                          disabled={transferOwnerLoadingId === String(user.id)}
+                                        >
+                                          <Crown className="w-4 h-4" />
+                                        </Button>
+                                      </DropdownMenuTrigger>
+                                      <DropdownMenuContent align="end">
+                                        <DropdownMenuItem
+                                          disabled={isOwnerMember || transferOwnerLoadingId === String(user.id)}
+                                          onClick={() => void handleTransferOwner(String(user.id))}
+                                        >
+                                          Make project owner
+                                        </DropdownMenuItem>
+                                        <DropdownMenuSeparator />
+                                        <DropdownMenuItem
+                                          disabled={!canRemoveThisMember}
+                                          className={cn(canRemoveThisMember ? "text-destructive focus:text-destructive" : "")}
+                                          onClick={() => {
+                                            if (!canRemoveThisMember) return;
+                                            setMemberToRemove(user);
+                                          }}
+                                        >
+                                          Remove from project
+                                        </DropdownMenuItem>
+                                      </DropdownMenuContent>
+                                    </DropdownMenu>
+                                  )}
+
+                                  {!canTransferOwner && canRemoveThisMember && (
+                                      <Button
+                                          type="button"
+                                          variant="ghost"
+                                          size="icon"
+                                          className="h-8 w-8 text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                                          aria-label={`Remove ${user.name} from project`}
+                                          onClick={() => setMemberToRemove(user)}
+                                      >
+                                          <Trash2 className="w-4 h-4" />
+                                      </Button>
+                                  )}
+                                </div>
                             </div>
                         </CardContent>
                     </Card>
