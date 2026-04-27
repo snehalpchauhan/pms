@@ -235,7 +235,8 @@ function AuthenticatedApp() {
         }
       }
 
-      queryClient.invalidateQueries({ queryKey: ["/api/projects", numericProjectId, "tasks"] });
+      // Force a full refetch (not just invalidate) so checklist items appear immediately
+      await queryClient.refetchQueries({ queryKey: ["/api/projects", numericProjectId, "tasks"] });
     } catch (e) {
       console.error("Failed to create task:", e);
     }
