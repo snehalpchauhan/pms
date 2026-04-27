@@ -12,6 +12,7 @@ import { Smile, Paperclip, Loader2 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { editorHtmlToMarkdown } from "@/lib/editorHtmlToMarkdown";
+import { chatMarkdownToEditorHtml } from "@/lib/chatMarkdownToEditorHtml";
 import { cn } from "@/lib/utils";
 
 const QUICK_EMOJIS = ["😀", "👍", "❤️", "🎉", "✅", "🔥", "👀", "🙏", "💬", "📎"];
@@ -21,9 +22,11 @@ export type ChatRichComposerProps = {
   placeholder: string;
   /** Called with markdown; should throw on failure so the composer keeps content. */
   onSend: (markdown: string) => Promise<void>;
+  /** Optional initial markdown to prefill editor (used for editing messages). */
+  initialMarkdown?: string;
 };
 
-export function ChatRichComposer({ channelId, placeholder, onSend }: ChatRichComposerProps) {
+export function ChatRichComposer({ channelId, placeholder, onSend, initialMarkdown }: ChatRichComposerProps) {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
@@ -78,6 +81,16 @@ export function ChatRichComposer({ channelId, placeholder, onSend }: ChatRichCom
   useEffect(() => {
     editor?.commands.clearContent();
   }, [channelId, editor]);
+
+  useEffect(() => {
+    if (!editor) return;
+    const md = typeof initialMarkdown === "string" ? initialMarkdown.trim() : "";
+    if (!md) return;
+    const html = chatMarkdownToEditorHtml(md);
+    if (!html) return;
+    // setContent resets selection; that's okay for edit flows
+    editor.commands.setContent(html);
+  }, [editor, initialMarkdown]);
 
   const getMarkdown = useCallback(() => {
     if (!editor) return "";

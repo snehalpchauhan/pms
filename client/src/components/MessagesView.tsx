@@ -1,6 +1,6 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { Hash, Phone, Video, Info, Lock, Loader2, MoreHorizontal, Pencil, Trash2, Check, X } from "lucide-react";
+import { Hash, Phone, Video, Info, Lock, Loader2, Pencil, Trash2 } from "lucide-react";
 import { Message, Project } from "@/lib/mockData";
 import { useEffect, useCallback, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
@@ -13,14 +13,6 @@ import { formatChatMarkdown } from "@/lib/chatMarkdown";
 import { ChatRichComposer } from "@/components/ChatRichComposer";
 import { EditChannelModal } from "@/components/EditChannelModal";
 import { useVoiceLink } from "@/context/VoiceLinkContext";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
 
 interface MessagesViewProps {
   project: Project;
@@ -43,7 +35,7 @@ export default function MessagesView({ project, channelId, onChannelDeleted }: M
   const { toast } = useToast();
   const [editChannelOpen, setEditChannelOpen] = useState(false);
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
-  const [editingText, setEditingText] = useState("");
+  const [editingInitialMarkdown, setEditingInitialMarkdown] = useState<string>("");
   const canManageChannel = user?.role === "admin" || user?.role === "manager";
   const activeChannelId = channelId || channels.find((c) => c.projectId === project.id && c.type !== "direct")?.id;
   const activeChannel = channels.find((c) => c.id === activeChannelId);
@@ -162,25 +154,31 @@ export default function MessagesView({ project, channelId, onChannelDeleted }: M
     async (content: string) => {
       const trimmed = content.trim();
       if (!trimmed || numericChannelId == null || user == null) return;
-      const optimisticId = -Date.now();
-      queryClient.setQueryData(
-        ["/api/channels", numericChannelId, "messages"],
-        (old: unknown) => {
-          const prev = Array.isArray(old) ? old : [];
-          return [
-            ...prev,
-            {
-              id: optimisticId,
-              channelId: numericChannelId,
-              authorId: user.id,
-              content: trimmed,
-              createdAt: new Date().toISOString(),
-            },
-          ];
-        },
-      );
       try {
-        await apiRequest("POST", `/api/channels/${numericChannelId}/messages`, { content: trimmed });
+        if (editingMessageId) {
+          await apiRequest("PATCH", `/api/messages/${editingMessageId}`, { content: trimmed });
+          setEditingMessageId(null);
+          setEditingInitialMarkdown("");
+        } else {
+          const optimisticId = -Date.now();
+          queryClient.setQueryData(
+            ["/api/channels", numericChannelId, "messages"],
+            (old: unknown) => {
+              const prev = Array.isArray(old) ? old : [];
+              return [
+                ...prev,
+                {
+                  id: optimisticId,
+                  channelId: numericChannelId,
+                  authorId: user.id,
+                  content: trimmed,
+                  createdAt: new Date().toISOString(),
+                },
+              ];
+            },
+          );
+          await apiRequest("POST", `/api/channels/${numericChannelId}/messages`, { content: trimmed });
+        }
         await queryClient.refetchQueries({ queryKey: ["/api/channels", numericChannelId, "messages"] });
         void queryClient.invalidateQueries({ queryKey: ["/api/channels"] });
       } catch (e) {
@@ -194,41 +192,21 @@ export default function MessagesView({ project, channelId, onChannelDeleted }: M
         throw e;
       }
     },
-    [numericChannelId, queryClient, toast, user],
+    [editingMessageId, numericChannelId, queryClient, toast, user],
   );
 
   const startEditMessage = useCallback((msg: Message) => {
     setEditingMessageId(String(msg.id));
-    setEditingText(String(msg.content ?? ""));
+    setEditingInitialMarkdown(String(msg.content ?? ""));
+    requestAnimationFrame(() => {
+      document.getElementById("chat-composer")?.scrollIntoView({ behavior: "smooth", block: "end" });
+    });
   }, []);
 
   const cancelEditMessage = useCallback(() => {
     setEditingMessageId(null);
-    setEditingText("");
+    setEditingInitialMarkdown("");
   }, []);
-
-  const saveEditMessage = useCallback(async () => {
-    if (!editingMessageId) return;
-    const trimmed = editingText.trim();
-    if (!trimmed) {
-      toast({ title: "Message cannot be empty", variant: "destructive" });
-      return;
-    }
-    try {
-      await apiRequest("PATCH", `/api/messages/${editingMessageId}`, { content: trimmed });
-      setEditingMessageId(null);
-      setEditingText("");
-      if (numericChannelId != null) {
-        await queryClient.refetchQueries({ queryKey: ["/api/channels", numericChannelId, "messages"] });
-      }
-    } catch (e) {
-      toast({
-        title: "Could not edit message",
-        description: e instanceof Error ? e.message : "Try again.",
-        variant: "destructive",
-      });
-    }
-  }, [editingMessageId, editingText, numericChannelId, queryClient, toast]);
 
   const deleteMessage = useCallback(
     async (msgId: string) => {
@@ -415,33 +393,6 @@ export default function MessagesView({ project, channelId, onChannelDeleted }: M
                         {msg.createdAt}
                         {msg.editedAt ? <span className="ml-1">(edited)</span> : null}
                       </span>
-                      {isMine && (
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <button
-                              type="button"
-                              className="h-6 w-6 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50"
-                              aria-label="Message actions"
-                            >
-                              <MoreHorizontal className="w-4 h-4" />
-                            </button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => startEditMessage(msg)}>
-                              <Pencil className="w-4 h-4 mr-2" />
-                              Edit
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              className="text-destructive focus:text-destructive"
-                              onClick={() => void deleteMessage(String(msg.id))}
-                            >
-                              <Trash2 className="w-4 h-4 mr-2" />
-                              Delete
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      )}
                     </div>
                   )}
                   <div
@@ -458,41 +409,33 @@ export default function MessagesView({ project, channelId, onChannelDeleted }: M
                         isMine && " [&_a]:text-primary-foreground/90 [&_a]:underline [&_u]:text-primary-foreground/95",
                       )}
                     >
-                      {editingMessageId === String(msg.id) ? (
-                        <div className="space-y-2">
-                          <Input
-                            value={editingText}
-                            onChange={(e) => setEditingText(e.target.value)}
-                            className={cn(
-                              "bg-background/10 border-white/20 text-primary-foreground placeholder:text-primary-foreground/60",
-                              !isMine && "bg-background border-border text-foreground placeholder:text-muted-foreground",
-                            )}
-                            autoFocus
-                          />
-                          <div className="flex justify-end gap-2">
-                            <button
-                              type="button"
-                              className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md bg-background/10 hover:bg-background/20"
-                              onClick={cancelEditMessage}
-                            >
-                              <X className="w-3 h-3" />
-                              Cancel
-                            </button>
-                            <button
-                              type="button"
-                              className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md bg-background/10 hover:bg-background/20"
-                              onClick={() => void saveEditMessage()}
-                            >
-                              <Check className="w-3 h-3" />
-                              Save
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        formatChatMarkdown(msg.content)
-                      )}
+                      {formatChatMarkdown(msg.content)}
                     </div>
                   </div>
+                  {isMine && (
+                    <div className={cn("mt-1 flex items-center gap-1 px-1", isMine ? "justify-end" : "justify-start")}>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                        type="button"
+                        onClick={() => startEditMessage(msg)}
+                        title="Edit message"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                        type="button"
+                        onClick={() => void deleteMessage(String(msg.id))}
+                        title="Delete message"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  )}
                 </div>
               </div>
             );
@@ -500,16 +443,38 @@ export default function MessagesView({ project, channelId, onChannelDeleted }: M
         </div>
       </div>
 
-      <div className="p-4 pt-2 shrink-0 border-t border-border/40">
+      <div id="chat-composer" className="p-4 pt-2 shrink-0 border-t border-border/40">
         <div
           className="max-w-4xl mx-auto bg-background rounded-xl border border-border shadow-sm p-4"
           onMouseDown={() => scrollToBottom("smooth")}
         >
+          {editingMessageId && (
+            <div className="mb-2 flex items-center justify-between rounded-md border border-border/50 bg-muted/20 px-3 py-2">
+              <div className="text-sm">
+                <span className="font-medium">Editing message</span>
+                <span className="text-muted-foreground"> — press Enter to update</span>
+              </div>
+              <Button variant="ghost" size="sm" type="button" onClick={cancelEditMessage}>
+                Cancel
+              </Button>
+            </div>
+          )}
           <ChatRichComposer
-            key={numericChannelId != null ? `ch-${numericChannelId}` : `pending-${activeChannelId ?? "x"}`}
+            key={
+              editingMessageId
+                ? `edit:${numericChannelId ?? "none"}:${editingMessageId}`
+                : numericChannelId != null
+                  ? `ch-${numericChannelId}`
+                  : `pending-${activeChannelId ?? "x"}`
+            }
             channelId={numericChannelId}
-            placeholder={`Message ${isDM ? dmUser?.name ?? "" : `#${activeChannel?.name ?? "channel"}`}`}
+            placeholder={
+              editingMessageId
+                ? "Edit message..."
+                : `Message ${isDM ? dmUser?.name ?? "" : `#${activeChannel?.name ?? "channel"}`}`
+            }
             onSend={handleComposerSend}
+            initialMarkdown={editingMessageId ? editingInitialMarkdown : undefined}
           />
         </div>
       </div>
