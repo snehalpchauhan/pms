@@ -37,9 +37,9 @@ function formatPlainWithUrls(text: string, keyBase: string): ReactNode[] {
 }
 
 function formatSegment(part: string, i: number): ReactNode {
-  // Some inputs may escape "+" as "\+" (e.g. when copied through other systems).
-  // Normalize first so underline/bold parsing still works.
-  const normalized = part.replace(/\\\+/g, "+");
+  // Some inputs may escape markdown markers (e.g. "\+" or "\*") depending on the converter.
+  // Normalize first so underline/bold/italic parsing still works.
+  const normalized = part.replace(/\\([+*])/g, "$1");
 
   if (normalized.startsWith("++") && normalized.endsWith("++") && normalized.length > 4) {
     return <u className="underline underline-offset-2">{formatChatLine(normalized.slice(2, -2), i)}</u>;
@@ -120,8 +120,8 @@ export function formatChatMarkdown(text: string): ReactNode {
 }
 
 function formatChatLine(line: string, lineKey: number): ReactNode {
-  // Normalize escaped "+" BEFORE splitting, otherwise the underline token won't match.
-  const normalizedLine = line.replace(/\\\+/g, "+");
+  // Normalize escaped markers BEFORE splitting, otherwise tokens won't match.
+  const normalizedLine = line.replace(/\\([+*])/g, "$1");
   const parts = normalizedLine.split(
     /(\+\+[^+]+\+\+|\*\*[^*]+\*\*|\*[^*]+\*|!\[[^\]]*\]\([^)]+\)|\[[^\]]+\]\([^)]+\))/g,
   );
