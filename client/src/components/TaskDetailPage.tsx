@@ -523,7 +523,21 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
 
   const isClient = currentUser?.role === "client";
   const isFullAccess = isClient && clientPermissions?.clientTaskAccess === "full";
+  const isContribute = isClient && clientPermissions?.clientTaskAccess === "contribute";
   const canEditTaskFields = !isClient || isFullAccess;
+
+  // Task owner check: the user who created this task
+  const isTaskOwner =
+    currentUser != null &&
+    task.ownerId != null &&
+    Number(task.ownerId) === Number(currentUser.id);
+
+  // Checklist modification permissions:
+  // - Non-clients: always allowed
+  // - Full access clients: allowed on any task
+  // - Contribute clients: allowed only on tasks they created
+  // - Feedback clients: read-only
+  const canModifyChecklist = !isClient || isFullAccess || (isContribute && isTaskOwner);
 
   const canDeleteTask = useMemo(() => {
     if (!currentUser) return false;
@@ -1870,8 +1884,8 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                                     <Checkbox 
                                         id={item.id} 
                                         checked={item.completed} 
-                                        onCheckedChange={(!isClient || isFullAccess) ? () => toggleChecklistItem(item.id) : undefined}
-                                        disabled={isClient && !isFullAccess}
+                                        onCheckedChange={canModifyChecklist ? () => toggleChecklistItem(item.id) : undefined}
+                                        disabled={!canModifyChecklist}
                                     />
                                     <label 
                                         htmlFor={item.id}
@@ -1879,7 +1893,7 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                                     >
                                         {item.text}
                                     </label>
-                                    {(!isClient || isFullAccess) && (
+                                    {canModifyChecklist && (
                                         <Button 
                                             variant="ghost" 
                                             size="icon" 
@@ -1892,7 +1906,7 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                                 </div>
                             ))}
                             
-                            {(!isClient || isFullAccess) && (
+                            {canModifyChecklist && (
                                 <div className="flex gap-2 pt-2">
                                     <Input 
                                         placeholder="Add an item..." 
