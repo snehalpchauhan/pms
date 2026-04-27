@@ -8,13 +8,14 @@ import { notifyChannelMessages, notifyUsersCall, notifyUsersInviteCleared } from
 import { publishCallInvites, peekInvite, dismissInvite, clearInvitesForChannel } from "./callInvites";
 import { storage } from "./storage";
 import { sendEmail } from "./email";
-import { buildClientNewTaskEmail } from "./emailTemplates";
+import { buildClientNewTaskEmail, buildClientReopenTaskEmail } from "./emailTemplates";
 import { setupAuth, requireAuth } from "./auth";
 import {
   registerMicrosoftAuth,
   clearMicrosoftOidcCache,
   ms365ClientSecretFromEnv,
   ms365FullyConfigured,
+  getPublicAppUrl,
 } from "./microsoftAuth";
 import { seedDatabase } from "./seed";
 import {
@@ -1472,7 +1473,9 @@ export async function registerRoutes(
         taskTitle: task.title,
         taskDescription: task.description ?? "",
         checklistItems,
-        appUrl: process.env.APP_URL,
+        appUrl: getPublicAppUrl(req),
+        projectId: task.projectId,
+        taskId: task.id,
       });
 
       notifyStaffOfClientActivity({ projectId: task.projectId, subject, text, html }).catch(() => {});
@@ -1793,6 +1796,22 @@ export async function registerRoutes(
     });
 
     res.json({ message: "Revision requested" });
+
+    // Notify staff when a client reopens / requests revision (fire-and-forget)
+    try {
+      const { subject, text, html } = buildClientReopenTaskEmail({
+        clientName: currentUser.name,
+        projectName: openRev.name,
+        taskTitle: task.title,
+        reason: reason.trim(),
+        appUrl: getPublicAppUrl(req),
+        projectId: task.projectId,
+        taskId: task.id,
+      });
+      notifyStaffOfClientActivity({ projectId: task.projectId, subject, text, html }).catch(() => {});
+    } catch {
+      /* ignore */
+    }
   });
 
   /**

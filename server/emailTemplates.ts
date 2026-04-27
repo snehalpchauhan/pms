@@ -20,6 +20,76 @@ export interface ClientNewTaskEmailOpts {
   checklistItems?: string[];
   /** Public URL of the PMS app (e.g. https://pms.vnnovate.com); used for the login CTA */
   appUrl?: string;
+  /** Used to deep-link into the task in PMS */
+  projectId?: number;
+  taskId?: number;
+}
+
+export interface ClientReopenTaskEmailOpts {
+  clientName: string;
+  projectName: string;
+  taskTitle: string;
+  reason: string;
+  appUrl?: string;
+  projectId?: number;
+  taskId?: number;
+}
+
+function normalizeBaseUrl(appUrl?: string): string {
+  return (appUrl ?? "").trim().replace(/\/$/, "");
+}
+
+function buildTaskLink(appUrl?: string, projectId?: number, taskId?: number): string {
+  const base = normalizeBaseUrl(appUrl);
+  if (!base || !projectId || !taskId) return "";
+  // Legacy deep link is ingested once and opens the right project/task.
+  return `${base}/?view=tasks&project=${encodeURIComponent(String(projectId))}&task=${encodeURIComponent(String(taskId))}`;
+}
+
+function wrapPmsEmailHtml(opts: { title: string; eyebrow: string; bodyHtml: string; ctaHref?: string; ctaText?: string; footerText: string }): string {
+  const { title, eyebrow, bodyHtml, ctaHref, ctaText, footerText } = opts;
+  const cta = ctaHref && ctaText
+    ? `
+      <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:22px">
+        <tr>
+          <td align="left">
+            <a href="${ctaHref}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:10px;font-size:14px;font-weight:700">
+              ${escHtml(ctaText)}
+            </a>
+          </td>
+        </tr>
+      </table>`
+    : "";
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f6f7fb;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial,Helvetica,sans-serif;color:#0f172a">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f6f7fb;padding:28px 0">
+    <tr><td align="center">
+      <table width="640" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:14px;overflow:hidden;border:1px solid #e5e7eb;max-width:640px">
+        <tr>
+          <td style="padding:18px 22px;background:linear-gradient(90deg,#eff6ff,#ffffff)">
+            <div style="font-size:12px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#2563eb">${escHtml(eyebrow)}</div>
+            <div style="margin-top:6px;font-size:20px;font-weight:800;line-height:1.25;color:#0f172a">${escHtml(title)}</div>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:22px">
+            ${bodyHtml}
+            ${cta}
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:16px 22px;border-top:1px solid #eef2f7;background:#fafafa">
+            <div style="font-size:12px;line-height:1.6;color:#64748b">${escHtml(footerText)}</div>
+          </td>
+        </tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
 }
 
 /**
@@ -33,7 +103,8 @@ export function buildClientNewTaskEmail(opts: ClientNewTaskEmailOpts): {
   const { clientName, projectName, taskTitle, appUrl } = opts;
   const descriptionText = opts.taskDescription?.trim() ?? "";
   const checklistItems = (opts.checklistItems ?? []).filter(Boolean);
-  const loginUrl = appUrl ? `${appUrl.replace(/\/$/, "")}/login` : "";
+  const taskUrl = buildTaskLink(appUrl, opts.projectId, opts.taskId);
+  const loginUrl = normalizeBaseUrl(appUrl) ? `${normalizeBaseUrl(appUrl)}/login` : "";
 
   // ── Subject ──────────────────────────────────────────────────────────────────
   const subject = `[${projectName}] New client task: ${taskTitle}`;
@@ -95,93 +166,78 @@ export function buildClientNewTaskEmail(opts: ClientNewTaskEmailOpts): {
       </tr>`).join("")}
     </table>` : "";
 
-  const ctaBlock = loginUrl ? `
-    <!-- CTA Button -->
-    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:8px">
-      <tr>
-        <td align="center" style="padding-top:8px">
-          <a href="${loginUrl}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;padding:14px 36px;border-radius:8px;font-size:15px;font-weight:600;letter-spacing:.3px">
-            Log in to Review Task &rarr;
-          </a>
-        </td>
-      </tr>
-    </table>` : "";
+  const bodyHtml = `
+    <p style="margin:0 0 14px;font-size:14px;line-height:1.6;color:#334155">
+      <strong style="color:#0f172a">${escHtml(clientName)}</strong> (client) added a new task in <strong>${escHtml(projectName)}</strong>.
+    </p>
+    <div style="border:1px solid #e5e7eb;border-radius:12px;padding:14px 16px;background:#f8fafc">
+      <div style="font-size:12px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#64748b">Task</div>
+      <div style="margin-top:6px;font-size:16px;font-weight:800;color:#0f172a;line-height:1.35">${escHtml(taskTitle)}</div>
+    </div>
+    <div style="height:16px"></div>
+    ${descriptionBlock}
+    ${checklistBlock}
+    ${loginUrl ? `<div style="font-size:12px;color:#64748b;margin-top:8px">If the button doesn’t work: ${escHtml(taskUrl || loginUrl)}</div>` : ""}`;
 
-  const html = `<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background:#f4f6f8;font-family:Arial,Helvetica,sans-serif;color:#1a1a2e">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f6f8;padding:32px 0">
-    <tr><td align="center">
-      <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:10px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.10);max-width:600px">
+  const html = wrapPmsEmailHtml({
+    eyebrow: "New task",
+    title: `${projectName}`,
+    bodyHtml,
+    ctaHref: taskUrl || loginUrl || undefined,
+    ctaText: taskUrl ? "Open task in PMS" : loginUrl ? "Log in to PMS" : undefined,
+    footerText:
+      `You received this because “Notify on client task” is enabled for ${projectName}. ` +
+      `You can change this in Members & Access.`,
+  });
 
-        <!-- Header -->
-        <tr>
-          <td style="background:#1e293b;padding:24px 32px">
-            <table width="100%" cellpadding="0" cellspacing="0">
-              <tr>
-                <td>
-                  <span style="font-size:22px;font-weight:700;color:#ffffff;letter-spacing:.5px">PMS</span>
-                  <span style="font-size:13px;color:#94a3b8;margin-left:10px">Project Management</span>
-                </td>
-                <td align="right">
-                  <span style="background:#3b82f6;color:#fff;font-size:11px;font-weight:600;padding:4px 10px;border-radius:20px;letter-spacing:.3px">NEW TASK</span>
-                </td>
-              </tr>
-            </table>
-          </td>
-        </tr>
+  return { subject, text, html };
+}
 
-        <!-- Project Banner -->
-        <tr>
-          <td style="background:#2563eb;padding:12px 32px">
-            <span style="font-size:12px;color:#bfdbfe;font-weight:500;text-transform:uppercase;letter-spacing:.8px">Project</span>
-            <span style="font-size:14px;color:#ffffff;font-weight:600;margin-left:8px">${escHtml(projectName)}</span>
-          </td>
-        </tr>
+export function buildClientReopenTaskEmail(opts: ClientReopenTaskEmailOpts): {
+  subject: string;
+  text: string;
+  html: string;
+} {
+  const { clientName, projectName, taskTitle } = opts;
+  const reason = (opts.reason ?? "").trim();
+  const taskUrl = buildTaskLink(opts.appUrl, opts.projectId, opts.taskId);
+  const loginUrl = normalizeBaseUrl(opts.appUrl) ? `${normalizeBaseUrl(opts.appUrl)}/login` : "";
 
-        <!-- Body -->
-        <tr>
-          <td style="padding:32px">
+  const subject = `[${projectName}] Client re-opened task: ${taskTitle}`;
+  const SEP = "─".repeat(50);
+  let text = `Client Re-opened Task — ${projectName}\n${SEP}\n\n`;
+  text += `From:     ${clientName} (client)\n`;
+  text += `Project:  ${projectName}\n`;
+  text += `Task:     ${taskTitle}\n\n`;
+  if (reason) text += `Reason\n──────\n${reason}\n\n`;
+  text += taskUrl ? `Open task: ${taskUrl}\n` : loginUrl ? `Log in: ${loginUrl}\n` : "Log in to PMS to review.\n";
 
-            <!-- Intro -->
-            <p style="margin:0 0 24px;font-size:15px;color:#475569;line-height:1.5">
-              <strong style="color:#1e293b">${escHtml(clientName)}</strong> (client) has submitted a new task that requires your attention.
-            </p>
+  const bodyHtml = `
+    <p style="margin:0 0 14px;font-size:14px;line-height:1.6;color:#334155">
+      <strong style="color:#0f172a">${escHtml(clientName)}</strong> (client) re-opened a task in <strong>${escHtml(projectName)}</strong>.
+    </p>
+    <div style="border:1px solid #e5e7eb;border-radius:12px;padding:14px 16px;background:#f8fafc">
+      <div style="font-size:12px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#64748b">Task</div>
+      <div style="margin-top:6px;font-size:16px;font-weight:800;color:#0f172a;line-height:1.35">${escHtml(taskTitle)}</div>
+    </div>
+    ${reason ? `
+      <div style="height:16px"></div>
+      <div style="font-size:12px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#64748b">Reason</div>
+      <div style="margin-top:6px;border:1px solid #e5e7eb;border-radius:12px;padding:12px 14px;background:#ffffff;color:#334155;line-height:1.7;font-size:14px">
+        ${escHtml(reason).replace(/\n/g, "<br>")}
+      </div>` : ""}
+    ${(taskUrl || loginUrl) ? `<div style="font-size:12px;color:#64748b;margin-top:10px">If the button doesn’t work: ${escHtml(taskUrl || loginUrl)}</div>` : ""}`;
 
-            <!-- Task Title -->
-            <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;border-left:4px solid #2563eb;border-radius:0 8px 8px 0;margin-bottom:24px">
-              <tr>
-                <td style="padding:18px 20px">
-                  <div style="font-size:11px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px">Task Title</div>
-                  <div style="font-size:18px;font-weight:700;color:#1e293b;line-height:1.3">${escHtml(taskTitle)}</div>
-                </td>
-              </tr>
-            </table>
-
-            ${descriptionBlock}
-            ${checklistBlock}
-            ${ctaBlock}
-
-          </td>
-        </tr>
-
-        <!-- Footer -->
-        <tr>
-          <td style="background:#f8fafc;border-top:1px solid #e2e8f0;padding:20px 32px">
-            <p style="margin:0;font-size:12px;color:#94a3b8;text-align:center;line-height:1.6">
-              This email was sent by <strong>PMS</strong> because you have task notifications enabled for
-              the project <strong>${escHtml(projectName)}</strong>.<br>
-              You can manage your notification preferences from the project&rsquo;s Members &amp; Access settings.
-            </p>
-          </td>
-        </tr>
-
-      </table>
-    </td></tr>
-  </table>
-</body>
-</html>`;
+  const html = wrapPmsEmailHtml({
+    eyebrow: "Task re-opened",
+    title: `${projectName}`,
+    bodyHtml,
+    ctaHref: taskUrl || loginUrl || undefined,
+    ctaText: taskUrl ? "Open task in PMS" : loginUrl ? "Log in to PMS" : undefined,
+    footerText:
+      `You received this because “Notify on client task” is enabled for ${projectName}. ` +
+      `You can change this in Members & Access.`,
+  });
 
   return { subject, text, html };
 }

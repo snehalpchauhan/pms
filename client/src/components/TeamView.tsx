@@ -468,7 +468,7 @@ export default function TeamView({ project, currentUserRole }: TeamViewProps) {
                                     <Mail className="w-3.5 h-3.5 text-muted-foreground" />
                                     <div>
                                         <span className="text-xs font-medium">Notify on client task</span>
-                                        <p className="text-[10px] text-muted-foreground leading-tight">Email when a client adds a task or updates a checklist</p>
+                                        <p className="text-[10px] text-muted-foreground leading-tight">Email when a client adds a task or Re Open Task</p>
                                     </div>
                                 </div>
                                 <Switch
