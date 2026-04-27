@@ -326,32 +326,17 @@ export default function MessagesView({ project, channelId, onChannelDeleted }: M
 
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-5">
         <div className="space-y-4 max-w-4xl mx-auto pb-4">
-          <div className="pb-6 text-center sm:text-left border-b border-border/30 mb-6">
-            {isDM ? (
-              <div className="flex flex-col sm:flex-row items-center gap-4 mb-2">
-                <Avatar className="w-16 h-16">
-                  <AvatarImage src={dmUser?.avatar} />
-                  <AvatarFallback>{dmUser?.name[0]}</AvatarFallback>
-                </Avatar>
-                <div>
-                  <h1 className="text-2xl font-bold mb-1">{dmUser?.name}</h1>
-                  <p className="text-muted-foreground text-sm">
-                    Direct messages with <span className="font-medium text-foreground">{dmUser?.name}</span>.
-                  </p>
-                </div>
+          {!isDM && (
+            <div className="pb-6 text-center sm:text-left border-b border-border/30 mb-6">
+              <div className="w-16 h-16 bg-muted/50 rounded-2xl flex items-center justify-center mb-4 mx-auto sm:mx-0">
+                <Hash className="w-8 h-8 text-muted-foreground" />
               </div>
-            ) : (
-              <>
-                <div className="w-16 h-16 bg-muted/50 rounded-2xl flex items-center justify-center mb-4 mx-auto sm:mx-0">
-                  <Hash className="w-8 h-8 text-muted-foreground" />
-                </div>
-                <h1 className="text-2xl font-bold mb-2">Welcome to #{activeChannel?.name}!</h1>
-                <p className="text-muted-foreground text-sm">
-                  Start of <span className="font-medium text-foreground">#{activeChannel?.name}</span> in {project.name}.
-                </p>
-              </>
-            )}
-          </div>
+              <h1 className="text-2xl font-bold mb-2">Welcome to #{activeChannel?.name}!</h1>
+              <p className="text-muted-foreground text-sm">
+                Start of <span className="font-medium text-foreground">#{activeChannel?.name}</span> in {project.name}.
+              </p>
+            </div>
+          )}
 
           {channelMessages.map((msg, idx) => {
             const author = users[msg.authorId];
