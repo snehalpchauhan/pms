@@ -6,7 +6,7 @@ import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Mail, Plus, Shield, User, Briefcase, Trash2, Clock, Crown, MoreHorizontal } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger, DialogDescription } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -506,6 +506,9 @@ export default function TeamView({ project, currentUserRole }: TeamViewProps) {
           <DialogContent className="sm:max-w-[440px]">
             <DialogHeader>
               <DialogTitle>Add team members</DialogTitle>
+              <DialogDescription>
+                Select workspace users to add to this project.
+              </DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-2">
               <p className="text-sm text-muted-foreground">

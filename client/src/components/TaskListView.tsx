@@ -6,6 +6,7 @@ import { isTaskOverInvested, parseTaskHoursField } from "@/lib/taskHours";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
+import { useAppData } from "@/hooks/useAppData";
 import { isToday, isTomorrow, isThisWeek, isPast } from "date-fns";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -22,6 +23,7 @@ export default function TaskListView({ tasks, project, onTaskClick, completeColu
     const [groupBy, setGroupBy] = useState<"none" | "dueDate">("dueDate");
     const [listScope, setListScope] = useState<"active" | "completed">("active");
     const { user: currentUser } = useAuth();
+    const { users } = useAppData();
 
     const doneId = completeColumnId || "done";
     const isTaskDone = (t: Task) => String(t.status) === String(doneId);
