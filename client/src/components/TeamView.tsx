@@ -99,12 +99,38 @@ export default function TeamView({ project, currentUserRole }: TeamViewProps) {
       currentUserRole === "manager" || currentUserRole === "admin" || isProjectOwnerUser;
     const canTransferOwner = currentUserRole === "admin";
 
-    const sortedMembers = useMemo(() => {
-      return [...membersWithSettings].sort((a, b) => {
-        const aOwn = a.isProjectOwner === true || (resolvedOwnerIdStr != null && String(a.id) === resolvedOwnerIdStr) ? 0 : 1;
-        const bOwn = b.isProjectOwner === true || (resolvedOwnerIdStr != null && String(b.id) === resolvedOwnerIdStr) ? 0 : 1;
-        return aOwn - bOwn;
-      });
+    const groupedMembers = useMemo(() => {
+      const isOwner = (m: MemberWithSettings) =>
+        m.isProjectOwner === true || (resolvedOwnerIdStr != null && String(m.id) === resolvedOwnerIdStr);
+
+      const owner: MemberWithSettings[] = [];
+      const admin: MemberWithSettings[] = [];
+      const client: MemberWithSettings[] = [];
+      const manager: MemberWithSettings[] = [];
+      const employee: MemberWithSettings[] = [];
+
+      for (const m of membersWithSettings) {
+        if (isOwner(m)) owner.push(m);
+        else if (m.role === "admin") admin.push(m);
+        else if (m.role === "client") client.push(m);
+        else if (m.role === "manager") manager.push(m);
+        else employee.push(m);
+      }
+
+      const byName = (a: MemberWithSettings, b: MemberWithSettings) => a.name.localeCompare(b.name);
+      owner.sort(byName);
+      admin.sort(byName);
+      client.sort(byName);
+      manager.sort(byName);
+      employee.sort(byName);
+
+      return [
+        { key: "owner", title: "Owner", members: owner },
+        { key: "admin", title: "Admins", members: admin },
+        { key: "client", title: "Clients", members: client },
+        { key: "manager", title: "Managers", members: manager },
+        { key: "employee", title: "Employees", members: employee },
+      ].filter((g) => g.members.length > 0);
     }, [membersWithSettings, resolvedOwnerIdStr]);
 
     const ownerUser = useMemo(() => {
@@ -286,8 +312,20 @@ export default function TeamView({ project, currentUserRole }: TeamViewProps) {
           </div>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {sortedMembers.map(user => {
+        <div className="space-y-8">
+          {groupedMembers.map((group) => (
+            <div key={group.key} className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                  {group.title}
+                </div>
+                <Badge variant="secondary" className="text-[10px] h-5 px-1.5 font-mono tabular-nums">
+                  {group.members.length}
+                </Badge>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {group.members.map(user => {
                 const presence = effectivePresenceStatus(user.status, user.lastSeenAt);
                 const isOwnerMember =
                   user.isProjectOwner === true ||
@@ -499,8 +537,11 @@ export default function TeamView({ project, currentUserRole }: TeamViewProps) {
                             </span>
                           </label>
                         );
-                      })}
-                    </div>
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
                   </ScrollArea>
                 )}
                 {selectedUserIds.size > 0 && (
