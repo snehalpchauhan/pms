@@ -1718,7 +1718,8 @@ export async function registerRoutes(
     const item = await storage.getChecklistItem(Number(req.params.id));
     if (!item) return res.status(404).json({ message: "Not found" });
     if (currentUser.role === "client") {
-      const ok = await clientHasFullAccess(currentUser.id, item.taskId);
+      // Both "contribute" and "full" clients can modify checklist items
+      const ok = await clientHasContributeOrFullAccess(currentUser.id, item.taskId);
       if (!ok) return res.status(403).json({ message: "Not authorized" });
     } else {
       const taskRow = await storage.getTask(item.taskId);
@@ -1748,7 +1749,8 @@ export async function registerRoutes(
     const item = await storage.getChecklistItem(Number(req.params.id));
     if (!item) return res.status(404).json({ message: "Not found" });
     if (currentUser.role === "client") {
-      const ok = await clientHasFullAccess(currentUser.id, item.taskId);
+      // Both "contribute" and "full" clients can remove checklist items
+      const ok = await clientHasContributeOrFullAccess(currentUser.id, item.taskId);
       if (!ok) return res.status(403).json({ message: "Not authorized" });
     } else {
       const taskRow = await storage.getTask(item.taskId);
