@@ -137,11 +137,14 @@ export function formatChatMarkdown(text: string): ReactNode {
   if (!text) return null;
   const lines = text.split("\n");
   const nodes: ReactNode[] = [];
+  const bulletRe = /^\s*-\s+(.*)$/;
+  const isBlank = (s: string) => s.trim().length === 0;
+
   let i = 0;
   while (i < lines.length) {
     const line = lines[i] ?? "";
-    const isBullet = line.trimStart().startsWith("- ");
-    if (!isBullet) {
+    const bulletMatch = bulletRe.exec(line);
+    if (!bulletMatch) {
       nodes.push(
         <span key={`l-${i}`}>
           {nodes.length > 0 ? <br /> : null}
@@ -152,14 +155,30 @@ export function formatChatMarkdown(text: string): ReactNode {
       continue;
     }
 
-    // Group consecutive "- " lines into a <ul>.
+    // Group consecutive bullet lines into a <ul>. Blank/whitespace-only
+    // spacer lines (Turndown emits them between <li><p>...</p></li> items)
+    // should NOT break the list.
     const items: string[] = [];
-    while (i < lines.length && (lines[i] ?? "").trimStart().startsWith("- ")) {
-      const raw = lines[i] ?? "";
-      const trimmed = raw.trimStart().slice(2); // remove "- "
-      items.push(trimmed);
-      i += 1;
+    while (i < lines.length) {
+      const cur = lines[i] ?? "";
+      const m = bulletRe.exec(cur);
+      if (m) {
+        items.push(m[1] ?? "");
+        i += 1;
+        continue;
+      }
+      // Look ahead: if next non-blank line is also a bullet, skip the blank.
+      if (isBlank(cur)) {
+        let j = i + 1;
+        while (j < lines.length && isBlank(lines[j] ?? "")) j += 1;
+        if (j < lines.length && bulletRe.test(lines[j] ?? "")) {
+          i = j;
+          continue;
+        }
+      }
+      break;
     }
+
 
     nodes.push(
       <ul key={`ul-${i}`} className="list-disc pl-5 my-2 space-y-1">
