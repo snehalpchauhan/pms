@@ -1020,9 +1020,9 @@ export default function ProjectSettingsView({
                       ) : null}
 
                       {(cardType === "logins" || cardType === "database") ? (
-                        <div className="space-y-1">
-                          <p className="text-xs text-muted-foreground">Password</p>
-                          <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2">
+                          <p className="text-xs text-muted-foreground w-16 shrink-0">Password</p>
+                          <div className="flex items-center gap-2 flex-1">
                             <div className="rounded bg-muted/40 px-2 py-1 text-xs font-mono break-all flex-1">
                               {revealedMap[c.id] ? (revealedMap[c.id].password || "(empty)") : c.maskedSecret}
                             </div>
@@ -1059,9 +1059,9 @@ export default function ProjectSettingsView({
                       ) : null}
 
                       {cardType === "tokens" ? (
-                        <div className="space-y-1">
-                          <p className="text-xs text-muted-foreground">Token</p>
-                          <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2">
+                          <p className="text-xs text-muted-foreground w-16 shrink-0">Token</p>
+                          <div className="flex items-center gap-2 flex-1">
                             <div className="rounded bg-muted/40 px-2 py-1 text-xs font-mono break-all flex-1">
                               {revealedMap[c.id] ? (revealedMap[c.id].secret || "(empty)") : c.maskedSecret}
                             </div>
