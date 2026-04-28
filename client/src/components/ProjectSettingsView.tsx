@@ -12,7 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Trash2, Eye, EyeOff } from "lucide-react";
+import { Trash2, Eye, EyeOff, Copy } from "lucide-react";
 
 type ProjectSettingsDto = {
   projectId: number;
@@ -371,6 +371,20 @@ export default function ProjectSettingsView({
   };
 
   const members = membersQuery.data ?? [];
+
+  const copyToClipboard = async (label: string, value: string) => {
+    const text = String(value ?? "");
+    if (!text.trim()) {
+      toast({ title: `${label} is empty` });
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      toast({ title: `${label} copied` });
+    } catch {
+      toast({ title: "Could not copy", variant: "destructive" });
+    }
+  };
 
   const startEditDocumentAccess = (doc: ProjectDocument) => {
     setEditingDocId(doc.id);
@@ -742,7 +756,12 @@ export default function ProjectSettingsView({
                       </div>
                       <div className="space-y-1">
                         <Label>Password {editingCredentialId ? "(leave blank to keep current)" : ""}</Label>
-                        <Textarea value={credentialPassword} onChange={(e) => setCredentialPassword(e.target.value)} rows={4} />
+                        <Input
+                          type="password"
+                          value={credentialPassword}
+                          onChange={(e) => setCredentialPassword(e.target.value)}
+                          placeholder="Enter password"
+                        />
                       </div>
                     </>
                   )}
@@ -770,7 +789,12 @@ export default function ProjectSettingsView({
                       </div>
                       <div className="space-y-1">
                         <Label>DB Password {editingCredentialId ? "(leave blank to keep current)" : ""}</Label>
-                        <Textarea value={credentialPassword} onChange={(e) => setCredentialPassword(e.target.value)} rows={4} />
+                        <Input
+                          type="password"
+                          value={credentialPassword}
+                          onChange={(e) => setCredentialPassword(e.target.value)}
+                          placeholder="Enter DB password"
+                        />
                       </div>
                     </>
                   )}
@@ -873,11 +897,109 @@ export default function ProjectSettingsView({
                           {c.visibilityMode}
                         </Badge>
                       </div>
+                      {"url" in c.metadata && String(c.metadata.url ?? "").trim() ? (
+                        <div className="flex items-center gap-2 text-xs">
+                          <span className="text-muted-foreground w-16 shrink-0">URL</span>
+                          <span className="font-mono break-all flex-1">{String(c.metadata.url)}</span>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            type="button"
+                            onClick={() => void copyToClipboard("URL", String(c.metadata.url))}
+                          >
+                            <Copy className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      ) : null}
+                      {"username" in c.metadata && String(c.metadata.username ?? "").trim() ? (
+                        <div className="flex items-center gap-2 text-xs">
+                          <span className="text-muted-foreground w-16 shrink-0">User</span>
+                          <span className="font-mono break-all flex-1">{String(c.metadata.username)}</span>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            type="button"
+                            onClick={() => void copyToClipboard("Username", String(c.metadata.username))}
+                          >
+                            <Copy className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      ) : null}
+                      {"host" in c.metadata && String(c.metadata.host ?? "").trim() ? (
+                        <div className="flex items-center gap-2 text-xs">
+                          <span className="text-muted-foreground w-16 shrink-0">Host</span>
+                          <span className="font-mono break-all flex-1">{String(c.metadata.host)}</span>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            type="button"
+                            onClick={() => void copyToClipboard("Host", String(c.metadata.host))}
+                          >
+                            <Copy className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      ) : null}
+                      {"database" in c.metadata && String(c.metadata.database ?? "").trim() ? (
+                        <div className="flex items-center gap-2 text-xs">
+                          <span className="text-muted-foreground w-16 shrink-0">DB Name</span>
+                          <span className="font-mono break-all flex-1">{String(c.metadata.database)}</span>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            type="button"
+                            onClick={() => void copyToClipboard("DB name", String(c.metadata.database))}
+                          >
+                            <Copy className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      ) : null}
+                      {"port" in c.metadata && c.metadata.port != null && String(c.metadata.port).trim() ? (
+                        <div className="flex items-center gap-2 text-xs">
+                          <span className="text-muted-foreground w-16 shrink-0">Port</span>
+                          <span className="font-mono break-all flex-1">{String(c.metadata.port)}</span>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            type="button"
+                            onClick={() => void copyToClipboard("Port", String(c.metadata.port))}
+                          >
+                            <Copy className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      ) : null}
+
                       <div className="rounded bg-muted/40 px-2 py-1 text-xs font-mono break-all">
                         {revealedMap[c.id]
                           ? `password=${revealedMap[c.id].password || "(empty)"} | secret=${revealedMap[c.id].secret || "(empty)"}`
                           : c.maskedSecret}
                       </div>
+                      {revealedMap[c.id] ? (
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            type="button"
+                            onClick={() => void copyToClipboard("Password", revealedMap[c.id].password || "")}
+                          >
+                            <Copy className="h-3.5 w-3.5 mr-1" />
+                            Copy password
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            type="button"
+                            onClick={() => void copyToClipboard("Secret", revealedMap[c.id].secret || "")}
+                          >
+                            <Copy className="h-3.5 w-3.5 mr-1" />
+                            Copy secret
+                          </Button>
+                        </div>
+                      ) : null}
                       <div className="flex gap-2">
                         <Button variant="outline" size="sm" type="button" onClick={() => beginEditCredential(c)}>
                           Edit
