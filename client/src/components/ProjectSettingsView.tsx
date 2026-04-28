@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import type { Project } from "@/lib/mockData";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -94,9 +94,14 @@ export default function ProjectSettingsView({
   const [deployNotes, setDeployNotes] = useState("");
 
   const [docFile, setDocFile] = useState<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [docVisibilityMode, setDocVisibilityMode] = useState<"project_members" | "roles" | "users">("project_members");
   const [docVisibilityRoles, setDocVisibilityRoles] = useState<string[]>([]);
   const [docVisibilityUserIds, setDocVisibilityUserIds] = useState<number[]>([]);
+  const [editingDocId, setEditingDocId] = useState<number | null>(null);
+  const [editingDocVisibilityMode, setEditingDocVisibilityMode] = useState<"project_members" | "roles" | "users">("project_members");
+  const [editingDocVisibilityRoles, setEditingDocVisibilityRoles] = useState<string[]>([]);
+  const [editingDocVisibilityUserIds, setEditingDocVisibilityUserIds] = useState<number[]>([]);
   const [revealedMap, setRevealedMap] = useState<Record<number, { secret: string; password: string }>>({});
   const [editingCredentialId, setEditingCredentialId] = useState<number | null>(null);
   const [credentialName, setCredentialName] = useState("");
@@ -351,6 +356,20 @@ export default function ProjectSettingsView({
 
   const members = membersQuery.data ?? [];
 
+  const startEditDocumentAccess = (doc: ProjectDocument) => {
+    setEditingDocId(doc.id);
+    setEditingDocVisibilityMode(doc.visibilityMode);
+    setEditingDocVisibilityRoles(doc.visibilityRoles ?? []);
+    setEditingDocVisibilityUserIds(doc.visibilityUserIds ?? []);
+  };
+
+  const cancelEditDocumentAccess = () => {
+    setEditingDocId(null);
+    setEditingDocVisibilityMode("project_members");
+    setEditingDocVisibilityRoles([]);
+    setEditingDocVisibilityUserIds([]);
+  };
+
   const updateDocumentVisibility = async (
     docId: number,
     visibilityMode: "project_members" | "roles" | "users",
@@ -372,6 +391,17 @@ export default function ProjectSettingsView({
         variant: "destructive",
       });
     }
+  };
+
+  const saveEditingDocumentAccess = async () => {
+    if (editingDocId == null) return;
+    await updateDocumentVisibility(
+      editingDocId,
+      editingDocVisibilityMode,
+      editingDocVisibilityRoles,
+      editingDocVisibilityUserIds,
+    );
+    cancelEditDocumentAccess();
   };
 
   return (
@@ -466,12 +496,24 @@ export default function ProjectSettingsView({
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex flex-wrap items-center gap-2">
-                  <Input
+                  <input
+                    ref={fileInputRef}
                     type="file"
+                    className="sr-only"
                     onChange={(e) => setDocFile(e.target.files?.[0] ?? null)}
-                    className="max-w-sm"
                     disabled={!canManage}
                   />
+                  <Button type="button" variant="outline" disabled={!canManage} onClick={() => fileInputRef.current?.click()}>
+                    Browse file
+                  </Button>
+                  <button
+                    type="button"
+                    className="max-w-sm rounded-md border px-3 py-2 text-left text-sm text-muted-foreground hover:bg-muted/40"
+                    disabled={!canManage}
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    {docFile ? docFile.name : "No file selected"}
+                  </button>
                   <Button
                     type="button"
                     onClick={() => uploadDocMutation.mutate()}
@@ -547,31 +589,90 @@ export default function ProjectSettingsView({
                         </div>
                         <Badge variant="secondary" className="text-[10px]">{d.visibilityMode}</Badge>
                       </div>
+                      {d.visibilityMode === "roles" && d.visibilityRoles.length > 0 ? (
+                        <p className="text-xs text-muted-foreground">Roles: {d.visibilityRoles.join(", ")}</p>
+                      ) : null}
+                      {d.visibilityMode === "users" && d.visibilityUserIds.length > 0 ? (
+                        <p className="text-xs text-muted-foreground">
+                          Users:{" "}
+                          {d.visibilityUserIds
+                            .map((uid) => members.find((m) => Number(m.id) === Number(uid))?.name || `User ${uid}`)
+                            .join(", ")}
+                        </p>
+                      ) : null}
                       {canManage ? (
                         <div className="flex flex-wrap items-center gap-2">
-                          {VISIBILITY_OPTIONS.map((opt) => (
-                            <Button
-                              key={`doc-${d.id}-${opt.id}`}
-                              type="button"
-                              size="sm"
-                              variant={d.visibilityMode === opt.id ? "default" : "outline"}
-                              onClick={() =>
-                                void updateDocumentVisibility(
-                                  d.id,
-                                  opt.id,
-                                  opt.id === "roles" ? d.visibilityRoles : [],
-                                  opt.id === "users" ? d.visibilityUserIds : [],
-                                )
-                              }
-                            >
-                              {opt.label}
-                            </Button>
-                          ))}
+                          <Button variant="outline" size="sm" type="button" onClick={() => startEditDocumentAccess(d)}>
+                            Manage access
+                          </Button>
                           <Button variant="ghost" size="icon" onClick={() => void deleteDoc(d.id)} title="Delete document">
                             <Trash2 className="h-4 w-4" />
                           </Button>
                         </div>
                       ) : null}
+                      {canManage && editingDocId === d.id && (
+                        <div className="rounded-md border bg-muted/20 p-3 space-y-3">
+                          <Label className="text-xs text-muted-foreground">Document access</Label>
+                          <div className="flex flex-wrap gap-2">
+                            {VISIBILITY_OPTIONS.map((opt) => (
+                              <Button
+                                key={`doc-edit-${d.id}-${opt.id}`}
+                                type="button"
+                                size="sm"
+                                variant={editingDocVisibilityMode === opt.id ? "default" : "outline"}
+                                onClick={() => setEditingDocVisibilityMode(opt.id)}
+                              >
+                                {opt.label}
+                              </Button>
+                            ))}
+                          </div>
+                          {editingDocVisibilityMode === "roles" && (
+                            <div className="grid grid-cols-2 gap-2">
+                              {ROLE_OPTIONS.map((r) => (
+                                <label key={`doc-edit-role-${d.id}-${r}`} className="flex items-center gap-2 text-sm">
+                                  <Checkbox
+                                    checked={editingDocVisibilityRoles.includes(r)}
+                                    onCheckedChange={(checked) =>
+                                      setEditingDocVisibilityRoles((prev) =>
+                                        checked ? Array.from(new Set([...prev, r])) : prev.filter((x) => x !== r),
+                                      )
+                                    }
+                                  />
+                                  <span className="capitalize">{r}</span>
+                                </label>
+                              ))}
+                            </div>
+                          )}
+                          {editingDocVisibilityMode === "users" && (
+                            <div className="max-h-32 overflow-auto rounded border p-2 space-y-1">
+                              {members.map((m) => {
+                                const uid = Number(m.id);
+                                return (
+                                  <label key={`doc-edit-user-${d.id}-${uid}`} className="flex items-center gap-2 text-sm">
+                                    <Checkbox
+                                      checked={editingDocVisibilityUserIds.includes(uid)}
+                                      onCheckedChange={(checked) =>
+                                        setEditingDocVisibilityUserIds((prev) =>
+                                          checked ? Array.from(new Set([...prev, uid])) : prev.filter((x) => x !== uid),
+                                        )
+                                      }
+                                    />
+                                    <span>{m.name}</span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          )}
+                          <div className="flex gap-2">
+                            <Button size="sm" type="button" onClick={() => void saveEditingDocumentAccess()}>
+                              Save access
+                            </Button>
+                            <Button size="sm" variant="outline" type="button" onClick={cancelEditDocumentAccess}>
+                              Cancel
+                            </Button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
