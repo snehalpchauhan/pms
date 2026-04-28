@@ -346,7 +346,7 @@ export default function ProjectSettingsView({
     },
   });
 
-  const revealCredential = async (id: number) => {
+  const revealCredential = async (id: number): Promise<{ secret: string; password: string } | null> => {
     try {
       const res = await fetch(`/api/projects/${projectId}/credentials/${id}/reveal`, { credentials: "include" });
       if (!res.ok) {
@@ -355,13 +355,29 @@ export default function ProjectSettingsView({
       }
       const data = (await res.json()) as { secret: string; password: string };
       setRevealedMap((prev) => ({ ...prev, [id]: { secret: data.secret, password: data.password } }));
+      return data;
     } catch (e) {
       toast({
         title: "Could not reveal secret",
         description: e instanceof Error ? e.message : "Try again.",
         variant: "destructive",
       });
+      return null;
     }
+  };
+
+  const copyCredentialSecretField = async (
+    cred: ProjectCredential,
+    field: "password" | "secret",
+    label: string,
+  ) => {
+    let revealed = revealedMap[cred.id];
+    if (!revealed) {
+      const loaded = await revealCredential(cred.id);
+      if (!loaded) return;
+      revealed = loaded;
+    }
+    await copyToClipboard(label, String(revealed[field] ?? ""));
   };
 
   const deleteCredential = async (id: number) => {
@@ -1006,8 +1022,38 @@ export default function ProjectSettingsView({
                       {(cardType === "logins" || cardType === "database") ? (
                         <div className="space-y-1">
                           <p className="text-xs text-muted-foreground">Password</p>
-                          <div className="rounded bg-muted/40 px-2 py-1 text-xs font-mono break-all">
-                            {revealedMap[c.id] ? (revealedMap[c.id].password || "(empty)") : c.maskedSecret}
+                          <div className="flex items-center gap-2">
+                            <div className="rounded bg-muted/40 px-2 py-1 text-xs font-mono break-all flex-1">
+                              {revealedMap[c.id] ? (revealedMap[c.id].password || "(empty)") : c.maskedSecret}
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              type="button"
+                              onClick={() =>
+                                revealedMap[c.id]
+                                  ? setRevealedMap((prev) => {
+                                      const next = { ...prev };
+                                      delete next[c.id];
+                                      return next;
+                                    })
+                                  : void revealCredential(c.id)
+                              }
+                              title={revealedMap[c.id] ? "Hide password" : "Reveal password"}
+                            >
+                              {revealedMap[c.id] ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              type="button"
+                              onClick={() => void copyCredentialSecretField(c, "password", "Password")}
+                              title="Copy password"
+                            >
+                              <Copy className="h-3.5 w-3.5" />
+                            </Button>
                           </div>
                         </div>
                       ) : null}
@@ -1015,64 +1061,45 @@ export default function ProjectSettingsView({
                       {cardType === "tokens" ? (
                         <div className="space-y-1">
                           <p className="text-xs text-muted-foreground">Token</p>
-                          <div className="rounded bg-muted/40 px-2 py-1 text-xs font-mono break-all">
-                            {revealedMap[c.id] ? (revealedMap[c.id].secret || "(empty)") : c.maskedSecret}
+                          <div className="flex items-center gap-2">
+                            <div className="rounded bg-muted/40 px-2 py-1 text-xs font-mono break-all flex-1">
+                              {revealedMap[c.id] ? (revealedMap[c.id].secret || "(empty)") : c.maskedSecret}
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              type="button"
+                              onClick={() =>
+                                revealedMap[c.id]
+                                  ? setRevealedMap((prev) => {
+                                      const next = { ...prev };
+                                      delete next[c.id];
+                                      return next;
+                                    })
+                                  : void revealCredential(c.id)
+                              }
+                              title={revealedMap[c.id] ? "Hide token" : "Reveal token"}
+                            >
+                              {revealedMap[c.id] ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              type="button"
+                              onClick={() => void copyCredentialSecretField(c, "secret", "Token")}
+                              title="Copy token"
+                            >
+                              <Copy className="h-3.5 w-3.5" />
+                            </Button>
                           </div>
-                        </div>
-                      ) : null}
-
-                      {revealedMap[c.id] ? (
-                        <div className="flex flex-wrap gap-2">
-                          {(cardType === "logins" || cardType === "database") ? (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              type="button"
-                              onClick={() => void copyToClipboard("Password", revealedMap[c.id].password || "")}
-                            >
-                              <Copy className="h-3.5 w-3.5 mr-1" />
-                              Copy password
-                            </Button>
-                          ) : null}
-                          {cardType === "tokens" ? (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              type="button"
-                              onClick={() => void copyToClipboard("Token", revealedMap[c.id].secret || "")}
-                            >
-                              <Copy className="h-3.5 w-3.5 mr-1" />
-                              Copy token
-                            </Button>
-                          ) : null}
                         </div>
                       ) : null}
                       <div className="flex gap-2">
                         <Button variant="outline" size="sm" type="button" onClick={() => beginEditCredential(c)}>
                           Edit
                         </Button>
-                        {revealedMap[c.id] ? (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            type="button"
-                            onClick={() =>
-                              setRevealedMap((prev) => {
-                                const next = { ...prev };
-                                delete next[c.id];
-                                return next;
-                              })
-                            }
-                          >
-                            <EyeOff className="h-4 w-4 mr-1" />
-                            Hide
-                          </Button>
-                        ) : (
-                          <Button variant="outline" size="sm" type="button" onClick={() => void revealCredential(c.id)}>
-                            <Eye className="h-4 w-4 mr-1" />
-                            Reveal
-                          </Button>
-                        )}
                         {canManage ? (
                           <Button variant="ghost" size="sm" type="button" onClick={() => void deleteCredential(c.id)}>
                             <Trash2 className="h-4 w-4 mr-1" />
