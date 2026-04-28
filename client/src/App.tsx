@@ -6,6 +6,7 @@ import CompanySettingsView from "@/components/CompanySettingsView";
 import UserProfileView from "@/components/UserProfileView";
 import TimecardsView from "@/components/TimecardsView";
 import TeamSummaryView from "@/components/TeamSummaryView";
+import ProjectSettingsView from "@/components/ProjectSettingsView";
 import { NewTaskModal } from "@/components/NewTaskModal";
 import { NewProjectModal } from "@/components/NewProjectModal";
 import { NewChannelModal } from "@/components/NewChannelModal";
@@ -385,6 +386,15 @@ function AuthenticatedApp() {
                   clientPermissions={effectivePermissions}
                 />
               )}
+              {currentView === "project-settings" &&
+                (currentProject ? (
+                  <ProjectSettingsView project={currentProject} currentUserRole={currentUserRole} />
+                ) : (
+                  <NoProjectWorkspaceMain
+                    canCreateProject={canCreateProject}
+                    onCreateProject={() => setIsNewProjectOpen(true)}
+                  />
+                ))}
             </main>
           </div>
         </div>

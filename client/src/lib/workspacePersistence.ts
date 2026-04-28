@@ -5,7 +5,7 @@
 
 const STORAGE_KEY = "taskflow-workspace-v1";
 
-const VIEWS = new Set(["tasks", "messages", "team", "settings", "profile", "timecards", "team-summary"]);
+const VIEWS = new Set(["tasks", "messages", "team", "settings", "profile", "timecards", "team-summary", "project-settings"]);
 
 export type WorkspaceView =
   | "tasks"
@@ -14,7 +14,8 @@ export type WorkspaceView =
   | "settings"
   | "profile"
   | "timecards"
-  | "team-summary";
+  | "team-summary"
+  | "project-settings";
 
 export type TaskWorkspaceTab = "board" | "list" | "calendar";
 

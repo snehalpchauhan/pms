@@ -214,6 +214,11 @@ load_env() {
   # shellcheck disable=SC1090
   source "${DEPLOY_PATH}/.env"
   set +a
+  if [[ -z "${PROJECT_SECRETS_MASTER_KEY:-}" ]]; then
+    echo "error: PROJECT_SECRETS_MASTER_KEY is missing in ${DEPLOY_PATH}/.env" >&2
+    echo "       Required for project credentials encryption/decryption." >&2
+    exit 1
+  fi
 }
 
 deploy_db() {

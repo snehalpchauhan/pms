@@ -3,13 +3,14 @@ import { eq, and, asc, desc, inArray, gte, lte, sql, ne, gt, isNull } from "driz
 import {
   users, projects, projectMembers, tasks, taskAssignees,
   checklistItems, attachments, comments, channels, channelMembers, channelUserReadState, messages, timeEntries,
-  companySettings,
+  companySettings, projectSettings, projectCredentials, projectDocuments,
   type User, type InsertUser, type Project, type InsertProject,
   type Task, type InsertTask, type ChecklistItem, type Attachment,
   type Comment, type InsertComment, type Channel, type InsertChannel,
   type Message, type InsertMessage, type TimeEntry, type InsertTimeEntry,
   type ProjectMember,
   type CompanySettings,
+  type ProjectSettings, type ProjectCredential, type ProjectDocument,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -51,6 +52,57 @@ export interface IStorage {
   getUserMemberships(userId: number): Promise<ProjectMember[]>;
   updateProjectMemberClientSettings(projectId: number, userId: number, settings: { clientShowTimecards?: boolean; clientTaskAccess?: string; notifyClientNewTask?: boolean }): Promise<void>;
   projectHasClientWithTimecards(projectId: number): Promise<boolean>;
+  getProjectSettings(projectId: number): Promise<ProjectSettings | undefined>;
+  upsertProjectSettings(
+    projectId: number,
+    settings: Record<string, unknown>,
+    updatedByUserId: number,
+  ): Promise<ProjectSettings>;
+  getProjectCredentials(projectId: number): Promise<ProjectCredential[]>;
+  getProjectCredential(id: number): Promise<ProjectCredential | undefined>;
+  createProjectCredential(row: {
+    projectId: number;
+    name: string;
+    type: string;
+    metadata: Record<string, unknown>;
+    secretCiphertext: string;
+    secretIv: string;
+    secretAuthTag: string;
+    keyVersion: number;
+    visibilityMode: string;
+    visibilityRoles: string[];
+    visibilityUserIds: number[];
+    createdByUserId: number;
+    updatedByUserId: number;
+  }): Promise<ProjectCredential>;
+  updateProjectCredential(
+    id: number,
+    updates: Partial<{
+      name: string;
+      type: string;
+      metadata: Record<string, unknown>;
+      secretCiphertext: string;
+      secretIv: string;
+      secretAuthTag: string;
+      keyVersion: number;
+      visibilityMode: string;
+      visibilityRoles: string[];
+      visibilityUserIds: number[];
+      updatedByUserId: number;
+      deletedAt: Date | null;
+    }>,
+  ): Promise<ProjectCredential | undefined>;
+  listProjectDocuments(projectId: number): Promise<ProjectDocument[]>;
+  getProjectDocument(id: number): Promise<ProjectDocument | undefined>;
+  createProjectDocument(row: {
+    projectId: number;
+    name: string;
+    type: string;
+    url?: string;
+    size?: string;
+    createdByUserId: number;
+  }): Promise<ProjectDocument>;
+  deleteProjectDocument(id: number): Promise<void>;
 
   getTasksByProject(projectId: number): Promise<Task[]>;
   getMaxBoardOrderForStatus(projectId: number, status: string): Promise<number>;
@@ -321,6 +373,117 @@ export class DatabaseStorage implements IStorage {
         eq(projectMembers.clientShowTimecards, true)
       ));
     return rows.length > 0;
+  }
+
+  async getProjectSettings(projectId: number): Promise<ProjectSettings | undefined> {
+    const [row] = await db.select().from(projectSettings).where(eq(projectSettings.projectId, projectId)).limit(1);
+    return row;
+  }
+
+  async upsertProjectSettings(
+    projectId: number,
+    settings: Record<string, unknown>,
+    updatedByUserId: number,
+  ): Promise<ProjectSettings> {
+    const [row] = await db
+      .insert(projectSettings)
+      .values({ projectId, settings, updatedByUserId, updatedAt: new Date() })
+      .onConflictDoUpdate({
+        target: projectSettings.projectId,
+        set: { settings, updatedByUserId, updatedAt: new Date() },
+      })
+      .returning();
+    return row;
+  }
+
+  async getProjectCredentials(projectId: number): Promise<ProjectCredential[]> {
+    return db
+      .select()
+      .from(projectCredentials)
+      .where(and(eq(projectCredentials.projectId, projectId), isNull(projectCredentials.deletedAt)))
+      .orderBy(asc(projectCredentials.name));
+  }
+
+  async getProjectCredential(id: number): Promise<ProjectCredential | undefined> {
+    const [row] = await db.select().from(projectCredentials).where(eq(projectCredentials.id, id)).limit(1);
+    return row;
+  }
+
+  async createProjectCredential(row: {
+    projectId: number;
+    name: string;
+    type: string;
+    metadata: Record<string, unknown>;
+    secretCiphertext: string;
+    secretIv: string;
+    secretAuthTag: string;
+    keyVersion: number;
+    visibilityMode: string;
+    visibilityRoles: string[];
+    visibilityUserIds: number[];
+    createdByUserId: number;
+    updatedByUserId: number;
+  }): Promise<ProjectCredential> {
+    const [created] = await db
+      .insert(projectCredentials)
+      .values({ ...row, createdAt: new Date(), updatedAt: new Date() })
+      .returning();
+    return created;
+  }
+
+  async updateProjectCredential(
+    id: number,
+    updates: Partial<{
+      name: string;
+      type: string;
+      metadata: Record<string, unknown>;
+      secretCiphertext: string;
+      secretIv: string;
+      secretAuthTag: string;
+      keyVersion: number;
+      visibilityMode: string;
+      visibilityRoles: string[];
+      visibilityUserIds: number[];
+      updatedByUserId: number;
+      deletedAt: Date | null;
+    }>,
+  ): Promise<ProjectCredential | undefined> {
+    if (Object.keys(updates).length === 0) return this.getProjectCredential(id);
+    const [row] = await db
+      .update(projectCredentials)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(projectCredentials.id, id))
+      .returning();
+    return row;
+  }
+
+  async listProjectDocuments(projectId: number): Promise<ProjectDocument[]> {
+    return db
+      .select()
+      .from(projectDocuments)
+      .where(eq(projectDocuments.projectId, projectId))
+      .orderBy(desc(projectDocuments.createdAt), desc(projectDocuments.id));
+  }
+
+  async getProjectDocument(id: number): Promise<ProjectDocument | undefined> {
+    const [row] = await db.select().from(projectDocuments).where(eq(projectDocuments.id, id)).limit(1);
+    return row;
+  }
+
+  async createProjectDocument(row: {
+    projectId: number;
+    name: string;
+    type: string;
+    url?: string;
+    size?: string;
+    createdByUserId: number;
+  }): Promise<ProjectDocument> {
+    const [created] = await db.insert(projectDocuments).values({ ...row, createdAt: new Date() }).returning();
+    return created;
+  }
+
+  async deleteProjectDocument(id: number): Promise<void> {
+    await db.delete(projectDocuments).where(eq(projectDocuments.id, id));
   }
 
   async getTasksByProject(projectId: number): Promise<Task[]> {

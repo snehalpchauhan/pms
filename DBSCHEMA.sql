@@ -64,7 +64,44 @@ CREATE TABLE "messages" (
 	"channel_id" integer NOT NULL,
 	"author_id" integer NOT NULL,
 	"content" text NOT NULL,
-	"created_at" timestamp DEFAULT now()
+	"created_at" timestamp DEFAULT now(),
+	"edited_at" timestamp,
+	"deleted_at" timestamp
+);
+CREATE TABLE "project_settings" (
+	"project_id" integer PRIMARY KEY,
+	"settings" jsonb DEFAULT '{}'::jsonb NOT NULL,
+	"updated_at" timestamp DEFAULT now(),
+	"updated_by_user_id" integer
+);
+CREATE TABLE "project_credentials" (
+	"id" serial PRIMARY KEY,
+	"project_id" integer NOT NULL,
+	"name" text NOT NULL,
+	"type" text DEFAULT 'other' NOT NULL,
+	"metadata" jsonb DEFAULT '{}'::jsonb NOT NULL,
+	"secret_ciphertext" text NOT NULL,
+	"secret_iv" text NOT NULL,
+	"secret_auth_tag" text NOT NULL,
+	"key_version" integer DEFAULT 1 NOT NULL,
+	"visibility_mode" text DEFAULT 'roles' NOT NULL,
+	"visibility_roles" text[] DEFAULT '{}'::text[] NOT NULL,
+	"visibility_user_ids" integer[] DEFAULT '{}'::integer[] NOT NULL,
+	"created_at" timestamp DEFAULT now(),
+	"created_by_user_id" integer,
+	"updated_at" timestamp DEFAULT now(),
+	"updated_by_user_id" integer,
+	"deleted_at" timestamp
+);
+CREATE TABLE "project_documents" (
+	"id" serial PRIMARY KEY,
+	"project_id" integer NOT NULL,
+	"name" text NOT NULL,
+	"type" text DEFAULT 'file' NOT NULL,
+	"url" text,
+	"size" text,
+	"created_at" timestamp DEFAULT now(),
+	"created_by_user_id" integer
 );
 CREATE TABLE "project_members" (
 	"project_id" integer,
@@ -143,6 +180,13 @@ ALTER TABLE "messages" ADD CONSTRAINT "messages_author_id_users_id_fk" FOREIGN K
 ALTER TABLE "messages" ADD CONSTRAINT "messages_channel_id_channels_id_fk" FOREIGN KEY ("channel_id") REFERENCES "channels"("id") ON DELETE CASCADE;
 ALTER TABLE "project_members" ADD CONSTRAINT "project_members_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "projects"("id") ON DELETE CASCADE;
 ALTER TABLE "project_members" ADD CONSTRAINT "project_members_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE;
+ALTER TABLE "project_settings" ADD CONSTRAINT "project_settings_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "projects"("id") ON DELETE CASCADE;
+ALTER TABLE "project_settings" ADD CONSTRAINT "project_settings_updated_by_user_id_users_id_fk" FOREIGN KEY ("updated_by_user_id") REFERENCES "users"("id");
+ALTER TABLE "project_credentials" ADD CONSTRAINT "project_credentials_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "projects"("id") ON DELETE CASCADE;
+ALTER TABLE "project_credentials" ADD CONSTRAINT "project_credentials_created_by_user_id_users_id_fk" FOREIGN KEY ("created_by_user_id") REFERENCES "users"("id");
+ALTER TABLE "project_credentials" ADD CONSTRAINT "project_credentials_updated_by_user_id_users_id_fk" FOREIGN KEY ("updated_by_user_id") REFERENCES "users"("id");
+ALTER TABLE "project_documents" ADD CONSTRAINT "project_documents_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "projects"("id") ON DELETE CASCADE;
+ALTER TABLE "project_documents" ADD CONSTRAINT "project_documents_created_by_user_id_users_id_fk" FOREIGN KEY ("created_by_user_id") REFERENCES "users"("id");
 ALTER TABLE "task_assignees" ADD CONSTRAINT "task_assignees_task_id_tasks_id_fk" FOREIGN KEY ("task_id") REFERENCES "tasks"("id") ON DELETE CASCADE;
 ALTER TABLE "task_assignees" ADD CONSTRAINT "task_assignees_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE;
 ALTER TABLE "tasks" ADD CONSTRAINT "tasks_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "projects"("id") ON DELETE CASCADE;
@@ -156,6 +200,9 @@ CREATE UNIQUE INDEX "channel_user_read_state_channel_id_user_id_pk" ON "channel_
 CREATE UNIQUE INDEX "checklist_items_pkey" ON "checklist_items" ("id");
 CREATE UNIQUE INDEX "comments_pkey" ON "comments" ("id");
 CREATE UNIQUE INDEX "messages_pkey" ON "messages" ("id");
+CREATE UNIQUE INDEX "project_settings_project_id_pk" ON "project_settings" ("project_id");
+CREATE UNIQUE INDEX "project_credentials_pkey" ON "project_credentials" ("id");
+CREATE UNIQUE INDEX "project_documents_pkey" ON "project_documents" ("id");
 CREATE UNIQUE INDEX "project_members_project_id_user_id_pk" ON "project_members" ("project_id","user_id");
 CREATE UNIQUE INDEX "projects_pkey" ON "projects" ("id");
 CREATE INDEX "IDX_session_expire" ON "session" ("expire");
@@ -171,3 +218,9 @@ CREATE UNIQUE INDEX "users_username_unique" ON "users" ("username");
 -- If channels predates created_by_user_id or channel_user_read_state is missing, run db:push or:
 --   ALTER TABLE channels ADD COLUMN IF NOT EXISTS created_by_user_id integer REFERENCES users(id);
 --   CREATE TABLE IF NOT EXISTS channel_user_read_state ( ... );
+-- If schema predates project settings vault and message edit/delete metadata, run db:push or:
+--   ALTER TABLE messages ADD COLUMN IF NOT EXISTS edited_at timestamp;
+--   ALTER TABLE messages ADD COLUMN IF NOT EXISTS deleted_at timestamp;
+--   CREATE TABLE IF NOT EXISTS project_settings ( ... );
+--   CREATE TABLE IF NOT EXISTS project_credentials ( ... );
+--   CREATE TABLE IF NOT EXISTS project_documents ( ... );

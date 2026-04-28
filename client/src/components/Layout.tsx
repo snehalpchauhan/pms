@@ -39,10 +39,10 @@ import { resolveProjectChipAppearance } from "@shared/projectColors";
 import { ProjectNavSheet } from "@/components/ProjectNavSheet";
 
 interface SidebarProps {
-    currentView: "tasks" | "messages" | "team" | "settings" | "profile" | "timecards" | "team-summary";
+    currentView: "tasks" | "messages" | "team" | "settings" | "profile" | "timecards" | "team-summary" | "project-settings";
     currentChannelId?: string;
     onViewChange: (
-        view: "tasks" | "messages" | "team" | "settings" | "profile" | "timecards" | "team-summary",
+        view: "tasks" | "messages" | "team" | "settings" | "profile" | "timecards" | "team-summary" | "project-settings",
         channelId?: string,
     ) => void;
     /** null when there are no projects or none selected yet */
@@ -169,6 +169,7 @@ export function Sidebar({ currentView, currentChannelId, onViewChange, currentPr
   const showTimecards = !isClient || (clientPermissions?.clientShowTimecards === true);
   const showTeamSummaryNav = !isClient && (currentUserRole === "manager" || currentUserRole === "admin");
   const showTeam = !isClient;
+  const showProjectSettings = !isClient;
   const showSettings = !isClient && currentUserRole === "admin";
   const showNewProject = !isClient && (currentUserRole === "manager" || currentUserRole === "admin");
   const showNewChannel = !isClient;
@@ -600,6 +601,19 @@ export function Sidebar({ currentView, currentChannelId, onViewChange, currentPr
                                     >
                                         <Users className="w-4 h-4 mr-2 opacity-70" />
                                         Members & Access
+                                    </Button>
+                                )}
+                                {showProjectSettings && (
+                                    <Button
+                                        variant={currentView === "project-settings" ? "secondary" : "ghost"}
+                                        className={cn(
+                                            "w-full justify-start font-medium h-9",
+                                            currentView === "project-settings" && "bg-background shadow-sm text-primary",
+                                        )}
+                                        onClick={() => onViewChange("project-settings")}
+                                    >
+                                        <Key className="w-4 h-4 mr-2 opacity-70" />
+                                        Project Settings
                                     </Button>
                                 )}
                             </div>

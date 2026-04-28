@@ -83,6 +83,56 @@ export const projectMembers = pgTable("project_members", {
   notifyClientNewTask: boolean("notify_client_new_task").default(false),
 }, (t) => [primaryKey({ columns: [t.projectId, t.userId] })]);
 
+/**
+ * Per-project non-secret settings payload (repo links, notes, contacts, etc.).
+ * Secrets belong in projectCredentials.
+ */
+export const projectSettings = pgTable("project_settings", {
+  projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }).primaryKey(),
+  settings: jsonb("settings").$type<Record<string, unknown>>().notNull().default(sql`'{}'::jsonb`),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  updatedByUserId: integer("updated_by_user_id").references(() => users.id),
+});
+
+/** Project-level vault items (encrypted secret value + visibility policy). */
+export const projectCredentials = pgTable("project_credentials", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  type: text("type").notNull().default("other"),
+  /** Non-secret metadata for searching / context. */
+  metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default(sql`'{}'::jsonb`),
+  secretCiphertext: text("secret_ciphertext").notNull(),
+  secretIv: text("secret_iv").notNull(),
+  secretAuthTag: text("secret_auth_tag").notNull(),
+  keyVersion: integer("key_version").notNull().default(1),
+  /**
+   * project_members => any project member can reveal
+   * roles => only listed roles can reveal
+   * users => only listed user ids can reveal
+   */
+  visibilityMode: text("visibility_mode").notNull().default("roles"),
+  visibilityRoles: text("visibility_roles").array().notNull().default(sql`'{}'::text[]`),
+  visibilityUserIds: integer("visibility_user_ids").array().notNull().default(sql`'{}'::integer[]`),
+  createdAt: timestamp("created_at").defaultNow(),
+  createdByUserId: integer("created_by_user_id").references(() => users.id),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  updatedByUserId: integer("updated_by_user_id").references(() => users.id),
+  deletedAt: timestamp("deleted_at"),
+});
+
+/** Project-scoped documents (separate from task/comment attachments). */
+export const projectDocuments = pgTable("project_documents", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  type: text("type").notNull().default("file"),
+  url: text("url"),
+  size: text("size"),
+  createdAt: timestamp("created_at").defaultNow(),
+  createdByUserId: integer("created_by_user_id").references(() => users.id),
+});
+
 export const tasks = pgTable("tasks", {
   id: serial("id").primaryKey(),
   projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
@@ -207,6 +257,14 @@ export const insertUserSchema = createInsertSchema(users).omit({
   projectQuickMenuIds: true,
 });
 export const insertProjectSchema = createInsertSchema(projects).omit({ id: true });
+export const insertProjectSettingsSchema = createInsertSchema(projectSettings).omit({ updatedAt: true });
+export const insertProjectCredentialSchema = createInsertSchema(projectCredentials).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  deletedAt: true,
+});
+export const insertProjectDocumentSchema = createInsertSchema(projectDocuments).omit({ id: true, createdAt: true });
 export const insertTaskSchema = createInsertSchema(tasks).omit({ id: true, createdAt: true });
 export const insertChecklistItemSchema = createInsertSchema(checklistItems).omit({ id: true });
 export const insertAttachmentSchema = createInsertSchema(attachments).omit({ id: true });
@@ -226,6 +284,12 @@ export type User = typeof users.$inferSelect;
 export type CompanySettings = typeof companySettings.$inferSelect;
 export type Project = typeof projects.$inferSelect;
 export type InsertProject = z.infer<typeof insertProjectSchema>;
+export type ProjectSettings = typeof projectSettings.$inferSelect;
+export type InsertProjectSettings = z.infer<typeof insertProjectSettingsSchema>;
+export type ProjectCredential = typeof projectCredentials.$inferSelect;
+export type InsertProjectCredential = z.infer<typeof insertProjectCredentialSchema>;
+export type ProjectDocument = typeof projectDocuments.$inferSelect;
+export type InsertProjectDocument = z.infer<typeof insertProjectDocumentSchema>;
 export type Task = typeof tasks.$inferSelect;
 export type InsertTask = z.infer<typeof insertTaskSchema>;
 export type ChecklistItem = typeof checklistItems.$inferSelect;

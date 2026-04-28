@@ -9,6 +9,7 @@ import { publishCallInvites, peekInvite, dismissInvite, clearInvitesForChannel }
 import { storage } from "./storage";
 import { sendEmail } from "./email";
 import { buildClientNewTaskEmail, buildClientReopenTaskEmail } from "./emailTemplates";
+import { decryptProjectSecret, encryptProjectSecret } from "./projectSecrets";
 import { setupAuth, requireAuth } from "./auth";
 import {
   registerMicrosoftAuth,
@@ -201,6 +202,73 @@ function sortedTagList(tags: string[] | null | undefined): string[] {
   return [...(tags || [])].map((t) => String(t)).sort((a, b) => a.localeCompare(b));
 }
 
+const CREDENTIAL_VISIBILITY_MODES = ["project_members", "roles", "users"] as const;
+const CREDENTIAL_TYPES = ["api_token", "db", "ssh", "git_pat", "other"] as const;
+const WORKSPACE_ROLES = ["admin", "manager", "employee", "client"] as const;
+type WorkspaceRole = (typeof WORKSPACE_ROLES)[number];
+type CredentialVisibilityMode = (typeof CREDENTIAL_VISIBILITY_MODES)[number];
+
+function sanitizeRoleList(input: unknown): WorkspaceRole[] {
+  if (!Array.isArray(input)) return [];
+  const set = new Set<WorkspaceRole>();
+  for (const r of input) {
+    if (typeof r === "string" && (WORKSPACE_ROLES as readonly string[]).includes(r)) {
+      set.add(r as WorkspaceRole);
+    }
+  }
+  return Array.from(set);
+}
+
+function sanitizeUserIdList(input: unknown): number[] {
+  if (!Array.isArray(input)) return [];
+  const out = new Set<number>();
+  for (const id of input) {
+    const n = Number(id);
+    if (Number.isInteger(n) && n > 0) out.add(n);
+  }
+  return Array.from(out);
+}
+
+function safeParseJsonObject(raw: unknown): Record<string, unknown> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  return raw as Record<string, unknown>;
+}
+
+function canManageProjectSettings(
+  currentUser: { id: number; role?: string },
+  project: Project,
+): boolean {
+  const role = currentUser.role ?? "";
+  if (role === "admin" || role === "manager") return true;
+  return project.ownerId != null && Number(project.ownerId) === Number(currentUser.id);
+}
+
+function canRevealCredential(
+  currentUser: { id: number; role?: string },
+  project: Project,
+  credential: {
+    visibilityMode: string;
+    visibilityRoles: string[] | null;
+    visibilityUserIds: number[] | null;
+  },
+): boolean {
+  const role = currentUser.role ?? "";
+  if (role === "admin") return true;
+  if (project.ownerId != null && Number(project.ownerId) === Number(currentUser.id)) return true;
+  if (role === "client") return false;
+  const mode = credential.visibilityMode as CredentialVisibilityMode;
+  if (mode === "project_members") return true;
+  if (mode === "roles") {
+    const roles = credential.visibilityRoles ?? [];
+    return roles.includes(role);
+  }
+  if (mode === "users") {
+    const ids = credential.visibilityUserIds ?? [];
+    return ids.includes(Number(currentUser.id));
+  }
+  return false;
+}
+
 const MAX_CHAT_UPLOAD_BYTES = 3 * 1024 * 1024;
 const MAX_TASK_ATTACHMENT_BYTES = 8 * 1024 * 1024;
 
@@ -266,6 +334,43 @@ function persistProjectTaskDescriptionUploadFromDataUrl(projectId: number, dataU
   const filename = `taskdesc-${projectId}-${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}.${ext}`;
   fs.writeFileSync(path.join(uploadsDir, filename), buf);
   return `/uploads/${filename}`;
+}
+
+function persistProjectDocumentFromDataUrl(projectId: number, dataUrl: string, uploadsDir: string): { url: string; sizeLabel: string } {
+  const trimmed = dataUrl.trim();
+  const m = /^data:(image\/(?:png|jpeg|jpg|webp)|application\/pdf|text\/plain);base64,([\s\S]+)$/i.exec(trimmed);
+  if (!m) throw new Error("File must be PNG, JPEG, WebP, PDF, or TXT.");
+  const buf = Buffer.from(m[2]!.replace(/\s/g, ""), "base64");
+  if (buf.length > MAX_TASK_ATTACHMENT_BYTES) throw new Error("File must be 8MB or smaller.");
+  const mime = m[1]!.toLowerCase();
+  const ext =
+    mime.includes("jpeg") || mime.includes("jpg")
+      ? "jpg"
+      : mime === "image/webp"
+        ? "webp"
+        : mime === "text/plain"
+          ? "txt"
+          : mime.includes("pdf")
+            ? "pdf"
+            : "png";
+  const filename = `projectdoc-${projectId}-${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}.${ext}`;
+  fs.writeFileSync(path.join(uploadsDir, filename), buf);
+  return {
+    url: `/uploads/${filename}`,
+    sizeLabel: `${(buf.length / 1024).toFixed(1)} KB`,
+  };
+}
+
+function safeUnlinkProjectDocumentUrl(url: string | null | undefined, uploadsDir: string) {
+  if (!url?.startsWith("/uploads/")) return;
+  const base = path.basename(url);
+  if (!/^projectdoc-\d+-[a-f0-9]{16}\.(png|jpe?g|webp|pdf|txt)$/i.test(base)) return;
+  const full = path.join(uploadsDir, base);
+  try {
+    if (fs.existsSync(full)) fs.unlinkSync(full);
+  } catch {
+    /* ignore */
+  }
 }
 
 export async function registerRoutes(
@@ -1201,6 +1306,306 @@ export async function registerRoutes(
       clientShowTimecards: membership.clientShowTimecards ?? false,
       clientTaskAccess: membership.clientTaskAccess ?? "feedback",
     });
+  });
+
+  const projectSettingsBodySchema = z.object({
+    settings: z.record(z.string(), z.unknown()),
+  });
+
+  const credentialBodySchema = z.object({
+    name: z.string().min(1).max(200),
+    type: z.enum(CREDENTIAL_TYPES).default("other"),
+    secret: z.string().min(1).max(50_000),
+    metadata: z.record(z.string(), z.unknown()).optional().default({}),
+    visibilityMode: z.enum(CREDENTIAL_VISIBILITY_MODES).default("roles"),
+    visibilityRoles: z.array(z.enum(WORKSPACE_ROLES)).optional().default(["admin", "manager"]),
+    visibilityUserIds: z.array(z.number().int().positive()).optional().default([]),
+  });
+
+  const credentialPatchBodySchema = z.object({
+    name: z.string().min(1).max(200).optional(),
+    type: z.enum(CREDENTIAL_TYPES).optional(),
+    secret: z.string().min(1).max(50_000).optional(),
+    metadata: z.record(z.string(), z.unknown()).optional(),
+    visibilityMode: z.enum(CREDENTIAL_VISIBILITY_MODES).optional(),
+    visibilityRoles: z.array(z.enum(WORKSPACE_ROLES)).optional(),
+    visibilityUserIds: z.array(z.number().int().positive()).optional(),
+  });
+
+  const projectDocumentUploadSchema = z.object({
+    fileDataUrl: z.string().min(1),
+    name: z.string().min(1).max(240).optional(),
+  });
+
+  async function ensureProjectMemberAccess(
+    currentUser: { id: number; role?: string },
+    projectId: number,
+  ): Promise<{ ok: true; project: Project; membershipExists: boolean } | { ok: false; code: number; message: string }> {
+    const project = await storage.getProject(projectId);
+    if (!project || project.closedAt != null) return { ok: false, code: 404, message: "Project not found" };
+    let membership = await storage.getProjectMembership(projectId, currentUser.id);
+    if (!membership && currentUser.role === "admin") {
+      await storage.addProjectMember(projectId, currentUser.id);
+      membership = await storage.getProjectMembership(projectId, currentUser.id);
+    }
+    if (!membership && currentUser.role !== "admin") return { ok: false, code: 403, message: "Access denied" };
+    return { ok: true, project, membershipExists: !!membership };
+  }
+
+  app.get("/api/projects/:id/settings", requireAuth, async (req, res) => {
+    const currentUser = req.user as any;
+    const projectId = Number(req.params.id);
+    if (!Number.isInteger(projectId) || projectId <= 0) return res.status(400).json({ message: "Invalid project id" });
+    const access = await ensureProjectMemberAccess(currentUser, projectId);
+    if (!access.ok) return res.status(access.code).json({ message: access.message });
+    const row = await storage.getProjectSettings(projectId);
+    res.json({
+      projectId,
+      settings: safeParseJsonObject(row?.settings),
+      updatedAt: row?.updatedAt ?? null,
+      updatedByUserId: row?.updatedByUserId ?? null,
+    });
+  });
+
+  app.put("/api/projects/:id/settings", requireAuth, async (req, res) => {
+    const currentUser = req.user as any;
+    const projectId = Number(req.params.id);
+    if (!Number.isInteger(projectId) || projectId <= 0) return res.status(400).json({ message: "Invalid project id" });
+    const parsed = projectSettingsBodySchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: parsed.error.issues[0]?.message ?? "Invalid body" });
+    const access = await ensureProjectMemberAccess(currentUser, projectId);
+    if (!access.ok) return res.status(access.code).json({ message: access.message });
+    if (!canManageProjectSettings(currentUser, access.project)) {
+      return res.status(403).json({ message: "Only owner/admin/manager can edit project settings" });
+    }
+    const saved = await storage.upsertProjectSettings(projectId, safeParseJsonObject(parsed.data.settings), currentUser.id);
+    res.json(saved);
+  });
+
+  app.get("/api/projects/:id/credentials", requireAuth, async (req, res) => {
+    const currentUser = req.user as any;
+    const projectId = Number(req.params.id);
+    if (!Number.isInteger(projectId) || projectId <= 0) return res.status(400).json({ message: "Invalid project id" });
+    const access = await ensureProjectMemberAccess(currentUser, projectId);
+    if (!access.ok) return res.status(access.code).json({ message: access.message });
+    const rows = await storage.getProjectCredentials(projectId);
+    const out = rows
+      .filter((r) => canRevealCredential(currentUser, access.project, r))
+      .map((r) => ({
+        id: r.id,
+        projectId: r.projectId,
+        name: r.name,
+        type: r.type,
+        metadata: safeParseJsonObject(r.metadata),
+        visibilityMode: r.visibilityMode,
+        visibilityRoles: r.visibilityRoles ?? [],
+        visibilityUserIds: r.visibilityUserIds ?? [],
+        createdAt: r.createdAt,
+        createdByUserId: r.createdByUserId,
+        updatedAt: r.updatedAt,
+        updatedByUserId: r.updatedByUserId,
+        hasSecret: true,
+        maskedSecret: "********",
+      }));
+    res.json(out);
+  });
+
+  app.post("/api/projects/:id/credentials", requireAuth, async (req, res) => {
+    const currentUser = req.user as any;
+    const projectId = Number(req.params.id);
+    if (!Number.isInteger(projectId) || projectId <= 0) return res.status(400).json({ message: "Invalid project id" });
+    const parsed = credentialBodySchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: parsed.error.issues[0]?.message ?? "Invalid body" });
+    const access = await ensureProjectMemberAccess(currentUser, projectId);
+    if (!access.ok) return res.status(access.code).json({ message: access.message });
+    if (!canManageProjectSettings(currentUser, access.project)) {
+      return res.status(403).json({ message: "Only owner/admin/manager can create credentials" });
+    }
+    const encrypted = encryptProjectSecret(parsed.data.secret);
+    const created = await storage.createProjectCredential({
+      projectId,
+      name: parsed.data.name.trim(),
+      type: parsed.data.type,
+      metadata: safeParseJsonObject(parsed.data.metadata),
+      secretCiphertext: encrypted.ciphertext,
+      secretIv: encrypted.iv,
+      secretAuthTag: encrypted.authTag,
+      keyVersion: encrypted.keyVersion,
+      visibilityMode: parsed.data.visibilityMode,
+      visibilityRoles: sanitizeRoleList(parsed.data.visibilityRoles),
+      visibilityUserIds: sanitizeUserIdList(parsed.data.visibilityUserIds),
+      createdByUserId: currentUser.id,
+      updatedByUserId: currentUser.id,
+    });
+    res.status(201).json({
+      id: created.id,
+      projectId: created.projectId,
+      name: created.name,
+      type: created.type,
+      metadata: safeParseJsonObject(created.metadata),
+      visibilityMode: created.visibilityMode,
+      visibilityRoles: created.visibilityRoles ?? [],
+      visibilityUserIds: created.visibilityUserIds ?? [],
+      hasSecret: true,
+      maskedSecret: "********",
+      createdAt: created.createdAt,
+      createdByUserId: created.createdByUserId,
+      updatedAt: created.updatedAt,
+      updatedByUserId: created.updatedByUserId,
+    });
+  });
+
+  app.patch("/api/projects/:id/credentials/:credId", requireAuth, async (req, res) => {
+    const currentUser = req.user as any;
+    const projectId = Number(req.params.id);
+    const credId = Number(req.params.credId);
+    if (!Number.isInteger(projectId) || projectId <= 0 || !Number.isInteger(credId) || credId <= 0) {
+      return res.status(400).json({ message: "Invalid id" });
+    }
+    const parsed = credentialPatchBodySchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: parsed.error.issues[0]?.message ?? "Invalid body" });
+    const access = await ensureProjectMemberAccess(currentUser, projectId);
+    if (!access.ok) return res.status(access.code).json({ message: access.message });
+    if (!canManageProjectSettings(currentUser, access.project)) {
+      return res.status(403).json({ message: "Only owner/admin/manager can edit credentials" });
+    }
+    const existing = await storage.getProjectCredential(credId);
+    if (!existing || existing.projectId !== projectId || existing.deletedAt) {
+      return res.status(404).json({ message: "Credential not found" });
+    }
+    const updates: any = { updatedByUserId: currentUser.id };
+    if (parsed.data.name !== undefined) updates.name = parsed.data.name.trim();
+    if (parsed.data.type !== undefined) updates.type = parsed.data.type;
+    if (parsed.data.metadata !== undefined) updates.metadata = safeParseJsonObject(parsed.data.metadata);
+    if (parsed.data.visibilityMode !== undefined) updates.visibilityMode = parsed.data.visibilityMode;
+    if (parsed.data.visibilityRoles !== undefined) updates.visibilityRoles = sanitizeRoleList(parsed.data.visibilityRoles);
+    if (parsed.data.visibilityUserIds !== undefined) updates.visibilityUserIds = sanitizeUserIdList(parsed.data.visibilityUserIds);
+    if (parsed.data.secret !== undefined) {
+      const encrypted = encryptProjectSecret(parsed.data.secret);
+      updates.secretCiphertext = encrypted.ciphertext;
+      updates.secretIv = encrypted.iv;
+      updates.secretAuthTag = encrypted.authTag;
+      updates.keyVersion = encrypted.keyVersion;
+    }
+    const updated = await storage.updateProjectCredential(credId, updates);
+    if (!updated) return res.status(404).json({ message: "Credential not found" });
+    res.json({
+      id: updated.id,
+      projectId: updated.projectId,
+      name: updated.name,
+      type: updated.type,
+      metadata: safeParseJsonObject(updated.metadata),
+      visibilityMode: updated.visibilityMode,
+      visibilityRoles: updated.visibilityRoles ?? [],
+      visibilityUserIds: updated.visibilityUserIds ?? [],
+      hasSecret: true,
+      maskedSecret: "********",
+      createdAt: updated.createdAt,
+      createdByUserId: updated.createdByUserId,
+      updatedAt: updated.updatedAt,
+      updatedByUserId: updated.updatedByUserId,
+    });
+  });
+
+  app.delete("/api/projects/:id/credentials/:credId", requireAuth, async (req, res) => {
+    const currentUser = req.user as any;
+    const projectId = Number(req.params.id);
+    const credId = Number(req.params.credId);
+    if (!Number.isInteger(projectId) || projectId <= 0 || !Number.isInteger(credId) || credId <= 0) {
+      return res.status(400).json({ message: "Invalid id" });
+    }
+    const access = await ensureProjectMemberAccess(currentUser, projectId);
+    if (!access.ok) return res.status(access.code).json({ message: access.message });
+    if (!canManageProjectSettings(currentUser, access.project)) {
+      return res.status(403).json({ message: "Only owner/admin/manager can delete credentials" });
+    }
+    const existing = await storage.getProjectCredential(credId);
+    if (!existing || existing.projectId !== projectId || existing.deletedAt) {
+      return res.status(404).json({ message: "Credential not found" });
+    }
+    await storage.updateProjectCredential(credId, { deletedAt: new Date(), updatedByUserId: currentUser.id });
+    res.status(204).end();
+  });
+
+  app.get("/api/projects/:id/credentials/:credId/reveal", requireAuth, async (req, res) => {
+    const currentUser = req.user as any;
+    const projectId = Number(req.params.id);
+    const credId = Number(req.params.credId);
+    if (!Number.isInteger(projectId) || projectId <= 0 || !Number.isInteger(credId) || credId <= 0) {
+      return res.status(400).json({ message: "Invalid id" });
+    }
+    const access = await ensureProjectMemberAccess(currentUser, projectId);
+    if (!access.ok) return res.status(access.code).json({ message: access.message });
+    const existing = await storage.getProjectCredential(credId);
+    if (!existing || existing.projectId !== projectId || existing.deletedAt) {
+      return res.status(404).json({ message: "Credential not found" });
+    }
+    if (!canRevealCredential(currentUser, access.project, existing)) {
+      return res.status(403).json({ message: "Access denied" });
+    }
+    const secret = decryptProjectSecret({
+      ciphertext: existing.secretCiphertext,
+      iv: existing.secretIv,
+      authTag: existing.secretAuthTag,
+      keyVersion: existing.keyVersion,
+    });
+    res.json({ id: existing.id, secret });
+  });
+
+  app.get("/api/projects/:id/documents", requireAuth, async (req, res) => {
+    const currentUser = req.user as any;
+    const projectId = Number(req.params.id);
+    if (!Number.isInteger(projectId) || projectId <= 0) return res.status(400).json({ message: "Invalid project id" });
+    const access = await ensureProjectMemberAccess(currentUser, projectId);
+    if (!access.ok) return res.status(access.code).json({ message: access.message });
+    const docs = await storage.listProjectDocuments(projectId);
+    res.json(docs);
+  });
+
+  app.post("/api/projects/:id/documents", requireAuth, async (req, res) => {
+    const currentUser = req.user as any;
+    const projectId = Number(req.params.id);
+    if (!Number.isInteger(projectId) || projectId <= 0) return res.status(400).json({ message: "Invalid project id" });
+    const parsed = projectDocumentUploadSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: parsed.error.issues[0]?.message ?? "Invalid body" });
+    const access = await ensureProjectMemberAccess(currentUser, projectId);
+    if (!access.ok) return res.status(access.code).json({ message: access.message });
+    if (!canManageProjectSettings(currentUser, access.project)) {
+      return res.status(403).json({ message: "Only owner/admin/manager can upload project documents" });
+    }
+    try {
+      const persisted = persistProjectDocumentFromDataUrl(projectId, parsed.data.fileDataUrl, uploadsDir);
+      const doc = await storage.createProjectDocument({
+        projectId,
+        name: parsed.data.name?.trim() || path.basename(persisted.url),
+        type: "file",
+        url: persisted.url,
+        size: persisted.sizeLabel,
+        createdByUserId: currentUser.id,
+      });
+      res.status(201).json(doc);
+    } catch (e: unknown) {
+      return res.status(400).json({ message: e instanceof Error ? e.message : "Upload failed" });
+    }
+  });
+
+  app.delete("/api/projects/:id/documents/:docId", requireAuth, async (req, res) => {
+    const currentUser = req.user as any;
+    const projectId = Number(req.params.id);
+    const docId = Number(req.params.docId);
+    if (!Number.isInteger(projectId) || projectId <= 0 || !Number.isInteger(docId) || docId <= 0) {
+      return res.status(400).json({ message: "Invalid id" });
+    }
+    const access = await ensureProjectMemberAccess(currentUser, projectId);
+    if (!access.ok) return res.status(access.code).json({ message: access.message });
+    if (!canManageProjectSettings(currentUser, access.project)) {
+      return res.status(403).json({ message: "Only owner/admin/manager can delete project documents" });
+    }
+    const doc = await storage.getProjectDocument(docId);
+    if (!doc || doc.projectId !== projectId) return res.status(404).json({ message: "Document not found" });
+    safeUnlinkProjectDocumentUrl(doc.url ?? null, uploadsDir);
+    await storage.deleteProjectDocument(docId);
+    res.status(204).end();
   });
 
   // Update client settings for a project member (admin/manager only)
