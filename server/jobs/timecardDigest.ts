@@ -18,6 +18,7 @@ import { formatYmdForTimecardDisplay } from "@shared/timecardDateFormat";
 import { db } from "../db";
 import { sendEmail } from "../email";
 import { storage } from "../storage";
+import { notifyUserNotification } from "../realtime";
 import { timeEntries, users } from "@shared/schema";
 
 const REQUIRED_HOURS_PER_DAY = 8;
@@ -508,6 +509,11 @@ export async function sendEmployeeDailyMissedHtmlDigests(now = new Date()): Prom
   const settings = await storage.getCompanySettings();
   const fmt = settings.timecardDateDisplayFormat ?? "DD/MM/YYYY";
   const rows = await getDigestRowsForRange(ymd, ymd, { onlyRowsWithGap: true });
+  const usersByEmail = new Map(
+    (await storage.getAllUsers())
+      .filter((u) => typeof u.email === "string" && u.email.trim() !== "")
+      .map((u) => [u.email!.trim().toLowerCase(), u.id] as const),
+  );
   const pDisp = formatYmdForTimecardDisplay(ymd, fmt);
   let emailed = 0;
   let skipped = 0;
@@ -532,6 +538,23 @@ export async function sendEmployeeDailyMissedHtmlDigests(now = new Date()): Prom
       complianceAddon,
     });
     const subject = `PMS: Incomplete timecard — ${pDisp}`;
+    const recipientUserId = usersByEmail.get(r.email.trim().toLowerCase());
+    if (recipientUserId) {
+      await storage.createNotification({
+        userId: recipientUserId,
+        type: "timecard_missing_reminder",
+        title: "Incomplete timecard",
+        message: `Your timecard for ${pDisp} is short by ${missingHours.toFixed(2)}h.`,
+        entityType: "timecard",
+        entityId: null,
+        projectId: null,
+        channelId: null,
+        actorUserId: null,
+        priority: "high",
+        meta: { date: ymd, loggedHours, missingHours },
+      });
+      notifyUserNotification(recipientUserId);
+    }
     try {
       const res = await sendEmail({ to: r.email, subject, text, html });
       if (res.sent) emailed++;

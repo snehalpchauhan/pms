@@ -242,6 +242,27 @@ export const timeEntries = pgTable("time_entries", {
   clientVisible: boolean("client_visible").default(true),
 });
 
+export const notifications = pgTable(
+  "notifications",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    type: text("type").notNull(),
+    title: text("title").notNull(),
+    message: text("message").notNull(),
+    entityType: text("entity_type").notNull(),
+    entityId: integer("entity_id"),
+    projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }),
+    channelId: integer("channel_id").references(() => channels.id, { onDelete: "set null" }),
+    actorUserId: integer("actor_user_id").references(() => users.id, { onDelete: "set null" }),
+    priority: text("priority").notNull().default("normal"),
+    meta: jsonb("meta").$type<Record<string, unknown>>().notNull().default(sql`'{}'::jsonb`),
+    readAt: timestamp("read_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (t) => [index("idx_notifications_user_created").on(t.userId, t.createdAt), index("idx_notifications_unread").on(t.userId, t.readAt)],
+);
+
 /** connect-pg-simple / express-session store (see DBSCHEMA.sql) */
 export const expressSession = pgTable(
   "session",
@@ -280,6 +301,7 @@ export const insertMessageSchema = createInsertSchema(messages).omit({
   deletedAt: true,
 });
 export const insertTimeEntrySchema = createInsertSchema(timeEntries).omit({ id: true });
+export const insertNotificationSchema = createInsertSchema(notifications).omit({ id: true, createdAt: true, readAt: true });
 
 // Types
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -306,6 +328,8 @@ export type InsertComment = z.infer<typeof insertCommentSchema>;
 export type TimeEntry = typeof timeEntries.$inferSelect;
 export type InsertTimeEntry = z.infer<typeof insertTimeEntrySchema>;
 export type ProjectMember = typeof projectMembers.$inferSelect;
+export type Notification = typeof notifications.$inferSelect;
+export type InsertNotification = z.infer<typeof insertNotificationSchema>;
 
 // Login schema
 export const loginSchema = z.object({

@@ -118,6 +118,13 @@ export function notifyUsersInviteCleared(memberUserIds: number[], channelId: num
   }
 }
 
+export function notifyUserNotification(userId: number) {
+  const sockets = userSubscribers.get(userId);
+  if (!sockets?.size) return;
+  const payload = JSON.stringify({ type: "notifications_changed", userId });
+  sockets.forEach((ws) => sendToWs(ws, payload));
+}
+
 /** @deprecated Use notifyUsersCall for call events. Kept for channel-level fallback. */
 export function notifyChannelCall(channelId: number, callerName: string, media: "audio" | "video") {
   const set = channelSubscribers.get(channelId);

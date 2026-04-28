@@ -105,6 +105,16 @@ function AuthenticatedApp() {
   const [isNewChannelOpen, setIsNewChannelOpen] = useState(false);
   const [taskSearchQuery, setTaskSearchQuery] = useState("");
 
+  type NotificationDetail = {
+    id: number;
+    type: string;
+    entityType?: string;
+    entityId?: number | null;
+    projectId?: number | null;
+    channelId?: number | null;
+    meta?: Record<string, unknown>;
+  };
+
   const workspaceBootstrappedRef = useRef(false);
 
   useEffect(() => {
@@ -201,6 +211,52 @@ function AuthenticatedApp() {
     };
     window.addEventListener('openNewTaskModal', handleOpenNewTask);
     return () => window.removeEventListener('openNewTaskModal', handleOpenNewTask);
+  }, []);
+
+  useEffect(() => {
+    const onNotificationOpen = (e: Event) => {
+      const detail = (e as CustomEvent<NotificationDetail>).detail;
+      if (!detail) return;
+
+      const projectId = detail.projectId != null ? String(detail.projectId) : "";
+      if (projectId) setCurrentProjectId(projectId);
+
+      if (detail.channelId != null) {
+        setCurrentView("messages");
+        setCurrentChannelId(String(detail.channelId));
+        return;
+      }
+
+      const taskIdFromMeta = Number(detail.meta?.taskId);
+      const candidateTaskId =
+        detail.entityType === "task"
+          ? Number(detail.entityId)
+          : detail.entityType === "comment"
+            ? taskIdFromMeta
+            : detail.entityType === "timecard"
+              ? taskIdFromMeta
+              : NaN;
+
+      if (Number.isInteger(candidateTaskId) && candidateTaskId > 0) {
+        setCurrentView("tasks");
+        persistWorkspaceState({ taskId: String(candidateTaskId) });
+        return;
+      }
+
+      if (detail.entityType === "timecard" || detail.type.startsWith("timecard_")) {
+        setCurrentView("timecards");
+        window.dispatchEvent(
+          new CustomEvent("pms:timecards-focus", {
+            detail: {
+              projectId: detail.projectId ?? null,
+              taskId: Number.isInteger(taskIdFromMeta) && taskIdFromMeta > 0 ? taskIdFromMeta : null,
+            },
+          }),
+        );
+      }
+    };
+    window.addEventListener("pms:notification-open", onNotificationOpen);
+    return () => window.removeEventListener("pms:notification-open", onNotificationOpen);
   }, []);
 
   const handleTaskCreate = async (newTask: CreateTaskInput) => {

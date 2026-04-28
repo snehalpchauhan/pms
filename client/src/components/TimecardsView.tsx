@@ -522,6 +522,31 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
     setPage(1);
   }
 
+  useEffect(() => {
+    const onFocus = (e: Event) => {
+      const detail = (e as CustomEvent<{ projectId?: number | null; taskId?: number | null }>).detail;
+      if (!detail) return;
+      const pid =
+        detail.projectId != null && Number.isInteger(Number(detail.projectId))
+          ? String(detail.projectId)
+          : "all";
+      setFilterProjectId(pid);
+      if (pid === "all") {
+        setFilterTaskId("all");
+      } else if (detail.taskId != null && Number.isInteger(Number(detail.taskId))) {
+        setFilterTaskId(String(detail.taskId));
+      } else {
+        setFilterTaskId("all");
+      }
+      setPage(1);
+      setTimeout(() => {
+        commitSearch();
+      }, 0);
+    };
+    window.addEventListener("pms:timecards-focus", onFocus);
+    return () => window.removeEventListener("pms:timecards-focus", onFocus);
+  }, [commitSearch, setFilterProjectId, setFilterTaskId]);
+
   // Client view: read-only table
   if (isClient) {
     const projectName = currentProject?.name || "this project";

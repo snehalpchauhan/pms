@@ -3,7 +3,7 @@ import { eq, and, asc, desc, inArray, gte, lte, sql, ne, gt, isNull } from "driz
 import {
   users, projects, projectMembers, tasks, taskAssignees,
   checklistItems, attachments, comments, channels, channelMembers, channelUserReadState, messages, timeEntries,
-  companySettings, projectSettings, projectCredentials, projectDocuments,
+  companySettings, projectSettings, projectCredentials, projectDocuments, notifications,
   type User, type InsertUser, type Project, type InsertProject,
   type Task, type InsertTask, type ChecklistItem, type Attachment,
   type Comment, type InsertComment, type Channel, type InsertChannel,
@@ -11,6 +11,7 @@ import {
   type ProjectMember,
   type CompanySettings,
   type ProjectSettings, type ProjectCredential, type ProjectDocument,
+  type Notification, type InsertNotification,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -161,6 +162,12 @@ export interface IStorage {
   getMessage(id: number): Promise<Message | undefined>;
   updateMessage(id: number, updates: { content: string; editedAt: Date }): Promise<Message | undefined>;
   softDeleteMessage(id: number, deletedAt: Date): Promise<Message | undefined>;
+  getNotifications(userId: number, limit?: number): Promise<Notification[]>;
+  getNotification(id: number): Promise<Notification | undefined>;
+  getUnreadNotificationCount(userId: number): Promise<number>;
+  createNotification(row: InsertNotification): Promise<Notification>;
+  markNotificationRead(id: number, userId: number): Promise<Notification | undefined>;
+  markAllNotificationsRead(userId: number): Promise<void>;
 
   createTimeEntry(entry: InsertTimeEntry): Promise<TimeEntry>;
   getTimeEntriesByTask(taskId: number): Promise<(TimeEntry & { userName: string })[]>;
@@ -787,6 +794,49 @@ export class DatabaseStorage implements IStorage {
       .where(eq(messages.id, id))
       .returning();
     return row;
+  }
+
+  async getNotifications(userId: number, limit = 50): Promise<Notification[]> {
+    return db
+      .select()
+      .from(notifications)
+      .where(eq(notifications.userId, userId))
+      .orderBy(desc(notifications.createdAt))
+      .limit(Math.max(1, Math.min(limit, 200)));
+  }
+
+  async getNotification(id: number): Promise<Notification | undefined> {
+    const [row] = await db.select().from(notifications).where(eq(notifications.id, id)).limit(1);
+    return row;
+  }
+
+  async getUnreadNotificationCount(userId: number): Promise<number> {
+    const [row] = await db
+      .select({ c: sql<number>`count(*)::int` })
+      .from(notifications)
+      .where(and(eq(notifications.userId, userId), isNull(notifications.readAt)));
+    return Number(row?.c ?? 0);
+  }
+
+  async createNotification(row: InsertNotification): Promise<Notification> {
+    const [created] = await db.insert(notifications).values(row).returning();
+    return created;
+  }
+
+  async markNotificationRead(id: number, userId: number): Promise<Notification | undefined> {
+    const [row] = await db
+      .update(notifications)
+      .set({ readAt: new Date() })
+      .where(and(eq(notifications.id, id), eq(notifications.userId, userId)))
+      .returning();
+    return row;
+  }
+
+  async markAllNotificationsRead(userId: number): Promise<void> {
+    await db
+      .update(notifications)
+      .set({ readAt: new Date() })
+      .where(and(eq(notifications.userId, userId), isNull(notifications.readAt)));
   }
 
   async createTimeEntry(entry: InsertTimeEntry): Promise<TimeEntry> {

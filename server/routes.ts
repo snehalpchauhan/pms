@@ -4,7 +4,7 @@ import crypto from "node:crypto";
 import fs from "fs";
 import path from "path";
 import { z } from "zod";
-import { notifyChannelMessages, notifyUsersCall, notifyUsersInviteCleared } from "./realtime";
+import { notifyChannelMessages, notifyUserNotification, notifyUsersCall, notifyUsersInviteCleared } from "./realtime";
 import { publishCallInvites, peekInvite, dismissInvite, clearInvitesForChannel } from "./callInvites";
 import { storage } from "./storage";
 import { sendEmail } from "./email";
@@ -287,6 +287,42 @@ function canAccessDocument(
   if (mode === "roles") return (doc.visibilityRoles ?? []).includes(role);
   if (mode === "users") return (doc.visibilityUserIds ?? []).includes(Number(currentUser.id));
   return false;
+}
+
+type NotificationPriority = "low" | "normal" | "high";
+type NotificationEntityType = "task" | "comment" | "project" | "timecard" | "document" | "credential";
+
+async function emitNotificationsForUsers(args: {
+  actorUserId?: number | null;
+  recipientUserIds: number[];
+  type: string;
+  title: string;
+  message: string;
+  entityType: NotificationEntityType;
+  entityId?: number | null;
+  projectId?: number | null;
+  channelId?: number | null;
+  priority?: NotificationPriority;
+  meta?: Record<string, unknown>;
+}) {
+  const unique = Array.from(new Set(args.recipientUserIds.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0)));
+  for (const userId of unique) {
+    if (args.actorUserId != null && Number(args.actorUserId) === userId) continue;
+    await storage.createNotification({
+      userId,
+      type: args.type,
+      title: args.title,
+      message: args.message,
+      entityType: args.entityType,
+      entityId: args.entityId ?? null,
+      projectId: args.projectId ?? null,
+      channelId: args.channelId ?? null,
+      actorUserId: args.actorUserId ?? null,
+      priority: args.priority ?? "normal",
+      meta: args.meta ?? {},
+    });
+    notifyUserNotification(userId);
+  }
 }
 
 const MAX_CHAT_UPLOAD_BYTES = 3 * 1024 * 1024;
@@ -2029,6 +2065,34 @@ export async function registerRoutes(
     const task = await storage.createTask({ ...taskData, ownerId: currentUser.id });
     if (assigneeIds.length > 0) {
       await storage.setTaskAssignees(task.id, assigneeIds);
+      await emitNotificationsForUsers({
+        actorUserId: currentUser.id,
+        recipientUserIds: assigneeIds,
+        type: "task_assigned",
+        title: "New task assigned",
+        message: `${currentUser.name} assigned you to "${task.title}".`,
+        entityType: "task",
+        entityId: task.id,
+        projectId: task.projectId,
+        priority: "normal",
+      });
+    }
+    if (currentUser.role === "client") {
+      const members = await storage.getProjectMembersWithSettings(task.projectId);
+      const recipients = members
+        .filter((m) => (m.role === "manager" || m.role === "employee") && m.notifyClientNewTask === true)
+        .map((m) => m.id);
+      await emitNotificationsForUsers({
+        actorUserId: currentUser.id,
+        recipientUserIds: recipients,
+        type: "client_task_created",
+        title: "Client created a task",
+        message: `${currentUser.name} created "${task.title}".`,
+        entityType: "task",
+        entityId: task.id,
+        projectId: task.projectId,
+        priority: "high",
+      });
     }
     res.status(201).json(task);
     // Notify staff when a client creates a task (fire-and-forget after response is sent)
@@ -2179,6 +2243,17 @@ export async function registerRoutes(
       const fromT = boardColumnTitle(boardCols, before.status);
       const toT = boardColumnTitle(boardCols, typeof updates.status === "string" ? updates.status : before.status);
       await appendSystemLog(`Moved to ${toT} (from ${fromT}).`);
+      const projectMembers = await storage.getProjectMembers(before.projectId);
+      await emitNotificationsForUsers({
+        actorUserId: currentUser.id,
+        recipientUserIds: projectMembers.map((u) => u.id),
+        type: "task_status_changed",
+        title: "Task status updated",
+        message: `${currentUser.name} moved "${task.title}" from ${fromT} to ${toT}.`,
+        entityType: "task",
+        entityId: task.id,
+        projectId: task.projectId,
+      });
     }
 
     if ("dueDate" in updates) {
@@ -2258,6 +2333,34 @@ export async function registerRoutes(
         const afterLabel = namesAfter || "none";
         const beforeLabel = namesBefore || "none";
         await appendSystemLog(`Assignees updated: ${afterLabel} (was: ${beforeLabel}).`);
+        const beforeIds = new Set(assigneesBeforeUsers.map((u) => Number(u.id)));
+        const afterIds = new Set(assigneesAfterUsers.map((u) => Number(u.id)));
+        const addedIds = Array.from(afterIds).filter((id) => !beforeIds.has(id));
+        const removedIds = Array.from(beforeIds).filter((id) => !afterIds.has(id));
+        if (addedIds.length > 0) {
+          await emitNotificationsForUsers({
+            actorUserId: currentUser.id,
+            recipientUserIds: addedIds,
+            type: "task_assigned",
+            title: "Task assigned",
+            message: `${currentUser.name} assigned you to "${task.title}".`,
+            entityType: "task",
+            entityId: task.id,
+            projectId: task.projectId,
+          });
+        }
+        if (removedIds.length > 0) {
+          await emitNotificationsForUsers({
+            actorUserId: currentUser.id,
+            recipientUserIds: removedIds,
+            type: "task_unassigned",
+            title: "Task unassigned",
+            message: `${currentUser.name} removed you from "${task.title}".`,
+            entityType: "task",
+            entityId: task.id,
+            projectId: task.projectId,
+          });
+        }
       }
     }
 
@@ -2367,6 +2470,25 @@ export async function registerRoutes(
       content: `Revision requested: ${reason.trim()}`,
       type: "comment",
     });
+
+    {
+      const members = await storage.getProjectMembersWithSettings(task.projectId);
+      const recipients = members
+        .filter((m) => (m.role === "manager" || m.role === "employee") && m.notifyClientNewTask === true)
+        .map((m) => m.id);
+      await emitNotificationsForUsers({
+        actorUserId: currentUser.id,
+        recipientUserIds: recipients,
+        type: "client_task_reopened",
+        title: "Client reopened a task",
+        message: `${currentUser.name} requested revisions on "${task.title}".`,
+        entityType: "task",
+        entityId: task.id,
+        projectId: task.projectId,
+        priority: "high",
+        meta: { reason: reason.trim() },
+      });
+    }
 
     res.json({ message: "Revision requested" });
 
@@ -2730,6 +2852,27 @@ export async function registerRoutes(
       parentId: req.body.parentId || null,
       type: req.body.type || "comment",
     });
+    const task = await storage.getTask(taskId);
+    if (task) {
+      const assignees = await storage.getTaskAssignees(taskId);
+      const recipients = new Set<number>(assignees.map((u) => u.id));
+      if (comment.parentId) {
+        const parent = await storage.getComment(Number(comment.parentId));
+        if (parent?.authorId) recipients.add(Number(parent.authorId));
+      }
+      await emitNotificationsForUsers({
+        actorUserId: currentUser.id,
+        recipientUserIds: Array.from(recipients),
+        type: comment.parentId ? "task_comment_reply" : "task_comment_added",
+        title: comment.parentId ? "New reply on task" : "New task comment",
+        message: `${currentUser.name} commented on "${task.title}".`,
+        entityType: "comment",
+        entityId: comment.id,
+        projectId: task.projectId,
+        priority: "normal",
+        meta: { taskId },
+      });
+    }
     res.status(201).json(comment);
   });
 
@@ -3429,6 +3572,19 @@ export async function registerRoutes(
         : `Time logged: ${hrs}h on ${dateLabel}.`,
       type: "system",
     });
+    {
+      const members = await storage.getProjectMembers(taskForTime.projectId);
+      await emitNotificationsForUsers({
+        actorUserId: currentUser.id,
+        recipientUserIds: members.map((m) => m.id),
+        type: "timecard_entry_submitted",
+        title: "Time entry submitted",
+        message: `${currentUser.name} logged ${hrs}h on "${taskForTime.title}".`,
+        entityType: "timecard",
+        entityId: entry.id,
+        projectId: taskForTime.projectId,
+      });
+    }
     res.status(201).json(entry);
   });
 
@@ -3637,7 +3793,50 @@ export async function registerRoutes(
         : `Time logged: ${hrs}h on ${dateLabel}.`,
       type: "system",
     });
+    {
+      const members = await storage.getProjectMembers(task.projectId);
+      await emitNotificationsForUsers({
+        actorUserId: currentUser.id,
+        recipientUserIds: members.map((m) => m.id),
+        type: "timecard_entry_submitted",
+        title: "Time entry submitted",
+        message: `${currentUser.name} logged ${hrs}h on "${task.title}".`,
+        entityType: "timecard",
+        entityId: entry.id,
+        projectId: task.projectId,
+      });
+    }
     res.status(201).json(entry);
+  });
+
+  app.get("/api/notifications", requireAuth, async (req, res) => {
+    const currentUser = req.user as any;
+    const limit = Number(req.query.limit ?? 50);
+    const rows = await storage.getNotifications(currentUser.id, Number.isFinite(limit) ? limit : 50);
+    res.json(rows);
+  });
+
+  app.get("/api/notifications/unread-count", requireAuth, async (req, res) => {
+    const currentUser = req.user as any;
+    const count = await storage.getUnreadNotificationCount(currentUser.id);
+    res.json({ count });
+  });
+
+  app.patch("/api/notifications/:id/read", requireAuth, async (req, res) => {
+    const currentUser = req.user as any;
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ message: "Invalid notification id" });
+    const row = await storage.markNotificationRead(id, currentUser.id);
+    if (!row) return res.status(404).json({ message: "Notification not found" });
+    notifyUserNotification(currentUser.id);
+    res.json(row);
+  });
+
+  app.post("/api/notifications/mark-all-read", requireAuth, async (req, res) => {
+    const currentUser = req.user as any;
+    await storage.markAllNotificationsRead(currentUser.id);
+    notifyUserNotification(currentUser.id);
+    res.json({ ok: true });
   });
 
   return httpServer;
