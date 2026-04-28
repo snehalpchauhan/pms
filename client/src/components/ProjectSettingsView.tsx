@@ -113,6 +113,7 @@ export default function ProjectSettingsView({
   const [editingDocVisibilityUserIds, setEditingDocVisibilityUserIds] = useState<number[]>([]);
   const [revealedMap, setRevealedMap] = useState<Record<number, { secret: string; password: string }>>({});
   const [editingCredentialId, setEditingCredentialId] = useState<number | null>(null);
+  const [credentialFormOpen, setCredentialFormOpen] = useState(false);
   const [credentialName, setCredentialName] = useState("");
   const [credentialType, setCredentialType] = useState<(typeof CREDENTIAL_TYPE_OPTIONS)[number]>("logins");
   const [credentialUrl, setCredentialUrl] = useState("");
@@ -254,6 +255,7 @@ export default function ProjectSettingsView({
 
   const resetCredentialForm = () => {
     setEditingCredentialId(null);
+    setCredentialFormOpen(false);
     setCredentialName("");
     setCredentialType("logins");
     setCredentialUrl("");
@@ -270,6 +272,7 @@ export default function ProjectSettingsView({
   };
 
   const beginEditCredential = (row: ProjectCredential) => {
+    setCredentialFormOpen(true);
     setEditingCredentialId(row.id);
     setCredentialName(row.name);
     const normalized = String(row.type ?? "").trim().toLowerCase();
@@ -735,7 +738,8 @@ export default function ProjectSettingsView({
           </TabsContent>
 
           <TabsContent value="credentials">
-            <div className="grid gap-4 lg:grid-cols-2">
+            <div className={credentialFormOpen ? "grid gap-4 lg:grid-cols-2" : "grid gap-4"}>
+              {credentialFormOpen ? (
               <Card>
                 <CardHeader>
                   <CardTitle>{editingCredentialId ? "Edit Credential" : "New Credential"}</CardTitle>
@@ -905,11 +909,45 @@ export default function ProjectSettingsView({
                   </div>
                 </CardContent>
               </Card>
+              ) : null}
 
               <Card>
                 <CardHeader>
-                  <CardTitle>Stored Credentials</CardTitle>
-                  <CardDescription>Only credentials you are allowed to view are listed here.</CardDescription>
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <CardTitle>Stored Credentials</CardTitle>
+                      <CardDescription>Only credentials you are allowed to view are listed here.</CardDescription>
+                    </div>
+                    {canManage ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => {
+                          if (credentialFormOpen && editingCredentialId == null) {
+                            setCredentialFormOpen(false);
+                          } else {
+                            setCredentialFormOpen(true);
+                            setEditingCredentialId(null);
+                            setCredentialName("");
+                            setCredentialType("logins");
+                            setCredentialUrl("");
+                            setCredentialUsername("");
+                            setCredentialHost("");
+                            setCredentialPort("");
+                            setCredentialDatabase("");
+                            setCredentialNotes("");
+                            setCredentialPassword("");
+                            setCredentialSecret("");
+                            setVisibilityMode("roles");
+                            setVisibilityRoles(["admin", "manager"]);
+                            setVisibilityUserIds([]);
+                          }
+                        }}
+                      >
+                        {credentialFormOpen && editingCredentialId == null ? "Close" : "Add new credential"}
+                      </Button>
+                    ) : null}
+                  </div>
                 </CardHeader>
                 <CardContent className="space-y-2">
                   {(credentialsQuery.data ?? []).map((c) => (
