@@ -84,7 +84,7 @@ export default function ProjectSettingsView({
   const { user } = useAuth();
   const projectId = Number(project.id);
   const isOwner = project.ownerId != null && String(project.ownerId) === String(user?.id);
-  const canManage = currentUserRole === "admin" || currentUserRole === "manager" || isOwner;
+  const canManage = currentUserRole === "admin" || isOwner;
 
   const [notes, setNotes] = useState("");
   const [importantLinksText, setImportantLinksText] = useState("");

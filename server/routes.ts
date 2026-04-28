@@ -239,7 +239,7 @@ function canManageProjectSettings(
   project: Project,
 ): boolean {
   const role = currentUser.role ?? "";
-  if (role === "admin" || role === "manager") return true;
+  if (role === "admin") return true;
   return project.ownerId != null && Number(project.ownerId) === Number(currentUser.id);
 }
 
