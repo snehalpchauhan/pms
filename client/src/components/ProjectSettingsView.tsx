@@ -19,6 +19,15 @@ type ProjectSettingsDto = {
   settings: Record<string, any>;
 };
 
+type ProjectRepositoryItem = {
+  id: string;
+  name: string;
+  provider: string;
+  repoUrl: string;
+  defaultBranch: string;
+  deployNotes: string;
+};
+
 type ProjectDocument = {
   id: number;
   projectId: number;
@@ -97,6 +106,10 @@ export default function ProjectSettingsView({
 
   const [notes, setNotes] = useState("");
   const [importantLinksText, setImportantLinksText] = useState("");
+  const [repositories, setRepositories] = useState<ProjectRepositoryItem[]>([]);
+  const [repoFormOpen, setRepoFormOpen] = useState(false);
+  const [editingRepoId, setEditingRepoId] = useState<string | null>(null);
+  const [repoName, setRepoName] = useState("");
   const [repoProvider, setRepoProvider] = useState("");
   const [repoUrl, setRepoUrl] = useState("");
   const [defaultBranch, setDefaultBranch] = useState("");
@@ -171,13 +184,21 @@ export default function ProjectSettingsView({
   useEffect(() => {
     const settings = settingsQuery.data?.settings ?? {};
     const general = settings.general ?? {};
-    const repo = settings.repository ?? {};
+    const repoListRaw = Array.isArray(settings.repositories) ? settings.repositories : [];
+    const repoLegacy = settings.repository && typeof settings.repository === "object" ? [settings.repository] : [];
+    const merged = [...repoListRaw, ...repoLegacy]
+      .map((r: any, idx: number) => ({
+        id: String(r?.id ?? `repo-${idx + 1}`),
+        name: String(r?.name ?? ""),
+        provider: String(r?.provider ?? ""),
+        repoUrl: String(r?.repoUrl ?? ""),
+        defaultBranch: String(r?.defaultBranch ?? ""),
+        deployNotes: String(r?.deployNotes ?? ""),
+      }))
+      .filter((r: ProjectRepositoryItem) => r.name || r.repoUrl || r.provider || r.defaultBranch || r.deployNotes);
     setNotes(String(general.notes ?? ""));
     setImportantLinksText(Array.isArray(general.importantLinks) ? general.importantLinks.join("\n") : "");
-    setRepoProvider(String(repo.provider ?? ""));
-    setRepoUrl(String(repo.repoUrl ?? ""));
-    setDefaultBranch(String(repo.defaultBranch ?? ""));
-    setDeployNotes(String(repo.deployNotes ?? ""));
+    setRepositories(merged);
   }, [settingsQuery.dataUpdatedAt]);
 
   const saveSettingsMutation = useMutation({
@@ -189,11 +210,19 @@ export default function ProjectSettingsView({
             importantLinks: parseLines(importantLinksText),
           },
           repository: {
-            provider: repoProvider.trim(),
-            repoUrl: repoUrl.trim(),
-            defaultBranch: defaultBranch.trim(),
-            deployNotes: deployNotes.trim(),
+            provider: repositories[0]?.provider ?? "",
+            repoUrl: repositories[0]?.repoUrl ?? "",
+            defaultBranch: repositories[0]?.defaultBranch ?? "",
+            deployNotes: repositories[0]?.deployNotes ?? "",
           },
+          repositories: repositories.map((r) => ({
+            id: r.id,
+            name: r.name.trim(),
+            provider: r.provider.trim(),
+            repoUrl: r.repoUrl.trim(),
+            defaultBranch: r.defaultBranch.trim(),
+            deployNotes: r.deployNotes.trim(),
+          })),
         },
       });
     },
@@ -461,6 +490,60 @@ export default function ProjectSettingsView({
     cancelEditDocumentAccess();
   };
 
+  const resetRepoForm = () => {
+    setRepoFormOpen(false);
+    setEditingRepoId(null);
+    setRepoName("");
+    setRepoProvider("");
+    setRepoUrl("");
+    setDefaultBranch("");
+    setDeployNotes("");
+  };
+
+  const openAddRepoForm = () => {
+    setRepoFormOpen(true);
+    setEditingRepoId(null);
+    setRepoName("");
+    setRepoProvider("");
+    setRepoUrl("");
+    setDefaultBranch("");
+    setDeployNotes("");
+  };
+
+  const openEditRepoForm = (repo: ProjectRepositoryItem) => {
+    setRepoFormOpen(true);
+    setEditingRepoId(repo.id);
+    setRepoName(repo.name);
+    setRepoProvider(repo.provider);
+    setRepoUrl(repo.repoUrl);
+    setDefaultBranch(repo.defaultBranch);
+    setDeployNotes(repo.deployNotes);
+  };
+
+  const saveRepoToLocalList = () => {
+    if (!repoName.trim()) {
+      toast({ title: "Repository name is required", variant: "destructive" });
+      return;
+    }
+    const row: ProjectRepositoryItem = {
+      id: editingRepoId ?? `repo-${Date.now()}`,
+      name: repoName.trim(),
+      provider: repoProvider.trim(),
+      repoUrl: repoUrl.trim(),
+      defaultBranch: defaultBranch.trim(),
+      deployNotes: deployNotes.trim(),
+    };
+    setRepositories((prev) => {
+      if (editingRepoId) return prev.map((p) => (p.id === editingRepoId ? row : p));
+      return [row, ...prev];
+    });
+    resetRepoForm();
+  };
+
+  const deleteRepoFromLocalList = (id: string) => {
+    setRepositories((prev) => prev.filter((r) => r.id !== id));
+  };
+
   return (
     <div className="h-full overflow-auto p-6">
       <div className="max-w-5xl mx-auto space-y-4">
@@ -510,35 +593,94 @@ export default function ProjectSettingsView({
           <TabsContent value="repository">
             <Card>
               <CardHeader>
-                <CardTitle>Repository</CardTitle>
-                <CardDescription>Git provider and deployment context.</CardDescription>
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <CardTitle>Repositories</CardTitle>
+                    <CardDescription>Project can have multiple repositories.</CardDescription>
+                  </div>
+                  {canManage ? (
+                    <Button type="button" size="sm" onClick={openAddRepoForm}>
+                      Add repository
+                    </Button>
+                  ) : null}
+                </div>
               </CardHeader>
               <CardContent className="space-y-3">
-                <div className="grid gap-3 md:grid-cols-2">
-                  <div className="space-y-1">
-                    <Label>Provider</Label>
-                    <Input value={repoProvider} onChange={(e) => setRepoProvider(e.target.value)} placeholder="GitHub / GitLab" />
+                {repositories.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No repositories added yet.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {repositories.map((repo) => (
+                      <div key={repo.id} className="rounded-md border p-3 space-y-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="font-medium">{repo.name}</p>
+                          {canManage ? (
+                            <div className="flex items-center gap-1">
+                              <Button type="button" size="sm" variant="outline" onClick={() => openEditRepoForm(repo)}>
+                                Edit
+                              </Button>
+                              <Button type="button" size="sm" variant="ghost" onClick={() => deleteRepoFromLocalList(repo.id)}>
+                                <Trash2 className="h-4 w-4 mr-1" />
+                                Delete
+                              </Button>
+                            </div>
+                          ) : null}
+                        </div>
+                        {repo.provider ? <p className="text-xs text-muted-foreground">Provider: {repo.provider}</p> : null}
+                        {repo.defaultBranch ? <p className="text-xs text-muted-foreground">Branch: {repo.defaultBranch}</p> : null}
+                        {repo.repoUrl ? (
+                          <a href={repo.repoUrl} target="_blank" rel="noreferrer" className="text-xs underline break-all">
+                            {repo.repoUrl}
+                          </a>
+                        ) : null}
+                      </div>
+                    ))}
                   </div>
-                  <div className="space-y-1">
-                    <Label>Default branch</Label>
-                    <Input value={defaultBranch} onChange={(e) => setDefaultBranch(e.target.value)} placeholder="main" />
+                )}
+
+                {repoFormOpen ? (
+                  <div className="rounded-md border p-3 space-y-3">
+                    <p className="text-sm font-medium">{editingRepoId ? "Edit repository" : "New repository"}</p>
+                    <div className="space-y-1">
+                      <Label>Repository name</Label>
+                      <Input value={repoName} onChange={(e) => setRepoName(e.target.value)} placeholder="Frontend App / API Repo" />
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <div className="space-y-1">
+                        <Label>Provider</Label>
+                        <Input value={repoProvider} onChange={(e) => setRepoProvider(e.target.value)} placeholder="GitHub / GitLab / Bitbucket" />
+                      </div>
+                      <div className="space-y-1">
+                        <Label>Default branch</Label>
+                        <Input value={defaultBranch} onChange={(e) => setDefaultBranch(e.target.value)} placeholder="main" />
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Repository URL</Label>
+                      <Input value={repoUrl} onChange={(e) => setRepoUrl(e.target.value)} placeholder="https://github.com/org/repo" />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Deploy notes</Label>
+                      <Textarea value={deployNotes} onChange={(e) => setDeployNotes(e.target.value)} rows={4} />
+                    </div>
+                    <div className="flex gap-2">
+                      <Button type="button" onClick={saveRepoToLocalList}>
+                        {editingRepoId ? "Update repo" : "Add repo"}
+                      </Button>
+                      <Button type="button" variant="outline" onClick={resetRepoForm}>
+                        Cancel
+                      </Button>
+                    </div>
                   </div>
-                </div>
-                <div className="space-y-1">
-                  <Label>Repository URL</Label>
-                  <Input value={repoUrl} onChange={(e) => setRepoUrl(e.target.value)} placeholder="https://github.com/org/repo" />
-                </div>
-                <div className="space-y-1">
-                  <Label>Deploy notes</Label>
-                  <Textarea value={deployNotes} onChange={(e) => setDeployNotes(e.target.value)} rows={5} />
-                </div>
+                ) : null}
+
                 <div>
                   <Button
                     type="button"
                     disabled={!canManage || saveSettingsMutation.isPending}
                     onClick={() => saveSettingsMutation.mutate()}
                   >
-                    Save repository info
+                    Save repository changes
                   </Button>
                 </div>
               </CardContent>
