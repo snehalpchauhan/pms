@@ -6,7 +6,7 @@ import TaskListView from "./TaskListView";
 import CalendarView from "./CalendarView";
 import { FolderKanban, ListTodo, Filter, Calendar } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import {
     getPersistedTaskId,
     parseTaskTab,
@@ -16,9 +16,13 @@ import {
 } from "@/lib/workspacePersistence";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { TaskDetailPage } from "./TaskDetailPage";
-import { isPast, isToday } from "date-fns";
+import { endOfDay, isPast, isToday, startOfDay } from "date-fns";
 import type { ClientPermissions } from "@/App";
 import { useQuery } from "@tanstack/react-query";
+import { useAppData } from "@/hooks/useAppData";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
     DEFAULT_TASK_MARK_COMPLETE_STATUS,
     parseWorkflowColumnId,
@@ -33,6 +37,17 @@ interface ProjectTasksViewProps {
     onNotificationFocusConsumed?: () => void;
 }
 
+type AdvancedTaskFilters = {
+    assignedTo: string;
+    createdBy: string;
+    createdFrom: string;
+    createdTo: string;
+    dueFrom: string;
+    dueTo: string;
+    priority: string;
+    status: string;
+};
+
 export default function ProjectTasksView({
     project,
     tasks,
@@ -41,9 +56,20 @@ export default function ProjectTasksView({
     onNotificationFocusConsumed,
 }: ProjectTasksViewProps) {
     const { user } = useAuth();
+    const { users } = useAppData();
     const currentUserId = user ? String(user.id) : "";
     const [taskTab, setTaskTab] = useState<TaskWorkspaceTab>(() => readTaskWorkspaceSnapshot().taskTab);
     const [filter, setFilter] = useState(() => readTaskWorkspaceSnapshot().taskFilter);
+    const [advancedFilters, setAdvancedFilters] = useState<AdvancedTaskFilters>({
+        assignedTo: "all",
+        createdBy: "all",
+        createdFrom: "",
+        createdTo: "",
+        dueFrom: "",
+        dueTo: "",
+        priority: "all",
+        status: "all",
+    });
     const [selectedTask, setSelectedTask] = useState<Task | null>(null);
     const prevProjectIdRef = useRef<string | null>(null);
 
@@ -138,8 +164,67 @@ export default function ProjectTasksView({
         if (filter === "completed") {
             return String(t.status) === String(resolvedCompleteColumnId);
         }
+        if (advancedFilters.assignedTo !== "all" && !t.assignees.includes(advancedFilters.assignedTo)) {
+            return false;
+        }
+        if (advancedFilters.createdBy !== "all" && String(t.ownerId ?? "") !== advancedFilters.createdBy) {
+            return false;
+        }
+        if (advancedFilters.priority !== "all" && String(t.priority) !== advancedFilters.priority) {
+            return false;
+        }
+        if (advancedFilters.status !== "all" && String(t.status) !== advancedFilters.status) {
+            return false;
+        }
+        if (advancedFilters.createdFrom || advancedFilters.createdTo) {
+            if (!t.createdAt) return false;
+            const createdAt = new Date(t.createdAt);
+            if (Number.isNaN(createdAt.getTime())) return false;
+            if (advancedFilters.createdFrom) {
+                const createdFrom = startOfDay(new Date(advancedFilters.createdFrom));
+                if (createdAt < createdFrom) return false;
+            }
+            if (advancedFilters.createdTo) {
+                const createdTo = endOfDay(new Date(advancedFilters.createdTo));
+                if (createdAt > createdTo) return false;
+            }
+        }
+        if (advancedFilters.dueFrom || advancedFilters.dueTo) {
+            if (!t.dueDate) return false;
+            const dueDate = new Date(t.dueDate);
+            if (Number.isNaN(dueDate.getTime())) return false;
+            if (advancedFilters.dueFrom) {
+                const dueFrom = startOfDay(new Date(advancedFilters.dueFrom));
+                if (dueDate < dueFrom) return false;
+            }
+            if (advancedFilters.dueTo) {
+                const dueTo = endOfDay(new Date(advancedFilters.dueTo));
+                if (dueDate > dueTo) return false;
+            }
+        }
         return true;
     });
+
+    const assignableUsers = useMemo(
+        () =>
+            Object.values(users)
+                .filter((u) => u && u.id != null)
+                .sort((a, b) => a.name.localeCompare(b.name)),
+        [users],
+    );
+
+    const activeAdvancedFilterCount = useMemo(() => {
+        let count = 0;
+        if (advancedFilters.assignedTo !== "all") count += 1;
+        if (advancedFilters.createdBy !== "all") count += 1;
+        if (advancedFilters.priority !== "all") count += 1;
+        if (advancedFilters.status !== "all") count += 1;
+        if (advancedFilters.createdFrom) count += 1;
+        if (advancedFilters.createdTo) count += 1;
+        if (advancedFilters.dueFrom) count += 1;
+        if (advancedFilters.dueTo) count += 1;
+        return count;
+    }, [advancedFilters]);
 
     const handleTaskTabChange = (v: string) => {
         const tab = parseTaskTab(v);
@@ -188,6 +273,172 @@ export default function ProjectTasksView({
                                 <SelectItem value="completed">Completed</SelectItem>
                             </SelectContent>
                         </Select>
+                        <Popover>
+                            <PopoverTrigger asChild>
+                                <Button variant="outline" className="h-9 text-xs">
+                                    <Filter className="w-3.5 h-3.5 mr-2" />
+                                    Advanced
+                                    {activeAdvancedFilterCount > 0 ? ` (${activeAdvancedFilterCount})` : ""}
+                                </Button>
+                            </PopoverTrigger>
+                            <PopoverContent align="end" className="w-[360px] p-4 space-y-4">
+                                <div className="space-y-1">
+                                    <h4 className="text-sm font-semibold">Advanced filters</h4>
+                                    <p className="text-xs text-muted-foreground">
+                                        Applies to board, list, and calendar views.
+                                    </p>
+                                </div>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div className="space-y-1.5">
+                                        <Label className="text-xs">Assigned to</Label>
+                                        <Select
+                                            value={advancedFilters.assignedTo}
+                                            onValueChange={(v) =>
+                                                setAdvancedFilters((prev) => ({ ...prev, assignedTo: v }))
+                                            }
+                                        >
+                                            <SelectTrigger className="h-8 text-xs">
+                                                <SelectValue placeholder="Anyone" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="all">Anyone</SelectItem>
+                                                {assignableUsers.map((u) => (
+                                                    <SelectItem key={String(u.id)} value={String(u.id)}>
+                                                        {u.name}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <Label className="text-xs">Created by</Label>
+                                        <Select
+                                            value={advancedFilters.createdBy}
+                                            onValueChange={(v) =>
+                                                setAdvancedFilters((prev) => ({ ...prev, createdBy: v }))
+                                            }
+                                        >
+                                            <SelectTrigger className="h-8 text-xs">
+                                                <SelectValue placeholder="Anyone" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="all">Anyone</SelectItem>
+                                                {assignableUsers.map((u) => (
+                                                    <SelectItem key={`creator-${String(u.id)}`} value={String(u.id)}>
+                                                        {u.name}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <Label className="text-xs">Priority</Label>
+                                        <Select
+                                            value={advancedFilters.priority}
+                                            onValueChange={(v) =>
+                                                setAdvancedFilters((prev) => ({ ...prev, priority: v }))
+                                            }
+                                        >
+                                            <SelectTrigger className="h-8 text-xs">
+                                                <SelectValue placeholder="All" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="all">All</SelectItem>
+                                                <SelectItem value="low">Low</SelectItem>
+                                                <SelectItem value="medium">Medium</SelectItem>
+                                                <SelectItem value="high">High</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <Label className="text-xs">Status</Label>
+                                        <Select
+                                            value={advancedFilters.status}
+                                            onValueChange={(v) =>
+                                                setAdvancedFilters((prev) => ({ ...prev, status: v }))
+                                            }
+                                        >
+                                            <SelectTrigger className="h-8 text-xs">
+                                                <SelectValue placeholder="All" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="all">All</SelectItem>
+                                                {project.columns.map((c) => (
+                                                    <SelectItem key={c.id} value={c.id}>
+                                                        {c.title}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <Label className="text-xs">Created from</Label>
+                                        <Input
+                                            type="date"
+                                            value={advancedFilters.createdFrom}
+                                            onChange={(e) =>
+                                                setAdvancedFilters((prev) => ({ ...prev, createdFrom: e.target.value }))
+                                            }
+                                            className="h-8 text-xs"
+                                        />
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <Label className="text-xs">Created to</Label>
+                                        <Input
+                                            type="date"
+                                            value={advancedFilters.createdTo}
+                                            onChange={(e) =>
+                                                setAdvancedFilters((prev) => ({ ...prev, createdTo: e.target.value }))
+                                            }
+                                            className="h-8 text-xs"
+                                        />
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <Label className="text-xs">Due from</Label>
+                                        <Input
+                                            type="date"
+                                            value={advancedFilters.dueFrom}
+                                            onChange={(e) =>
+                                                setAdvancedFilters((prev) => ({ ...prev, dueFrom: e.target.value }))
+                                            }
+                                            className="h-8 text-xs"
+                                        />
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <Label className="text-xs">Due to</Label>
+                                        <Input
+                                            type="date"
+                                            value={advancedFilters.dueTo}
+                                            onChange={(e) =>
+                                                setAdvancedFilters((prev) => ({ ...prev, dueTo: e.target.value }))
+                                            }
+                                            className="h-8 text-xs"
+                                        />
+                                    </div>
+                                </div>
+                                <div className="flex justify-end">
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        className="h-8 text-xs"
+                                        onClick={() =>
+                                            setAdvancedFilters({
+                                                assignedTo: "all",
+                                                createdBy: "all",
+                                                createdFrom: "",
+                                                createdTo: "",
+                                                dueFrom: "",
+                                                dueTo: "",
+                                                priority: "all",
+                                                status: "all",
+                                            })
+                                        }
+                                    >
+                                        Reset filters
+                                    </Button>
+                                </div>
+                            </PopoverContent>
+                        </Popover>
                     </div>
                 </div>
 
