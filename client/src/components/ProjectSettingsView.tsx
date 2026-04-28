@@ -55,6 +55,14 @@ const VISIBILITY_OPTIONS = [
 const ROLE_OPTIONS = ["admin", "manager", "employee", "client"] as const;
 const CREDENTIAL_TYPE_OPTIONS = ["logins", "tokens", "database", "other"] as const;
 
+function normalizeCredentialType(raw: unknown): (typeof CREDENTIAL_TYPE_OPTIONS)[number] {
+  const t = String(raw ?? "").trim().toLowerCase();
+  if ((CREDENTIAL_TYPE_OPTIONS as readonly string[]).includes(t)) {
+    return t as (typeof CREDENTIAL_TYPE_OPTIONS)[number];
+  }
+  return "other";
+}
+
 function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -890,14 +898,18 @@ export default function ProjectSettingsView({
                 <CardContent className="space-y-2">
                   {(credentialsQuery.data ?? []).map((c) => (
                     <div key={c.id} className="rounded-md border p-3 space-y-2">
+                      {(() => {
+                        const cardType = normalizeCredentialType(c.type);
+                        return (
+                          <>
                       <div className="flex items-center gap-2">
                         <p className="font-medium">{c.name}</p>
-                        <Badge variant="outline">{c.type}</Badge>
+                        <Badge variant="outline" className="capitalize">{cardType}</Badge>
                         <Badge variant="secondary" className="ml-auto text-[10px]">
                           {c.visibilityMode}
                         </Badge>
                       </div>
-                      {"url" in c.metadata && String(c.metadata.url ?? "").trim() ? (
+                      {(cardType === "logins" || cardType === "tokens") && "url" in c.metadata && String(c.metadata.url ?? "").trim() ? (
                         <div className="flex items-center gap-2 text-xs">
                           <span className="text-muted-foreground w-16 shrink-0">URL</span>
                           <span className="font-mono break-all flex-1">{String(c.metadata.url)}</span>
@@ -912,7 +924,7 @@ export default function ProjectSettingsView({
                           </Button>
                         </div>
                       ) : null}
-                      {"username" in c.metadata && String(c.metadata.username ?? "").trim() ? (
+                      {cardType === "logins" && "username" in c.metadata && String(c.metadata.username ?? "").trim() ? (
                         <div className="flex items-center gap-2 text-xs">
                           <span className="text-muted-foreground w-16 shrink-0">User</span>
                           <span className="font-mono break-all flex-1">{String(c.metadata.username)}</span>
@@ -927,9 +939,9 @@ export default function ProjectSettingsView({
                           </Button>
                         </div>
                       ) : null}
-                      {"host" in c.metadata && String(c.metadata.host ?? "").trim() ? (
+                      {cardType === "database" && "host" in c.metadata && String(c.metadata.host ?? "").trim() ? (
                         <div className="flex items-center gap-2 text-xs">
-                          <span className="text-muted-foreground w-16 shrink-0">Host</span>
+                          <span className="text-muted-foreground w-16 shrink-0">DB Host</span>
                           <span className="font-mono break-all flex-1">{String(c.metadata.host)}</span>
                           <Button
                             variant="ghost"
@@ -942,7 +954,7 @@ export default function ProjectSettingsView({
                           </Button>
                         </div>
                       ) : null}
-                      {"database" in c.metadata && String(c.metadata.database ?? "").trim() ? (
+                      {cardType === "database" && "database" in c.metadata && String(c.metadata.database ?? "").trim() ? (
                         <div className="flex items-center gap-2 text-xs">
                           <span className="text-muted-foreground w-16 shrink-0">DB Name</span>
                           <span className="font-mono break-all flex-1">{String(c.metadata.database)}</span>
@@ -957,7 +969,7 @@ export default function ProjectSettingsView({
                           </Button>
                         </div>
                       ) : null}
-                      {"port" in c.metadata && c.metadata.port != null && String(c.metadata.port).trim() ? (
+                      {cardType === "database" && "port" in c.metadata && c.metadata.port != null && String(c.metadata.port).trim() ? (
                         <div className="flex items-center gap-2 text-xs">
                           <span className="text-muted-foreground w-16 shrink-0">Port</span>
                           <span className="font-mono break-all flex-1">{String(c.metadata.port)}</span>
@@ -973,31 +985,66 @@ export default function ProjectSettingsView({
                         </div>
                       ) : null}
 
-                      <div className="rounded bg-muted/40 px-2 py-1 text-xs font-mono break-all">
-                        {revealedMap[c.id]
-                          ? `password=${revealedMap[c.id].password || "(empty)"} | secret=${revealedMap[c.id].secret || "(empty)"}`
-                          : c.maskedSecret}
-                      </div>
+                      {(cardType === "other" && "notes" in c.metadata && String(c.metadata.notes ?? "").trim()) ? (
+                        <div className="space-y-1">
+                          <p className="text-xs text-muted-foreground">Details</p>
+                          <div className="rounded bg-muted/40 px-2 py-1 text-xs whitespace-pre-wrap break-words">
+                            {String(c.metadata.notes)}
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            type="button"
+                            onClick={() => void copyToClipboard("Details", String(c.metadata.notes))}
+                          >
+                            <Copy className="h-3.5 w-3.5 mr-1" />
+                            Copy details
+                          </Button>
+                        </div>
+                      ) : null}
+
+                      {(cardType === "logins" || cardType === "database") ? (
+                        <div className="space-y-1">
+                          <p className="text-xs text-muted-foreground">Password</p>
+                          <div className="rounded bg-muted/40 px-2 py-1 text-xs font-mono break-all">
+                            {revealedMap[c.id] ? (revealedMap[c.id].password || "(empty)") : c.maskedSecret}
+                          </div>
+                        </div>
+                      ) : null}
+
+                      {cardType === "tokens" ? (
+                        <div className="space-y-1">
+                          <p className="text-xs text-muted-foreground">Token</p>
+                          <div className="rounded bg-muted/40 px-2 py-1 text-xs font-mono break-all">
+                            {revealedMap[c.id] ? (revealedMap[c.id].secret || "(empty)") : c.maskedSecret}
+                          </div>
+                        </div>
+                      ) : null}
+
                       {revealedMap[c.id] ? (
                         <div className="flex flex-wrap gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            type="button"
-                            onClick={() => void copyToClipboard("Password", revealedMap[c.id].password || "")}
-                          >
-                            <Copy className="h-3.5 w-3.5 mr-1" />
-                            Copy password
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            type="button"
-                            onClick={() => void copyToClipboard("Secret", revealedMap[c.id].secret || "")}
-                          >
-                            <Copy className="h-3.5 w-3.5 mr-1" />
-                            Copy secret
-                          </Button>
+                          {(cardType === "logins" || cardType === "database") ? (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              type="button"
+                              onClick={() => void copyToClipboard("Password", revealedMap[c.id].password || "")}
+                            >
+                              <Copy className="h-3.5 w-3.5 mr-1" />
+                              Copy password
+                            </Button>
+                          ) : null}
+                          {cardType === "tokens" ? (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              type="button"
+                              onClick={() => void copyToClipboard("Token", revealedMap[c.id].secret || "")}
+                            >
+                              <Copy className="h-3.5 w-3.5 mr-1" />
+                              Copy token
+                            </Button>
+                          ) : null}
                         </div>
                       ) : null}
                       <div className="flex gap-2">
@@ -1033,6 +1080,9 @@ export default function ProjectSettingsView({
                           </Button>
                         ) : null}
                       </div>
+                          </>
+                        );
+                      })()}
                     </div>
                   ))}
                 </CardContent>
