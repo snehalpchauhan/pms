@@ -530,6 +530,8 @@ export function TaskDetailPage({
   const [tags, setTags] = useState<string[]>(task.tags || []);
   const [newTagInput, setNewTagInput] = useState("");
   const [tagPopoverOpen, setTagPopoverOpen] = useState(false);
+  const [assigneePopoverOpen, setAssigneePopoverOpen] = useState(false);
+  const [assigneeSearch, setAssigneeSearch] = useState("");
   const [uploadingAttachment, setUploadingAttachment] = useState(false);
   const [statusSaving, setStatusSaving] = useState(false);
   const [priority, setPriority] = useState<string>(() => coerceTaskPriority(task.priority));
@@ -641,6 +643,12 @@ export function TaskDetailPage({
       .filter((m) => !assignees.includes(String(m.id)))
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [projectMembers, assignees]);
+
+  const filteredAssignableProjectMembers = useMemo(() => {
+    const q = assigneeSearch.trim().toLowerCase();
+    if (!q) return assignableProjectMembers;
+    return assignableProjectMembers.filter((m) => String(m.name || "").toLowerCase().includes(q));
+  }, [assignableProjectMembers, assigneeSearch]);
 
   const { data: liveTask } = useQuery({
     queryKey: ["/api/tasks", task.id],
@@ -1589,7 +1597,13 @@ export function TaskDetailPage({
                                     ) : null;
                                 })}
                                 {canEditAssignees && (
-                                    <Popover>
+                                    <Popover
+                                      open={assigneePopoverOpen}
+                                      onOpenChange={(open) => {
+                                        setAssigneePopoverOpen(open);
+                                        if (!open) setAssigneeSearch("");
+                                      }}
+                                    >
                                         <PopoverTrigger asChild>
                                             <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full border border-dashed border-border/50">
                                                 <Plus className="w-3 h-3" />
@@ -1601,29 +1615,41 @@ export function TaskDetailPage({
                                                 <p className="px-2 pb-1 text-[10px] text-muted-foreground">
                                                   Only people on this project can be assigned.
                                                 </p>
-                                                {assignableProjectMembers.map((m) => (
-                                                    <button 
-                                                        key={m.id}
-                                                        type="button"
-                                                        onClick={() => void toggleAssignee(String(m.id))}
-                                                        className="flex items-center gap-2 w-full px-2 py-1.5 hover:bg-muted rounded-md text-sm transition-colors"
-                                                    >
-                                                        <Avatar className="h-6 w-6">
-                                                            <AvatarImage src={m.avatar?.trim() || undefined} />
-                                                            <AvatarFallback className="text-[10px]">
-                                                              {getUserInitials(m.name, undefined)}
-                                                            </AvatarFallback>
-                                                        </Avatar>
-                                                        <span>{m.name}</span>
-                                                    </button>
-                                                ))}
-                                                {assignableProjectMembers.length === 0 && (
+                                                <div className="px-2 pb-2">
+                                                  <Input
+                                                    value={assigneeSearch}
+                                                    onChange={(e) => setAssigneeSearch(e.target.value)}
+                                                    placeholder="Search members..."
+                                                    className="h-8 text-xs"
+                                                  />
+                                                </div>
+                                                <ScrollArea className="max-h-52 pr-1">
+                                                  {filteredAssignableProjectMembers.map((m) => (
+                                                      <button 
+                                                          key={m.id}
+                                                          type="button"
+                                                          onClick={() => void toggleAssignee(String(m.id))}
+                                                          className="flex items-center gap-2 w-full px-2 py-1.5 hover:bg-muted rounded-md text-sm transition-colors"
+                                                      >
+                                                          <Avatar className="h-6 w-6">
+                                                              <AvatarImage src={m.avatar?.trim() || undefined} />
+                                                              <AvatarFallback className="text-[10px]">
+                                                                {getUserInitials(m.name, undefined)}
+                                                              </AvatarFallback>
+                                                          </Avatar>
+                                                          <span className="truncate">{m.name}</span>
+                                                      </button>
+                                                  ))}
+                                                </ScrollArea>
+                                                {filteredAssignableProjectMembers.length === 0 && (
                                                     <div className="text-xs text-muted-foreground px-2 py-2 italic">
                                                       {projectMembersLoading
                                                         ? "Loading members…"
-                                                        : projectMembers.length === 0
-                                                          ? "No members on this project yet. Add them under Members & Access."
-                                                          : "Everyone on this project is already assigned."}
+                                                        : assignableProjectMembers.length === 0
+                                                          ? (projectMembers.length === 0
+                                                              ? "No members on this project yet. Add them under Members & Access."
+                                                              : "Everyone on this project is already assigned.")
+                                                          : "No member matches your search."}
                                                     </div>
                                                 )}
                                             </div>
