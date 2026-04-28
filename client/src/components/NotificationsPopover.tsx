@@ -23,8 +23,17 @@ interface Notification {
   meta?: Record<string, unknown>;
 }
 
+interface NotificationPreferences {
+  userId: number;
+  inAppEnabled: boolean;
+  emailEnabled: boolean;
+  mutedTypes: string[];
+}
+
 export function NotificationsPopover() {
   const [isOpen, setIsOpen] = useState(false);
+  const [onlyUnread, setOnlyUnread] = useState(false);
+  const [typeFilter, setTypeFilter] = useState<"all" | "task" | "comment" | "timecard" | "project" | "document" | "credential">("all");
   const { user } = useAuth();
 
   const notificationsQuery = useQuery<Notification[]>({
@@ -49,6 +58,16 @@ export function NotificationsPopover() {
     refetchInterval: 15_000,
   });
 
+  const preferencesQuery = useQuery<NotificationPreferences>({
+    queryKey: ["/api/notification-preferences"],
+    queryFn: async () => {
+      const res = await fetch("/api/notification-preferences", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load notification preferences");
+      return res.json();
+    },
+    enabled: Boolean(user?.id),
+  });
+
   const markReadMutation = useMutation({
     mutationFn: async (id: number) => {
       await apiRequest("PATCH", `/api/notifications/${id}/read`, {});
@@ -66,6 +85,16 @@ export function NotificationsPopover() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
       void queryClient.invalidateQueries({ queryKey: ["/api/notifications/unread-count"] });
+    },
+  });
+
+  const updatePrefsMutation = useMutation({
+    mutationFn: async (updates: Partial<Pick<NotificationPreferences, "inAppEnabled" | "emailEnabled">>) => {
+      const res = await apiRequest("PATCH", "/api/notification-preferences", updates);
+      return res.json();
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["/api/notification-preferences"] });
     },
   });
 
@@ -102,6 +131,7 @@ export function NotificationsPopover() {
   };
 
   const onNotificationClick = async (notification: Notification) => {
+    setIsOpen(false);
     if (!notification.readAt) {
       await markReadMutation.mutateAsync(notification.id);
     }
@@ -109,9 +139,22 @@ export function NotificationsPopover() {
   };
 
   const loading = notificationsQuery.isLoading || unreadQuery.isLoading;
-  const showEmpty = !loading && notifications.length === 0;
+  const filtered = useMemo(() => {
+    let arr = notifications.slice();
+    if (onlyUnread) arr = arr.filter((n) => !n.readAt);
+    if (typeFilter !== "all") arr = arr.filter((n) => n.entityType === typeFilter);
+    return arr;
+  }, [notifications, onlyUnread, typeFilter]);
+  const showEmpty = !loading && filtered.length === 0;
   const isBusy = markReadMutation.isPending || markAllReadMutation.isPending;
-  const ordered = useMemo(() => notifications.slice().sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt)), [notifications]);
+  const ordered = useMemo(() => filtered.slice().sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt)), [filtered]);
+  const grouped = useMemo(() => {
+    const today = new Date().toDateString();
+    return {
+      today: ordered.filter((n) => new Date(n.createdAt).toDateString() === today),
+      earlier: ordered.filter((n) => new Date(n.createdAt).toDateString() !== today),
+    };
+  }, [ordered]);
 
   return (
     <Popover open={isOpen} onOpenChange={setIsOpen}>
@@ -136,6 +179,38 @@ export function NotificationsPopover() {
             </button>
           )}
         </div>
+        <div className="px-3 py-2 border-b border-border/40 bg-background/60 space-y-2">
+          <div className="flex items-center gap-2">
+            <button
+              className={cn("text-[10px] px-2 py-1 rounded border", onlyUnread ? "border-primary text-primary" : "border-border text-muted-foreground")}
+              onClick={() => setOnlyUnread((v) => !v)}
+            >
+              Unread only
+            </button>
+            <select
+              value={typeFilter}
+              onChange={(e) => setTypeFilter(e.target.value as any)}
+              className="h-6 text-[10px] rounded border border-border bg-background px-2"
+            >
+              <option value="all">All types</option>
+              <option value="task">Tasks</option>
+              <option value="comment">Comments</option>
+              <option value="timecard">Timecards</option>
+              <option value="project">Projects</option>
+              <option value="document">Documents</option>
+              <option value="credential">Credentials</option>
+            </select>
+          </div>
+          <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+            <span>In-app</span>
+            <button
+              className={cn("px-2 py-0.5 rounded border", preferencesQuery.data?.inAppEnabled ? "border-primary text-primary" : "border-border")}
+              onClick={() => updatePrefsMutation.mutate({ inAppEnabled: !(preferencesQuery.data?.inAppEnabled ?? true) })}
+            >
+              {preferencesQuery.data?.inAppEnabled ? "On" : "Off"}
+            </button>
+          </div>
+        </div>
         <ScrollArea className="h-[300px]">
           {showEmpty ? (
             <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-4">
@@ -144,33 +219,70 @@ export function NotificationsPopover() {
             </div>
           ) : (
             <div className="divide-y divide-border/30">
-              {ordered.map((notification) => (
-                <div
-                  key={notification.id}
-                  onClick={() => void onNotificationClick(notification)}
-                  className={cn(
-                    "p-4 hover:bg-muted/30 transition-colors cursor-pointer relative group",
-                    !notification.readAt && "bg-muted/10",
-                  )}
-                >
-                  <div className="flex gap-3">
-                    <div className={cn("mt-1 shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-background border border-border/50", !notification.readAt && "border-primary/20 bg-primary/5")}>
-                      {getIcon(notification.type)}
-                    </div>
-                    <div className="flex-1 space-y-1">
-                      <div className="flex justify-between items-start">
-                        <p className={cn("text-sm font-medium leading-none", !notification.readAt ? "text-foreground" : "text-muted-foreground")}>
-                          {notification.title}
-                        </p>
-                        <span className="text-[10px] text-muted-foreground whitespace-nowrap ml-2">
-                          {formatDistanceToNow(new Date(notification.createdAt), { addSuffix: true })}
-                        </span>
+              {grouped.today.length > 0 && (
+                <div>
+                  <div className="px-4 py-2 text-[10px] uppercase tracking-wide text-muted-foreground bg-muted/20">Today</div>
+                  {grouped.today.map((notification) => (
+                    <div
+                      key={notification.id}
+                      onClick={() => void onNotificationClick(notification)}
+                      className={cn(
+                        "p-4 hover:bg-muted/30 transition-colors cursor-pointer relative group",
+                        !notification.readAt && "bg-muted/10",
+                      )}
+                    >
+                      <div className="flex gap-3">
+                        <div className={cn("mt-1 shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-background border border-border/50", !notification.readAt && "border-primary/20 bg-primary/5")}>
+                          {getIcon(notification.type)}
+                        </div>
+                        <div className="flex-1 space-y-1">
+                          <div className="flex justify-between items-start">
+                            <p className={cn("text-sm font-medium leading-none", !notification.readAt ? "text-foreground" : "text-muted-foreground")}>
+                              {notification.title}
+                            </p>
+                            <span className="text-[10px] text-muted-foreground whitespace-nowrap ml-2">
+                              {formatDistanceToNow(new Date(notification.createdAt), { addSuffix: true })}
+                            </span>
+                          </div>
+                          <p className="text-xs text-muted-foreground line-clamp-2">{notification.message}</p>
+                        </div>
                       </div>
-                      <p className="text-xs text-muted-foreground line-clamp-2">{notification.message}</p>
                     </div>
-                  </div>
+                  ))}
                 </div>
-              ))}
+              )}
+              {grouped.earlier.length > 0 && (
+                <div>
+                  <div className="px-4 py-2 text-[10px] uppercase tracking-wide text-muted-foreground bg-muted/20">Earlier</div>
+                  {grouped.earlier.map((notification) => (
+                    <div
+                      key={notification.id}
+                      onClick={() => void onNotificationClick(notification)}
+                      className={cn(
+                        "p-4 hover:bg-muted/30 transition-colors cursor-pointer relative group",
+                        !notification.readAt && "bg-muted/10",
+                      )}
+                    >
+                      <div className="flex gap-3">
+                        <div className={cn("mt-1 shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-background border border-border/50", !notification.readAt && "border-primary/20 bg-primary/5")}>
+                          {getIcon(notification.type)}
+                        </div>
+                        <div className="flex-1 space-y-1">
+                          <div className="flex justify-between items-start">
+                            <p className={cn("text-sm font-medium leading-none", !notification.readAt ? "text-foreground" : "text-muted-foreground")}>
+                              {notification.title}
+                            </p>
+                            <span className="text-[10px] text-muted-foreground whitespace-nowrap ml-2">
+                              {formatDistanceToNow(new Date(notification.createdAt), { addSuffix: true })}
+                            </span>
+                          </div>
+                          <p className="text-xs text-muted-foreground line-clamp-2">{notification.message}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </ScrollArea>

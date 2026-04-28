@@ -308,6 +308,9 @@ async function emitNotificationsForUsers(args: {
   const unique = Array.from(new Set(args.recipientUserIds.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0)));
   for (const userId of unique) {
     if (args.actorUserId != null && Number(args.actorUserId) === userId) continue;
+    const prefs = await storage.getNotificationPreferences(userId);
+    const muted = (prefs.mutedTypes ?? []).includes(args.type);
+    if (!prefs.inAppEnabled || muted) continue;
     await storage.createNotification({
       userId,
       type: args.type,
@@ -324,6 +327,12 @@ async function emitNotificationsForUsers(args: {
     notifyUserNotification(userId);
   }
 }
+
+const notificationPreferencesPatchSchema = z.object({
+  inAppEnabled: z.boolean().optional(),
+  emailEnabled: z.boolean().optional(),
+  mutedTypes: z.array(z.string().min(1).max(120)).optional(),
+});
 
 const MAX_CHAT_UPLOAD_BYTES = 3 * 1024 * 1024;
 const MAX_TASK_ATTACHMENT_BYTES = 8 * 1024 * 1024;
@@ -1124,6 +1133,19 @@ export async function registerRoutes(
     await storage.addProjectMember(projectId, newOwnerId);
     const updated = await storage.updateProject(projectId, { ownerId: newOwnerId });
     if (!updated) return res.status(404).json({ message: "Project not found" });
+    const members = await storage.getProjectMembers(projectId);
+    await emitNotificationsForUsers({
+      actorUserId: currentUser.id,
+      recipientUserIds: members.map((m) => m.id),
+      type: "project_owner_transferred",
+      title: "Project owner changed",
+      message: `Project owner for "${updated.name}" was changed.`,
+      entityType: "project",
+      entityId: projectId,
+      projectId,
+      priority: "high",
+      meta: { newOwnerId },
+    });
     res.json({ message: "Owner updated", ownerId: newOwnerId });
   });
 
@@ -1256,6 +1278,18 @@ export async function registerRoutes(
     const target = await storage.getUser(userId);
     if (!target) return res.status(404).json({ message: "User not found" });
     await storage.addProjectMember(projectId, userId);
+    const members = await storage.getProjectMembers(projectId);
+    await emitNotificationsForUsers({
+      actorUserId: currentUser.id,
+      recipientUserIds: members.map((m) => m.id),
+      type: "project_member_added",
+      title: "Project member added",
+      message: `${target.name} was added to "${projectRecord.name}".`,
+      entityType: "project",
+      entityId: projectId,
+      projectId,
+      meta: { addedUserId: userId },
+    });
     res.status(201).json({ message: "Member added" });
   });
 
@@ -1333,10 +1367,35 @@ export async function registerRoutes(
       if (!updated) return res.status(404).json({ message: "Project not found" });
 
       await storage.removeProjectMember(projectId, targetUserId);
+      const members = await storage.getProjectMembers(projectId);
+      await emitNotificationsForUsers({
+        actorUserId: currentUser.id,
+        recipientUserIds: members.map((m) => m.id),
+        type: "project_owner_transferred",
+        title: "Project owner changed",
+        message: `Project owner for "${updated.name}" was changed.`,
+        entityType: "project",
+        entityId: projectId,
+        projectId,
+        priority: "high",
+        meta: { newOwnerId, removedOwnerId: targetUserId },
+      });
       return res.json({ message: "Owner removed; ownership transferred", newOwnerId });
     }
 
     await storage.removeProjectMember(projectId, targetUserId);
+    const members = await storage.getProjectMembers(projectId);
+    await emitNotificationsForUsers({
+      actorUserId: currentUser.id,
+      recipientUserIds: members.map((m) => m.id),
+      type: "project_member_removed",
+      title: "Project member removed",
+      message: `${targetUser.name} was removed from "${projectRecord.name}".`,
+      entityType: "project",
+      entityId: projectId,
+      projectId,
+      meta: { removedUserId: targetUserId },
+    });
     res.json({ message: "Member removed" });
   });
 
@@ -1543,6 +1602,19 @@ export async function registerRoutes(
       createdByUserId: currentUser.id,
       updatedByUserId: currentUser.id,
     });
+    {
+      const members = await storage.getProjectMembers(projectId);
+      await emitNotificationsForUsers({
+        actorUserId: currentUser.id,
+        recipientUserIds: members.map((m) => m.id),
+        type: "project_credential_created",
+        title: "Credential created",
+        message: `${currentUser.name} created credential "${created.name}".`,
+        entityType: "credential",
+        entityId: created.id,
+        projectId,
+      });
+    }
     res.status(201).json({
       id: created.id,
       projectId: created.projectId,
@@ -1654,6 +1726,23 @@ export async function registerRoutes(
     }
     const updated = await storage.updateProjectCredential(credId, updates);
     if (!updated) return res.status(404).json({ message: "Credential not found" });
+    {
+      const members = await storage.getProjectMembers(projectId);
+      const visibilityChanged =
+        parsed.data.visibilityMode !== undefined ||
+        parsed.data.visibilityRoles !== undefined ||
+        parsed.data.visibilityUserIds !== undefined;
+      await emitNotificationsForUsers({
+        actorUserId: currentUser.id,
+        recipientUserIds: members.map((m) => m.id),
+        type: visibilityChanged ? "project_credential_visibility_changed" : "project_credential_updated",
+        title: visibilityChanged ? "Credential access changed" : "Credential updated",
+        message: `${currentUser.name} updated credential "${updated.name}".`,
+        entityType: "credential",
+        entityId: updated.id,
+        projectId,
+      });
+    }
     res.json({
       id: updated.id,
       projectId: updated.projectId,
@@ -1689,6 +1778,19 @@ export async function registerRoutes(
       return res.status(404).json({ message: "Credential not found" });
     }
     await storage.updateProjectCredential(credId, { deletedAt: new Date(), updatedByUserId: currentUser.id });
+    {
+      const members = await storage.getProjectMembers(projectId);
+      await emitNotificationsForUsers({
+        actorUserId: currentUser.id,
+        recipientUserIds: members.map((m) => m.id),
+        type: "project_credential_deleted",
+        title: "Credential deleted",
+        message: `${currentUser.name} deleted credential "${existing.name}".`,
+        entityType: "credential",
+        entityId: existing.id,
+        projectId,
+      });
+    }
     res.status(204).end();
   });
 
@@ -1725,6 +1827,20 @@ export async function registerRoutes(
       secret: String(payload.secret ?? ""),
       password: String(payload.password ?? ""),
     });
+    {
+      const admins = (await storage.getProjectMembers(projectId)).filter((m) => m.role === "admin" || m.role === "manager");
+      await emitNotificationsForUsers({
+        actorUserId: currentUser.id,
+        recipientUserIds: admins.map((m) => m.id),
+        type: "project_credential_revealed",
+        title: "Credential revealed",
+        message: `${currentUser.name} revealed credential "${existing.name}".`,
+        entityType: "credential",
+        entityId: existing.id,
+        projectId,
+        priority: "high",
+      });
+    }
   });
 
   app.get("/api/projects/:id/documents", requireAuth, async (req, res) => {
@@ -1761,6 +1877,19 @@ export async function registerRoutes(
         visibilityUserIds: sanitizeUserIdList(parsed.data.visibilityUserIds),
         createdByUserId: currentUser.id,
       });
+      {
+        const members = await storage.getProjectMembers(projectId);
+        await emitNotificationsForUsers({
+          actorUserId: currentUser.id,
+          recipientUserIds: members.map((m) => m.id),
+          type: "project_document_uploaded",
+          title: "Document uploaded",
+          message: `${currentUser.name} uploaded "${doc.name}".`,
+          entityType: "document",
+          entityId: doc.id,
+          projectId,
+        });
+      }
       res.status(201).json(doc);
     } catch (e: unknown) {
       return res.status(400).json({ message: e instanceof Error ? e.message : "Upload failed" });
@@ -1783,6 +1912,19 @@ export async function registerRoutes(
     if (!doc || doc.projectId !== projectId) return res.status(404).json({ message: "Document not found" });
     safeUnlinkProjectDocumentUrl(doc.url ?? null, uploadsDir);
     await storage.deleteProjectDocument(docId);
+    {
+      const members = await storage.getProjectMembers(projectId);
+      await emitNotificationsForUsers({
+        actorUserId: currentUser.id,
+        recipientUserIds: members.map((m) => m.id),
+        type: "project_document_deleted",
+        title: "Document deleted",
+        message: `${currentUser.name} deleted "${doc.name}".`,
+        entityType: "document",
+        entityId: doc.id,
+        projectId,
+      });
+    }
     res.status(204).end();
   });
 
@@ -1809,6 +1951,23 @@ export async function registerRoutes(
       ...(parsed.data.visibilityUserIds !== undefined ? { visibilityUserIds: sanitizeUserIdList(parsed.data.visibilityUserIds) } : {}),
     });
     if (!updated) return res.status(404).json({ message: "Document not found" });
+    {
+      const members = await storage.getProjectMembers(projectId);
+      const visibilityChanged =
+        parsed.data.visibilityMode !== undefined ||
+        parsed.data.visibilityRoles !== undefined ||
+        parsed.data.visibilityUserIds !== undefined;
+      await emitNotificationsForUsers({
+        actorUserId: currentUser.id,
+        recipientUserIds: members.map((m) => m.id),
+        type: visibilityChanged ? "project_document_visibility_changed" : "project_document_updated",
+        title: visibilityChanged ? "Document access changed" : "Document updated",
+        message: `${currentUser.name} updated "${updated.name}".`,
+        entityType: "document",
+        entityId: updated.id,
+        projectId,
+      });
+    }
     res.json(updated);
   });
 
@@ -3837,6 +3996,27 @@ export async function registerRoutes(
     await storage.markAllNotificationsRead(currentUser.id);
     notifyUserNotification(currentUser.id);
     res.json({ ok: true });
+  });
+
+  app.get("/api/notification-preferences", requireAuth, async (req, res) => {
+    const currentUser = req.user as any;
+    const prefs = await storage.getNotificationPreferences(currentUser.id);
+    res.json(prefs);
+  });
+
+  app.patch("/api/notification-preferences", requireAuth, async (req, res) => {
+    const currentUser = req.user as any;
+    const parsed = notificationPreferencesPatchSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: parsed.error.issues[0]?.message ?? "Invalid body" });
+    const mutedTypes = parsed.data.mutedTypes
+      ? Array.from(new Set(parsed.data.mutedTypes.map((t) => t.trim()).filter(Boolean)))
+      : undefined;
+    const prefs = await storage.upsertNotificationPreferences(currentUser.id, {
+      inAppEnabled: parsed.data.inAppEnabled,
+      emailEnabled: parsed.data.emailEnabled,
+      mutedTypes,
+    });
+    res.json(prefs);
   });
 
   return httpServer;

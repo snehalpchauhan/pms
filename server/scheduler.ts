@@ -11,6 +11,7 @@ import {
   sendDailyMissingTimecardEmails,
   sendWeeklyMissingTimecardEmails,
 } from "./jobs/timecardReminders";
+import { runTaskDueNotifications } from "./jobs/taskDueNotifications";
 import { storage } from "./storage";
 
 function env(name: string): string | undefined {
@@ -62,6 +63,7 @@ export async function startSchedulers(): Promise<void> {
   const digestAdminMonthly = truthy("TIME_DIGEST_ADMIN_MONTHLY_ENABLED");
   const digestEmployeeWeekly = truthy("TIME_DIGEST_EMPLOYEE_WEEKLY_ENABLED");
   const digestEmployeeMonthly = truthy("TIME_DIGEST_EMPLOYEE_MONTHLY_ENABLED");
+  const taskDueEnabled = truthy("TASK_DUE_NOTIFICATIONS_ENABLED");
 
   if (reminders) {
     /** Midnight each day in company TZ when set; weekend sends are no-ops inside jobs. */
@@ -200,6 +202,23 @@ export async function startSchedulers(): Promise<void> {
     console.log("[scheduler] TIME_DIGEST_EMPLOYEE_MONTHLY_ENABLED", { cron: c, ...cronZone });
   }
 
+  if (taskDueEnabled) {
+    const c = env("TASK_DUE_NOTIFICATIONS_CRON") ?? "0 8 * * *";
+    cron.schedule(
+      c,
+      async () => {
+        try {
+          const res = await runTaskDueNotifications(new Date());
+          console.log("[task-notifications] due alerts done:", res);
+        } catch (err) {
+          console.error("[task-notifications] due alerts failed:", err);
+        }
+      },
+      cronZone,
+    );
+    console.log("[scheduler] TASK_DUE_NOTIFICATIONS_ENABLED", { cron: c, ...cronZone });
+  }
+
   const anyDigest =
     digestAdminDaily ||
     digestAdminWeekly ||
@@ -207,7 +226,7 @@ export async function startSchedulers(): Promise<void> {
     digestEmployeeWeekly ||
     digestEmployeeMonthly;
 
-  if (!reminders && !adminSummaryLegacy && !anyDigest) {
+  if (!reminders && !adminSummaryLegacy && !anyDigest && !taskDueEnabled) {
     console.log(
       "[scheduler] timecard email jobs disabled. Enable TIME_REMINDERS_ENABLED (daily miss HTML + Fri text), and/or TIME_DIGEST_* (see server/scheduler.ts), and/or legacy TIME_ADMIN_SUMMARY_ENABLED; restart pms.service.",
     );

@@ -3,7 +3,7 @@ import { eq, and, asc, desc, inArray, gte, lte, sql, ne, gt, isNull } from "driz
 import {
   users, projects, projectMembers, tasks, taskAssignees,
   checklistItems, attachments, comments, channels, channelMembers, channelUserReadState, messages, timeEntries,
-  companySettings, projectSettings, projectCredentials, projectDocuments, notifications,
+  companySettings, projectSettings, projectCredentials, projectDocuments, notifications, notificationPreferences,
   type User, type InsertUser, type Project, type InsertProject,
   type Task, type InsertTask, type ChecklistItem, type Attachment,
   type Comment, type InsertComment, type Channel, type InsertChannel,
@@ -11,7 +11,7 @@ import {
   type ProjectMember,
   type CompanySettings,
   type ProjectSettings, type ProjectCredential, type ProjectDocument,
-  type Notification, type InsertNotification,
+  type Notification, type InsertNotification, type NotificationPreferences,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -168,6 +168,11 @@ export interface IStorage {
   createNotification(row: InsertNotification): Promise<Notification>;
   markNotificationRead(id: number, userId: number): Promise<Notification | undefined>;
   markAllNotificationsRead(userId: number): Promise<void>;
+  getNotificationPreferences(userId: number): Promise<NotificationPreferences>;
+  upsertNotificationPreferences(
+    userId: number,
+    updates: Partial<{ inAppEnabled: boolean; emailEnabled: boolean; mutedTypes: string[] }>,
+  ): Promise<NotificationPreferences>;
 
   createTimeEntry(entry: InsertTimeEntry): Promise<TimeEntry>;
   getTimeEntriesByTask(taskId: number): Promise<(TimeEntry & { userName: string })[]>;
@@ -837,6 +842,35 @@ export class DatabaseStorage implements IStorage {
       .update(notifications)
       .set({ readAt: new Date() })
       .where(and(eq(notifications.userId, userId), isNull(notifications.readAt)));
+  }
+
+  async getNotificationPreferences(userId: number): Promise<NotificationPreferences> {
+    const [existing] = await db
+      .select()
+      .from(notificationPreferences)
+      .where(eq(notificationPreferences.userId, userId))
+      .limit(1);
+    if (existing) return existing;
+    const [created] = await db.insert(notificationPreferences).values({ userId }).returning();
+    return created;
+  }
+
+  async upsertNotificationPreferences(
+    userId: number,
+    updates: Partial<{ inAppEnabled: boolean; emailEnabled: boolean; mutedTypes: string[] }>,
+  ): Promise<NotificationPreferences> {
+    const current = await this.getNotificationPreferences(userId);
+    const [saved] = await db
+      .update(notificationPreferences)
+      .set({
+        ...(updates.inAppEnabled !== undefined ? { inAppEnabled: updates.inAppEnabled } : {}),
+        ...(updates.emailEnabled !== undefined ? { emailEnabled: updates.emailEnabled } : {}),
+        ...(updates.mutedTypes !== undefined ? { mutedTypes: updates.mutedTypes } : {}),
+        updatedAt: new Date(),
+      })
+      .where(eq(notificationPreferences.userId, current.userId))
+      .returning();
+    return saved;
   }
 
   async createTimeEntry(entry: InsertTimeEntry): Promise<TimeEntry> {

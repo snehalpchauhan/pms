@@ -139,6 +139,7 @@ function CommentItem({
   onPatchComment,
   onDeleteComment,
   depth = 0,
+  focusCommentId,
 }: {
   comment: any;
   allComments: any[];
@@ -148,6 +149,7 @@ function CommentItem({
   onPatchComment: (commentId: string, content: string) => Promise<void>;
   onDeleteComment: (commentId: string) => Promise<void>;
   depth?: number;
+  focusCommentId?: string | null;
 }) {
   const author = users[comment.authorId];
   const [isReplying, setIsReplying] = useState(false);
@@ -161,6 +163,8 @@ function CommentItem({
   const [editSaving, setEditSaving] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [isFocusedComment, setIsFocusedComment] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
 
   const canManage =
     Boolean(currentUserId) &&
@@ -187,6 +191,15 @@ function CommentItem({
   useEffect(() => {
     if (!isEditing) setEditDraft(comment.content);
   }, [comment.content, isEditing]);
+
+  useEffect(() => {
+    if (!focusCommentId) return;
+    if (String(focusCommentId) !== String(comment.id)) return;
+    rootRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    setIsFocusedComment(true);
+    const t = window.setTimeout(() => setIsFocusedComment(false), 1800);
+    return () => window.clearTimeout(t);
+  }, [focusCommentId, comment.id]);
 
   const saveEdit = async () => {
     const trimmed = editDraft.trim();
@@ -252,7 +265,15 @@ function CommentItem({
   };
 
   return (
-    <div className={cn("flex gap-3 group", depth > 0 && "mt-3")}>
+    <div
+      ref={rootRef}
+      data-comment-id={String(comment.id)}
+      className={cn(
+        "flex gap-3 group rounded-md transition-colors",
+        depth > 0 && "mt-3",
+        isFocusedComment && "bg-primary/10 ring-1 ring-primary/30",
+      )}
+    >
       <Avatar className={cn("mt-0.5 shrink-0", depth > 0 ? "h-6 w-6" : "h-8 w-8")}>
         <AvatarImage src={author?.avatar} />
         <AvatarFallback className="text-[10px]">{author?.name?.[0] || "U"}</AvatarFallback>
@@ -467,6 +488,7 @@ function CommentItem({
                 onPatchComment={onPatchComment}
                 onDeleteComment={onDeleteComment}
                 depth={depth + 1}
+                focusCommentId={focusCommentId}
               />
             ))}
           </div>
@@ -480,9 +502,17 @@ interface TaskDetailPageProps {
   task: Task;
   onClose: () => void;
   clientPermissions?: ClientPermissions;
+  focusCommentId?: string | null;
+  onFocusCommentConsumed?: () => void;
 }
 
-export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailPageProps) {
+export function TaskDetailPage({
+  task,
+  onClose,
+  clientPermissions,
+  focusCommentId = null,
+  onFocusCommentConsumed,
+}: TaskDetailPageProps) {
   const { users, projects } = useAppData();
   const { user: currentUser } = useAuth();
   const queryClient = useQueryClient();
@@ -520,6 +550,7 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
   const [startDatePopoverOpen, setStartDatePopoverOpen] = useState(false);
   const [dueDatePopoverOpen, setDueDatePopoverOpen] = useState(false);
   const [timelineSaving, setTimelineSaving] = useState(false);
+  const [rightPanelTab, setRightPanelTab] = useState("comments");
 
   const isClient = currentUser?.role === "client";
   const isFullAccess = isClient && clientPermissions?.clientTaskAccess === "full";
@@ -643,6 +674,14 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
   useEffect(() => {
     setPriority(coerceTaskPriority(task.priority));
   }, [task.id, task.priority]);
+
+  useEffect(() => {
+    if (!focusCommentId) return;
+    setRightPanelTab("comments");
+    const exists = comments.some((c: any) => String(c.id) === String(focusCommentId));
+    if (!exists) return;
+    onFocusCommentConsumed?.();
+  }, [focusCommentId, comments, onFocusCommentConsumed]);
 
   const patchTask = async (updates: Record<string, unknown>) => {
     await apiRequest("PATCH", `/api/tasks/${numericTaskId}`, updates);
@@ -1935,7 +1974,7 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                  <div className="p-4 lg:p-5 pb-20">
 
                      {/* Tabs: comments, time, activity — right column on large screens */}
-                     <Tabs defaultValue="comments" className="w-full">
+                    <Tabs value={rightPanelTab} onValueChange={setRightPanelTab} className="w-full">
                         <div className="flex flex-col gap-2 border-b border-border/50 pb-3 mb-6">
                             <TabsList className="bg-transparent h-auto min-h-10 p-0 gap-4 sm:gap-6 flex flex-wrap justify-start w-full">
                                 <TabsTrigger 
@@ -2232,6 +2271,7 @@ export function TaskDetailPage({ task, onClose, clientPermissions }: TaskDetailP
                                         onPostReply={(parentId, text, files) => postCommentWithFiles(text, parentId, files)}
                                         onPatchComment={patchCommentContent}
                                         onDeleteComment={deleteCommentBranch}
+                                        focusCommentId={focusCommentId}
                                     />
                                 ))}
                                 {sortedUserComments.filter((c) => !c.parentId).length === 0 && (

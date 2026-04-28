@@ -263,6 +263,17 @@ export const notifications = pgTable(
   (t) => [index("idx_notifications_user_created").on(t.userId, t.createdAt), index("idx_notifications_unread").on(t.userId, t.readAt)],
 );
 
+export const notificationPreferences = pgTable("notification_preferences", {
+  userId: integer("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" })
+    .primaryKey(),
+  inAppEnabled: boolean("in_app_enabled").notNull().default(true),
+  emailEnabled: boolean("email_enabled").notNull().default(false),
+  mutedTypes: text("muted_types").array().notNull().default(sql`'{}'::text[]`),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
 /** connect-pg-simple / express-session store (see DBSCHEMA.sql) */
 export const expressSession = pgTable(
   "session",
@@ -302,6 +313,7 @@ export const insertMessageSchema = createInsertSchema(messages).omit({
 });
 export const insertTimeEntrySchema = createInsertSchema(timeEntries).omit({ id: true });
 export const insertNotificationSchema = createInsertSchema(notifications).omit({ id: true, createdAt: true, readAt: true });
+export const insertNotificationPreferencesSchema = createInsertSchema(notificationPreferences).omit({ updatedAt: true });
 
 // Types
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -330,6 +342,8 @@ export type InsertTimeEntry = z.infer<typeof insertTimeEntrySchema>;
 export type ProjectMember = typeof projectMembers.$inferSelect;
 export type Notification = typeof notifications.$inferSelect;
 export type InsertNotification = z.infer<typeof insertNotificationSchema>;
+export type NotificationPreferences = typeof notificationPreferences.$inferSelect;
+export type InsertNotificationPreferences = z.infer<typeof insertNotificationPreferencesSchema>;
 
 // Login schema
 export const loginSchema = z.object({

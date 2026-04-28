@@ -104,6 +104,7 @@ function AuthenticatedApp() {
   const [isNewProjectOpen, setIsNewProjectOpen] = useState(false);
   const [isNewChannelOpen, setIsNewChannelOpen] = useState(false);
   const [taskSearchQuery, setTaskSearchQuery] = useState("");
+  const [notificationFocusCommentId, setNotificationFocusCommentId] = useState<string | null>(null);
 
   type NotificationDetail = {
     id: number;
@@ -228,6 +229,7 @@ function AuthenticatedApp() {
       }
 
       const taskIdFromMeta = Number(detail.meta?.taskId);
+      const commentIdFromMeta = Number(detail.meta?.commentId);
       const candidateTaskId =
         detail.entityType === "task"
           ? Number(detail.entityId)
@@ -240,6 +242,15 @@ function AuthenticatedApp() {
       if (Number.isInteger(candidateTaskId) && candidateTaskId > 0) {
         setCurrentView("tasks");
         persistWorkspaceState({ taskId: String(candidateTaskId) });
+        if (detail.entityType === "comment") {
+          if (Number.isInteger(commentIdFromMeta) && commentIdFromMeta > 0) {
+            setNotificationFocusCommentId(String(commentIdFromMeta));
+          } else if (detail.entityId != null && Number.isInteger(Number(detail.entityId)) && Number(detail.entityId) > 0) {
+            setNotificationFocusCommentId(String(detail.entityId));
+          }
+        } else {
+          setNotificationFocusCommentId(null);
+        }
         return;
       }
 
@@ -421,6 +432,8 @@ function AuthenticatedApp() {
                     project={currentProject}
                     tasks={tasksMatchingSearch}
                     clientPermissions={effectivePermissions}
+                    notificationFocusCommentId={notificationFocusCommentId}
+                    onNotificationFocusConsumed={() => setNotificationFocusCommentId(null)}
                   />
                 ) : (
                   <NoProjectWorkspaceMain

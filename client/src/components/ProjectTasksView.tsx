@@ -29,9 +29,17 @@ interface ProjectTasksViewProps {
     project: Project;
     tasks: Task[];
     clientPermissions?: ClientPermissions;
+    notificationFocusCommentId?: string | null;
+    onNotificationFocusConsumed?: () => void;
 }
 
-export default function ProjectTasksView({ project, tasks, clientPermissions }: ProjectTasksViewProps) {
+export default function ProjectTasksView({
+    project,
+    tasks,
+    clientPermissions,
+    notificationFocusCommentId = null,
+    onNotificationFocusConsumed,
+}: ProjectTasksViewProps) {
     const { user } = useAuth();
     const currentUserId = user ? String(user.id) : "";
     const [taskTab, setTaskTab] = useState<TaskWorkspaceTab>(() => readTaskWorkspaceSnapshot().taskTab);
@@ -222,6 +230,8 @@ export default function ProjectTasksView({ project, tasks, clientPermissions }: 
                     task={selectedTask} 
                     onClose={closeTask}
                     clientPermissions={clientPermissions}
+                    focusCommentId={notificationFocusCommentId}
+                    onFocusCommentConsumed={onNotificationFocusConsumed}
                 />
             )}
         </div>

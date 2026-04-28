@@ -84,6 +84,13 @@ CREATE TABLE "notifications" (
 	"read_at" timestamp,
 	"created_at" timestamp DEFAULT now()
 );
+CREATE TABLE "notification_preferences" (
+	"user_id" integer PRIMARY KEY,
+	"in_app_enabled" boolean DEFAULT true NOT NULL,
+	"email_enabled" boolean DEFAULT false NOT NULL,
+	"muted_types" text[] DEFAULT '{}'::text[] NOT NULL,
+	"updated_at" timestamp DEFAULT now()
+);
 CREATE TABLE "project_settings" (
 	"project_id" integer PRIMARY KEY,
 	"settings" jsonb DEFAULT '{}'::jsonb NOT NULL,
@@ -201,6 +208,7 @@ ALTER TABLE "notifications" ADD CONSTRAINT "notifications_user_id_users_id_fk" F
 ALTER TABLE "notifications" ADD CONSTRAINT "notifications_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "projects"("id") ON DELETE CASCADE;
 ALTER TABLE "notifications" ADD CONSTRAINT "notifications_channel_id_channels_id_fk" FOREIGN KEY ("channel_id") REFERENCES "channels"("id") ON DELETE SET NULL;
 ALTER TABLE "notifications" ADD CONSTRAINT "notifications_actor_user_id_users_id_fk" FOREIGN KEY ("actor_user_id") REFERENCES "users"("id") ON DELETE SET NULL;
+ALTER TABLE "notification_preferences" ADD CONSTRAINT "notification_preferences_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE;
 ALTER TABLE "project_members" ADD CONSTRAINT "project_members_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "projects"("id") ON DELETE CASCADE;
 ALTER TABLE "project_members" ADD CONSTRAINT "project_members_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE;
 ALTER TABLE "project_settings" ADD CONSTRAINT "project_settings_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "projects"("id") ON DELETE CASCADE;
@@ -226,6 +234,7 @@ CREATE UNIQUE INDEX "messages_pkey" ON "messages" ("id");
 CREATE UNIQUE INDEX "notifications_pkey" ON "notifications" ("id");
 CREATE INDEX "idx_notifications_user_created" ON "notifications" ("user_id","created_at");
 CREATE INDEX "idx_notifications_unread" ON "notifications" ("user_id","read_at");
+CREATE UNIQUE INDEX "notification_preferences_user_id_pk" ON "notification_preferences" ("user_id");
 CREATE UNIQUE INDEX "project_settings_project_id_pk" ON "project_settings" ("project_id");
 CREATE UNIQUE INDEX "project_credentials_pkey" ON "project_credentials" ("id");
 CREATE UNIQUE INDEX "project_documents_pkey" ON "project_documents" ("id");
