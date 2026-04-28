@@ -23,6 +23,7 @@ import { useAppData } from "@/hooks/useAppData";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { SearchableSelect } from "@/components/SearchableSelect";
 import {
     DEFAULT_TASK_MARK_COMPLETE_STATUS,
     parseWorkflowColumnId,
@@ -291,45 +292,43 @@ export default function ProjectTasksView({
                                 <div className="grid grid-cols-2 gap-3">
                                     <div className="space-y-1.5">
                                         <Label className="text-xs">Assigned to</Label>
-                                        <Select
+                                        <SearchableSelect
                                             value={advancedFilters.assignedTo}
                                             onValueChange={(v) =>
                                                 setAdvancedFilters((prev) => ({ ...prev, assignedTo: v }))
                                             }
-                                        >
-                                            <SelectTrigger className="h-8 text-xs">
-                                                <SelectValue placeholder="Anyone" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                <SelectItem value="all">Anyone</SelectItem>
-                                                {assignableUsers.map((u) => (
-                                                    <SelectItem key={String(u.id)} value={String(u.id)}>
-                                                        {u.name}
-                                                    </SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
+                                            options={[
+                                                { value: "all", label: "Anyone" },
+                                                ...assignableUsers.map((u) => ({
+                                                    value: String(u.id),
+                                                    label: u.name,
+                                                })),
+                                            ]}
+                                            placeholder="Anyone"
+                                            searchPlaceholder="Search assignee..."
+                                            emptyText="No user found."
+                                            triggerClassName="h-8 text-xs"
+                                        />
                                     </div>
                                     <div className="space-y-1.5">
                                         <Label className="text-xs">Created by</Label>
-                                        <Select
+                                        <SearchableSelect
                                             value={advancedFilters.createdBy}
                                             onValueChange={(v) =>
                                                 setAdvancedFilters((prev) => ({ ...prev, createdBy: v }))
                                             }
-                                        >
-                                            <SelectTrigger className="h-8 text-xs">
-                                                <SelectValue placeholder="Anyone" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                <SelectItem value="all">Anyone</SelectItem>
-                                                {assignableUsers.map((u) => (
-                                                    <SelectItem key={`creator-${String(u.id)}`} value={String(u.id)}>
-                                                        {u.name}
-                                                    </SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
+                                            options={[
+                                                { value: "all", label: "Anyone" },
+                                                ...assignableUsers.map((u) => ({
+                                                    value: String(u.id),
+                                                    label: u.name,
+                                                })),
+                                            ]}
+                                            placeholder="Anyone"
+                                            searchPlaceholder="Search creator..."
+                                            emptyText="No user found."
+                                            triggerClassName="h-8 text-xs"
+                                        />
                                     </div>
                                     <div className="space-y-1.5">
                                         <Label className="text-xs">Priority</Label>
