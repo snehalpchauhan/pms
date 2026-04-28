@@ -1463,6 +1463,7 @@ export async function registerRoutes(
     if (!canManageProjectSettings(currentUser, access.project)) {
       return res.status(403).json({ message: "Only owner/admin/manager can create credentials" });
     }
+    const credentialType = parsed.data.type.trim().toLowerCase();
     const metadata = {
       url: parsed.data.url?.trim() || "",
       username: parsed.data.username?.trim() || "",
@@ -1475,14 +1476,26 @@ export async function registerRoutes(
       secret: parsed.data.secret?.trim() || "",
       password: parsed.data.password?.trim() || "",
     };
-    if (!secretPayload.secret && !secretPayload.password) {
+    if (credentialType === "logins" || credentialType === "database") {
+      if (!secretPayload.password) {
+        return res.status(400).json({ message: "Password is required for this credential type" });
+      }
+    } else if (credentialType === "tokens") {
+      if (!secretPayload.secret) {
+        return res.status(400).json({ message: "Token is required for token credentials" });
+      }
+    } else if (credentialType === "other") {
+      if (!metadata.notes) {
+        return res.status(400).json({ message: "Please provide details in the text area for 'other'" });
+      }
+    } else if (!secretPayload.secret && !secretPayload.password) {
       return res.status(400).json({ message: "Provide password and/or secret" });
     }
     const encrypted = encryptProjectSecret(JSON.stringify(secretPayload));
     const created = await storage.createProjectCredential({
       projectId,
       name: parsed.data.name.trim(),
-      type: parsed.data.type,
+      type: parsed.data.type.trim(),
       metadata,
       secretCiphertext: encrypted.ciphertext,
       secretIv: encrypted.iv,
@@ -1580,7 +1593,21 @@ export async function registerRoutes(
             ? (parsed.data.password.trim() || "")
             : String(previous.password ?? ""),
       };
-      if (!nextPayload.secret && !nextPayload.password) {
+      const nextType = String((updates.type ?? existing.type ?? "")).trim().toLowerCase();
+      const nextMeta = safeParseJsonObject((updates.metadata ?? existing.metadata) as Record<string, unknown>);
+      if (nextType === "logins" || nextType === "database") {
+        if (!nextPayload.password) {
+          return res.status(400).json({ message: "Password is required for this credential type" });
+        }
+      } else if (nextType === "tokens") {
+        if (!nextPayload.secret) {
+          return res.status(400).json({ message: "Token is required for token credentials" });
+        }
+      } else if (nextType === "other") {
+        if (!String(nextMeta.notes ?? "").trim()) {
+          return res.status(400).json({ message: "Please provide details in the text area for 'other'" });
+        }
+      } else if (!nextPayload.secret && !nextPayload.password) {
         return res.status(400).json({ message: "Provide password and/or secret" });
       }
       const encrypted = encryptProjectSecret(JSON.stringify(nextPayload));
