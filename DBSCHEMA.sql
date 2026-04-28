@@ -100,6 +100,9 @@ CREATE TABLE "project_documents" (
 	"type" text DEFAULT 'file' NOT NULL,
 	"url" text,
 	"size" text,
+	"visibility_mode" text DEFAULT 'project_members' NOT NULL,
+	"visibility_roles" text[] DEFAULT '{}'::text[] NOT NULL,
+	"visibility_user_ids" integer[] DEFAULT '{}'::integer[] NOT NULL,
 	"created_at" timestamp DEFAULT now(),
 	"created_by_user_id" integer
 );

@@ -27,6 +27,9 @@ type ProjectDocument = {
   url?: string | null;
   size?: string | null;
   createdAt?: string | null;
+  visibilityMode: "project_members" | "roles" | "users";
+  visibilityRoles: string[];
+  visibilityUserIds: number[];
 };
 
 type ProjectCredential = {
@@ -91,12 +94,21 @@ export default function ProjectSettingsView({
   const [deployNotes, setDeployNotes] = useState("");
 
   const [docFile, setDocFile] = useState<File | null>(null);
-  const [revealedMap, setRevealedMap] = useState<Record<number, string>>({});
+  const [docVisibilityMode, setDocVisibilityMode] = useState<"project_members" | "roles" | "users">("project_members");
+  const [docVisibilityRoles, setDocVisibilityRoles] = useState<string[]>([]);
+  const [docVisibilityUserIds, setDocVisibilityUserIds] = useState<number[]>([]);
+  const [revealedMap, setRevealedMap] = useState<Record<number, { secret: string; password: string }>>({});
   const [editingCredentialId, setEditingCredentialId] = useState<number | null>(null);
   const [credentialName, setCredentialName] = useState("");
   const [credentialType, setCredentialType] = useState("other");
+  const [credentialUrl, setCredentialUrl] = useState("");
+  const [credentialUsername, setCredentialUsername] = useState("");
+  const [credentialHost, setCredentialHost] = useState("");
+  const [credentialPort, setCredentialPort] = useState("");
+  const [credentialDatabase, setCredentialDatabase] = useState("");
+  const [credentialNotes, setCredentialNotes] = useState("");
+  const [credentialPassword, setCredentialPassword] = useState("");
   const [credentialSecret, setCredentialSecret] = useState("");
-  const [credentialMetadataText, setCredentialMetadataText] = useState("{}");
   const [visibilityMode, setVisibilityMode] = useState<"project_members" | "roles" | "users">("roles");
   const [visibilityRoles, setVisibilityRoles] = useState<string[]>(["admin", "manager"]);
   const [visibilityUserIds, setVisibilityUserIds] = useState<number[]>([]);
@@ -190,10 +202,16 @@ export default function ProjectSettingsView({
       await apiRequest("POST", `/api/projects/${projectId}/documents`, {
         fileDataUrl,
         name: docFile.name,
+        visibilityMode: docVisibilityMode,
+        visibilityRoles: docVisibilityRoles,
+        visibilityUserIds: docVisibilityUserIds,
       });
     },
     onSuccess: async () => {
       setDocFile(null);
+      setDocVisibilityMode("project_members");
+      setDocVisibilityRoles([]);
+      setDocVisibilityUserIds([]);
       await queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "documents"] });
       toast({ title: "Document uploaded" });
     },
@@ -224,8 +242,14 @@ export default function ProjectSettingsView({
     setEditingCredentialId(null);
     setCredentialName("");
     setCredentialType("other");
+    setCredentialUrl("");
+    setCredentialUsername("");
+    setCredentialHost("");
+    setCredentialPort("");
+    setCredentialDatabase("");
+    setCredentialNotes("");
+    setCredentialPassword("");
     setCredentialSecret("");
-    setCredentialMetadataText("{}");
     setVisibilityMode("roles");
     setVisibilityRoles(["admin", "manager"]);
     setVisibilityUserIds([]);
@@ -235,8 +259,14 @@ export default function ProjectSettingsView({
     setEditingCredentialId(row.id);
     setCredentialName(row.name);
     setCredentialType(row.type);
+    setCredentialUrl(String(row.metadata?.url ?? ""));
+    setCredentialUsername(String(row.metadata?.username ?? ""));
+    setCredentialHost(String(row.metadata?.host ?? ""));
+    setCredentialPort(row.metadata?.port != null ? String(row.metadata.port) : "");
+    setCredentialDatabase(String(row.metadata?.database ?? ""));
+    setCredentialNotes(String(row.metadata?.notes ?? ""));
+    setCredentialPassword("");
     setCredentialSecret("");
-    setCredentialMetadataText(JSON.stringify(row.metadata ?? {}, null, 2));
     setVisibilityMode(row.visibilityMode);
     setVisibilityRoles(row.visibilityRoles ?? []);
     setVisibilityUserIds(row.visibilityUserIds ?? []);
@@ -244,14 +274,18 @@ export default function ProjectSettingsView({
 
   const saveCredentialMutation = useMutation({
     mutationFn: async () => {
-      const metadata = credentialMetadataText.trim() ? JSON.parse(credentialMetadataText) : {};
       if (!credentialName.trim()) throw new Error("Credential name is required");
-      if (!editingCredentialId && !credentialSecret.trim()) throw new Error("Secret is required");
       const body = {
         name: credentialName.trim(),
         type: credentialType,
+        url: credentialUrl.trim() || undefined,
+        username: credentialUsername.trim() || undefined,
+        host: credentialHost.trim() || undefined,
+        port: credentialPort.trim() ? Number(credentialPort) : undefined,
+        database: credentialDatabase.trim() || undefined,
+        notes: credentialNotes.trim() || undefined,
+        password: credentialPassword.trim() || undefined,
         secret: credentialSecret.trim() || undefined,
-        metadata,
         visibilityMode,
         visibilityRoles,
         visibilityUserIds,
@@ -259,8 +293,12 @@ export default function ProjectSettingsView({
       if (editingCredentialId) {
         await apiRequest("PATCH", `/api/projects/${projectId}/credentials/${editingCredentialId}`, body);
       } else {
+        if (!credentialPassword.trim() && !credentialSecret.trim()) {
+          throw new Error("Provide password and/or secret");
+        }
         await apiRequest("POST", `/api/projects/${projectId}/credentials`, {
           ...body,
+          password: credentialPassword.trim(),
           secret: credentialSecret.trim(),
         });
       }
@@ -286,8 +324,8 @@ export default function ProjectSettingsView({
         const j = await res.json().catch(() => ({}));
         throw new Error(j?.message || "Reveal failed");
       }
-      const data = (await res.json()) as { secret: string };
-      setRevealedMap((prev) => ({ ...prev, [id]: data.secret }));
+      const data = (await res.json()) as { secret: string; password: string };
+      setRevealedMap((prev) => ({ ...prev, [id]: { secret: data.secret, password: data.password } }));
     } catch (e) {
       toast({
         title: "Could not reveal secret",
@@ -312,6 +350,29 @@ export default function ProjectSettingsView({
   };
 
   const members = membersQuery.data ?? [];
+
+  const updateDocumentVisibility = async (
+    docId: number,
+    visibilityMode: "project_members" | "roles" | "users",
+    visibilityRoles: string[],
+    visibilityUserIds: number[],
+  ) => {
+    try {
+      await apiRequest("PATCH", `/api/projects/${projectId}/documents/${docId}`, {
+        visibilityMode,
+        visibilityRoles,
+        visibilityUserIds,
+      });
+      await queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "documents"] });
+      toast({ title: "Document access updated" });
+    } catch (e) {
+      toast({
+        title: "Could not update access",
+        description: e instanceof Error ? e.message : "Try again.",
+        variant: "destructive",
+      });
+    }
+  };
 
   return (
     <div className="h-full overflow-auto p-6">
@@ -419,19 +480,97 @@ export default function ProjectSettingsView({
                     Upload
                   </Button>
                 </div>
+                {canManage && (
+                  <div className="space-y-2 rounded-md border p-3">
+                    <Label className="text-xs text-muted-foreground">New document visibility</Label>
+                    <div className="flex flex-wrap gap-2">
+                      {VISIBILITY_OPTIONS.map((opt) => (
+                        <Button
+                          key={`doc-new-${opt.id}`}
+                          type="button"
+                          variant={docVisibilityMode === opt.id ? "default" : "outline"}
+                          size="sm"
+                          onClick={() => setDocVisibilityMode(opt.id)}
+                        >
+                          {opt.label}
+                        </Button>
+                      ))}
+                    </div>
+                    {docVisibilityMode === "roles" && (
+                      <div className="grid grid-cols-2 gap-2">
+                        {ROLE_OPTIONS.map((r) => (
+                          <label key={`doc-role-${r}`} className="flex items-center gap-2 text-sm">
+                            <Checkbox
+                              checked={docVisibilityRoles.includes(r)}
+                              onCheckedChange={(checked) =>
+                                setDocVisibilityRoles((prev) =>
+                                  checked ? Array.from(new Set([...prev, r])) : prev.filter((x) => x !== r),
+                                )
+                              }
+                            />
+                            <span className="capitalize">{r}</span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                    {docVisibilityMode === "users" && (
+                      <div className="max-h-32 overflow-auto rounded border p-2 space-y-1">
+                        {members.map((m) => {
+                          const id = Number(m.id);
+                          return (
+                            <label key={`doc-user-${id}`} className="flex items-center gap-2 text-sm">
+                              <Checkbox
+                                checked={docVisibilityUserIds.includes(id)}
+                                onCheckedChange={(checked) =>
+                                  setDocVisibilityUserIds((prev) =>
+                                    checked ? Array.from(new Set([...prev, id])) : prev.filter((x) => x !== id),
+                                  )
+                                }
+                              />
+                              <span>{m.name}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
                 <div className="space-y-2">
                   {(docsQuery.data ?? []).map((d) => (
-                    <div key={d.id} className="flex items-center justify-between rounded-md border px-3 py-2">
-                      <div className="min-w-0">
+                    <div key={d.id} className="rounded-md border px-3 py-2 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="min-w-0">
                         <a className="truncate text-sm underline" href={d.url ?? "#"} target="_blank" rel="noreferrer">
                           {d.name}
                         </a>
                         {d.size ? <p className="text-xs text-muted-foreground">{d.size}</p> : null}
+                        </div>
+                        <Badge variant="secondary" className="text-[10px]">{d.visibilityMode}</Badge>
                       </div>
                       {canManage ? (
-                        <Button variant="ghost" size="icon" onClick={() => void deleteDoc(d.id)} title="Delete document">
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        <div className="flex flex-wrap items-center gap-2">
+                          {VISIBILITY_OPTIONS.map((opt) => (
+                            <Button
+                              key={`doc-${d.id}-${opt.id}`}
+                              type="button"
+                              size="sm"
+                              variant={d.visibilityMode === opt.id ? "default" : "outline"}
+                              onClick={() =>
+                                void updateDocumentVisibility(
+                                  d.id,
+                                  opt.id,
+                                  opt.id === "roles" ? d.visibilityRoles : [],
+                                  opt.id === "users" ? d.visibilityUserIds : [],
+                                )
+                              }
+                            >
+                              {opt.label}
+                            </Button>
+                          ))}
+                          <Button variant="ghost" size="icon" onClick={() => void deleteDoc(d.id)} title="Delete document">
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
                       ) : null}
                     </div>
                   ))}
@@ -460,13 +599,41 @@ export default function ProjectSettingsView({
                       placeholder="api_token / db / ssh / git_pat / other"
                     />
                   </div>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="space-y-1">
+                      <Label>URL</Label>
+                      <Input value={credentialUrl} onChange={(e) => setCredentialUrl(e.target.value)} placeholder="https://..." />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Username</Label>
+                      <Input value={credentialUsername} onChange={(e) => setCredentialUsername(e.target.value)} />
+                    </div>
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <div className="space-y-1">
+                      <Label>Host</Label>
+                      <Input value={credentialHost} onChange={(e) => setCredentialHost(e.target.value)} />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Port</Label>
+                      <Input value={credentialPort} onChange={(e) => setCredentialPort(e.target.value)} placeholder="5432" />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Database</Label>
+                      <Input value={credentialDatabase} onChange={(e) => setCredentialDatabase(e.target.value)} />
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Password {editingCredentialId ? "(leave blank to keep current)" : ""}</Label>
+                    <Textarea value={credentialPassword} onChange={(e) => setCredentialPassword(e.target.value)} rows={2} />
+                  </div>
                   <div className="space-y-1">
                     <Label>{editingCredentialId ? "Secret (leave blank to keep current)" : "Secret"}</Label>
                     <Textarea value={credentialSecret} onChange={(e) => setCredentialSecret(e.target.value)} rows={3} />
                   </div>
                   <div className="space-y-1">
-                    <Label>Metadata (JSON)</Label>
-                    <Textarea value={credentialMetadataText} onChange={(e) => setCredentialMetadataText(e.target.value)} rows={4} />
+                    <Label>Notes</Label>
+                    <Textarea value={credentialNotes} onChange={(e) => setCredentialNotes(e.target.value)} rows={3} />
                   </div>
                   <div className="space-y-2">
                     <Label>Visibility</Label>
@@ -557,7 +724,9 @@ export default function ProjectSettingsView({
                         </Badge>
                       </div>
                       <div className="rounded bg-muted/40 px-2 py-1 text-xs font-mono break-all">
-                        {revealedMap[c.id] ?? c.maskedSecret}
+                        {revealedMap[c.id]
+                          ? `password=${revealedMap[c.id].password || "(empty)"} | secret=${revealedMap[c.id].secret || "(empty)"}`
+                          : c.maskedSecret}
                       </div>
                       <div className="flex gap-2">
                         <Button variant="outline" size="sm" type="button" onClick={() => beginEditCredential(c)}>
@@ -568,7 +737,13 @@ export default function ProjectSettingsView({
                             variant="outline"
                             size="sm"
                             type="button"
-                            onClick={() => setRevealedMap((prev) => ({ ...prev, [c.id]: "" }))}
+                            onClick={() =>
+                              setRevealedMap((prev) => {
+                                const next = { ...prev };
+                                delete next[c.id];
+                                return next;
+                              })
+                            }
                           >
                             <EyeOff className="h-4 w-4 mr-1" />
                             Hide

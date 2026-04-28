@@ -129,6 +129,9 @@ export const projectDocuments = pgTable("project_documents", {
   type: text("type").notNull().default("file"),
   url: text("url"),
   size: text("size"),
+  visibilityMode: text("visibility_mode").notNull().default("project_members"),
+  visibilityRoles: text("visibility_roles").array().notNull().default(sql`'{}'::text[]`),
+  visibilityUserIds: integer("visibility_user_ids").array().notNull().default(sql`'{}'::integer[]`),
   createdAt: timestamp("created_at").defaultNow(),
   createdByUserId: integer("created_by_user_id").references(() => users.id),
 });

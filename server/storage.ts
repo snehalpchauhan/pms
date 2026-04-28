@@ -100,8 +100,20 @@ export interface IStorage {
     type: string;
     url?: string;
     size?: string;
+    visibilityMode: string;
+    visibilityRoles: string[];
+    visibilityUserIds: number[];
     createdByUserId: number;
   }): Promise<ProjectDocument>;
+  updateProjectDocument(
+    id: number,
+    updates: Partial<{
+      name: string;
+      visibilityMode: string;
+      visibilityRoles: string[];
+      visibilityUserIds: number[];
+    }>,
+  ): Promise<ProjectDocument | undefined>;
   deleteProjectDocument(id: number): Promise<void>;
 
   getTasksByProject(projectId: number): Promise<Task[]>;
@@ -476,10 +488,27 @@ export class DatabaseStorage implements IStorage {
     type: string;
     url?: string;
     size?: string;
+    visibilityMode: string;
+    visibilityRoles: string[];
+    visibilityUserIds: number[];
     createdByUserId: number;
   }): Promise<ProjectDocument> {
     const [created] = await db.insert(projectDocuments).values({ ...row, createdAt: new Date() }).returning();
     return created;
+  }
+
+  async updateProjectDocument(
+    id: number,
+    updates: Partial<{
+      name: string;
+      visibilityMode: string;
+      visibilityRoles: string[];
+      visibilityUserIds: number[];
+    }>,
+  ): Promise<ProjectDocument | undefined> {
+    if (Object.keys(updates).length === 0) return this.getProjectDocument(id);
+    const [row] = await db.update(projectDocuments).set(updates).where(eq(projectDocuments.id, id)).returning();
+    return row;
   }
 
   async deleteProjectDocument(id: number): Promise<void> {

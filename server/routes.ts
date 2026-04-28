@@ -253,7 +253,7 @@ function canRevealCredential(
   },
 ): boolean {
   const role = currentUser.role ?? "";
-  if (role === "admin") return true;
+  if (role === "admin" || role === "manager") return true;
   if (project.ownerId != null && Number(project.ownerId) === Number(currentUser.id)) return true;
   if (role === "client") return false;
   const mode = credential.visibilityMode as CredentialVisibilityMode;
@@ -266,6 +266,27 @@ function canRevealCredential(
     const ids = credential.visibilityUserIds ?? [];
     return ids.includes(Number(currentUser.id));
   }
+  return false;
+}
+
+function canAccessDocument(
+  currentUser: { id: number; role?: string },
+  project: Project,
+  doc: {
+    visibilityMode: string;
+    visibilityRoles: string[] | null;
+    visibilityUserIds: number[] | null;
+    createdByUserId?: number | null;
+  },
+): boolean {
+  const role = currentUser.role ?? "";
+  if (role === "admin") return true;
+  if (project.ownerId != null && Number(project.ownerId) === Number(currentUser.id)) return true;
+  if (Number(doc.createdByUserId) === Number(currentUser.id)) return true;
+  const mode = doc.visibilityMode as CredentialVisibilityMode;
+  if (mode === "project_members") return true;
+  if (mode === "roles") return (doc.visibilityRoles ?? []).includes(role);
+  if (mode === "users") return (doc.visibilityUserIds ?? []).includes(Number(currentUser.id));
   return false;
 }
 
@@ -1315,8 +1336,14 @@ export async function registerRoutes(
   const credentialBodySchema = z.object({
     name: z.string().min(1).max(200),
     type: z.enum(CREDENTIAL_TYPES).default("other"),
-    secret: z.string().min(1).max(50_000),
-    metadata: z.record(z.string(), z.unknown()).optional().default({}),
+    url: z.string().max(2000).optional().default(""),
+    username: z.string().max(300).optional().default(""),
+    host: z.string().max(300).optional().default(""),
+    port: z.union([z.number().int().positive(), z.null()]).optional().default(null),
+    database: z.string().max(300).optional().default(""),
+    notes: z.string().max(4000).optional().default(""),
+    password: z.string().max(50_000).optional().default(""),
+    secret: z.string().max(50_000).optional().default(""),
     visibilityMode: z.enum(CREDENTIAL_VISIBILITY_MODES).default("roles"),
     visibilityRoles: z.array(z.enum(WORKSPACE_ROLES)).optional().default(["admin", "manager"]),
     visibilityUserIds: z.array(z.number().int().positive()).optional().default([]),
@@ -1325,8 +1352,14 @@ export async function registerRoutes(
   const credentialPatchBodySchema = z.object({
     name: z.string().min(1).max(200).optional(),
     type: z.enum(CREDENTIAL_TYPES).optional(),
-    secret: z.string().min(1).max(50_000).optional(),
-    metadata: z.record(z.string(), z.unknown()).optional(),
+    url: z.string().max(2000).optional(),
+    username: z.string().max(300).optional(),
+    host: z.string().max(300).optional(),
+    port: z.union([z.number().int().positive(), z.null()]).optional(),
+    database: z.string().max(300).optional(),
+    notes: z.string().max(4000).optional(),
+    password: z.string().max(50_000).optional(),
+    secret: z.string().max(50_000).optional(),
     visibilityMode: z.enum(CREDENTIAL_VISIBILITY_MODES).optional(),
     visibilityRoles: z.array(z.enum(WORKSPACE_ROLES)).optional(),
     visibilityUserIds: z.array(z.number().int().positive()).optional(),
@@ -1335,6 +1368,16 @@ export async function registerRoutes(
   const projectDocumentUploadSchema = z.object({
     fileDataUrl: z.string().min(1),
     name: z.string().min(1).max(240).optional(),
+    visibilityMode: z.enum(CREDENTIAL_VISIBILITY_MODES).optional().default("project_members"),
+    visibilityRoles: z.array(z.enum(WORKSPACE_ROLES)).optional().default([]),
+    visibilityUserIds: z.array(z.number().int().positive()).optional().default([]),
+  });
+
+  const projectDocumentPatchSchema = z.object({
+    name: z.string().min(1).max(240).optional(),
+    visibilityMode: z.enum(CREDENTIAL_VISIBILITY_MODES).optional(),
+    visibilityRoles: z.array(z.enum(WORKSPACE_ROLES)).optional(),
+    visibilityUserIds: z.array(z.number().int().positive()).optional(),
   });
 
   async function ensureProjectMemberAccess(
@@ -1421,12 +1464,27 @@ export async function registerRoutes(
     if (!canManageProjectSettings(currentUser, access.project)) {
       return res.status(403).json({ message: "Only owner/admin/manager can create credentials" });
     }
-    const encrypted = encryptProjectSecret(parsed.data.secret);
+    const metadata = {
+      url: parsed.data.url?.trim() || "",
+      username: parsed.data.username?.trim() || "",
+      host: parsed.data.host?.trim() || "",
+      port: parsed.data.port ?? null,
+      database: parsed.data.database?.trim() || "",
+      notes: parsed.data.notes?.trim() || "",
+    };
+    const secretPayload = {
+      secret: parsed.data.secret?.trim() || "",
+      password: parsed.data.password?.trim() || "",
+    };
+    if (!secretPayload.secret && !secretPayload.password) {
+      return res.status(400).json({ message: "Provide password and/or secret" });
+    }
+    const encrypted = encryptProjectSecret(JSON.stringify(secretPayload));
     const created = await storage.createProjectCredential({
       projectId,
       name: parsed.data.name.trim(),
       type: parsed.data.type,
-      metadata: safeParseJsonObject(parsed.data.metadata),
+      metadata,
       secretCiphertext: encrypted.ciphertext,
       secretIv: encrypted.iv,
       secretAuthTag: encrypted.authTag,
@@ -1476,12 +1534,57 @@ export async function registerRoutes(
     const updates: any = { updatedByUserId: currentUser.id };
     if (parsed.data.name !== undefined) updates.name = parsed.data.name.trim();
     if (parsed.data.type !== undefined) updates.type = parsed.data.type;
-    if (parsed.data.metadata !== undefined) updates.metadata = safeParseJsonObject(parsed.data.metadata);
+    if (
+      parsed.data.url !== undefined ||
+      parsed.data.username !== undefined ||
+      parsed.data.host !== undefined ||
+      parsed.data.port !== undefined ||
+      parsed.data.database !== undefined ||
+      parsed.data.notes !== undefined
+    ) {
+      const currentMeta = safeParseJsonObject(existing.metadata);
+      updates.metadata = {
+        ...currentMeta,
+        ...(parsed.data.url !== undefined ? { url: parsed.data.url.trim() } : {}),
+        ...(parsed.data.username !== undefined ? { username: parsed.data.username.trim() } : {}),
+        ...(parsed.data.host !== undefined ? { host: parsed.data.host.trim() } : {}),
+        ...(parsed.data.port !== undefined ? { port: parsed.data.port } : {}),
+        ...(parsed.data.database !== undefined ? { database: parsed.data.database.trim() } : {}),
+        ...(parsed.data.notes !== undefined ? { notes: parsed.data.notes.trim() } : {}),
+      };
+    }
     if (parsed.data.visibilityMode !== undefined) updates.visibilityMode = parsed.data.visibilityMode;
     if (parsed.data.visibilityRoles !== undefined) updates.visibilityRoles = sanitizeRoleList(parsed.data.visibilityRoles);
     if (parsed.data.visibilityUserIds !== undefined) updates.visibilityUserIds = sanitizeUserIdList(parsed.data.visibilityUserIds);
-    if (parsed.data.secret !== undefined) {
-      const encrypted = encryptProjectSecret(parsed.data.secret);
+    if (parsed.data.secret !== undefined || parsed.data.password !== undefined) {
+      const previous = (() => {
+        try {
+          const raw = decryptProjectSecret({
+            ciphertext: existing.secretCiphertext,
+            iv: existing.secretIv,
+            authTag: existing.secretAuthTag,
+            keyVersion: existing.keyVersion,
+          });
+          const parsedPrev = JSON.parse(raw);
+          return safeParseJsonObject(parsedPrev);
+        } catch {
+          return {} as Record<string, unknown>;
+        }
+      })();
+      const nextPayload = {
+        secret:
+          parsed.data.secret !== undefined
+            ? (parsed.data.secret.trim() || "")
+            : String(previous.secret ?? ""),
+        password:
+          parsed.data.password !== undefined
+            ? (parsed.data.password.trim() || "")
+            : String(previous.password ?? ""),
+      };
+      if (!nextPayload.secret && !nextPayload.password) {
+        return res.status(400).json({ message: "Provide password and/or secret" });
+      }
+      const encrypted = encryptProjectSecret(JSON.stringify(nextPayload));
       updates.secretCiphertext = encrypted.ciphertext;
       updates.secretIv = encrypted.iv;
       updates.secretAuthTag = encrypted.authTag;
@@ -1543,13 +1646,23 @@ export async function registerRoutes(
     if (!canRevealCredential(currentUser, access.project, existing)) {
       return res.status(403).json({ message: "Access denied" });
     }
-    const secret = decryptProjectSecret({
+    const raw = decryptProjectSecret({
       ciphertext: existing.secretCiphertext,
       iv: existing.secretIv,
       authTag: existing.secretAuthTag,
       keyVersion: existing.keyVersion,
     });
-    res.json({ id: existing.id, secret });
+    let payload: Record<string, unknown> = {};
+    try {
+      payload = safeParseJsonObject(JSON.parse(raw));
+    } catch {
+      payload = { secret: raw };
+    }
+    res.json({
+      id: existing.id,
+      secret: String(payload.secret ?? ""),
+      password: String(payload.password ?? ""),
+    });
   });
 
   app.get("/api/projects/:id/documents", requireAuth, async (req, res) => {
@@ -1559,7 +1672,7 @@ export async function registerRoutes(
     const access = await ensureProjectMemberAccess(currentUser, projectId);
     if (!access.ok) return res.status(access.code).json({ message: access.message });
     const docs = await storage.listProjectDocuments(projectId);
-    res.json(docs);
+    res.json(docs.filter((d) => canAccessDocument(currentUser, access.project, d)));
   });
 
   app.post("/api/projects/:id/documents", requireAuth, async (req, res) => {
@@ -1581,6 +1694,9 @@ export async function registerRoutes(
         type: "file",
         url: persisted.url,
         size: persisted.sizeLabel,
+        visibilityMode: parsed.data.visibilityMode,
+        visibilityRoles: sanitizeRoleList(parsed.data.visibilityRoles),
+        visibilityUserIds: sanitizeUserIdList(parsed.data.visibilityUserIds),
         createdByUserId: currentUser.id,
       });
       res.status(201).json(doc);
@@ -1606,6 +1722,32 @@ export async function registerRoutes(
     safeUnlinkProjectDocumentUrl(doc.url ?? null, uploadsDir);
     await storage.deleteProjectDocument(docId);
     res.status(204).end();
+  });
+
+  app.patch("/api/projects/:id/documents/:docId", requireAuth, async (req, res) => {
+    const currentUser = req.user as any;
+    const projectId = Number(req.params.id);
+    const docId = Number(req.params.docId);
+    if (!Number.isInteger(projectId) || projectId <= 0 || !Number.isInteger(docId) || docId <= 0) {
+      return res.status(400).json({ message: "Invalid id" });
+    }
+    const parsed = projectDocumentPatchSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: parsed.error.issues[0]?.message ?? "Invalid body" });
+    const access = await ensureProjectMemberAccess(currentUser, projectId);
+    if (!access.ok) return res.status(access.code).json({ message: access.message });
+    if (!canManageProjectSettings(currentUser, access.project)) {
+      return res.status(403).json({ message: "Only owner/admin/manager can edit project document permissions" });
+    }
+    const existing = await storage.getProjectDocument(docId);
+    if (!existing || existing.projectId !== projectId) return res.status(404).json({ message: "Document not found" });
+    const updated = await storage.updateProjectDocument(docId, {
+      ...(parsed.data.name !== undefined ? { name: parsed.data.name.trim() } : {}),
+      ...(parsed.data.visibilityMode !== undefined ? { visibilityMode: parsed.data.visibilityMode } : {}),
+      ...(parsed.data.visibilityRoles !== undefined ? { visibilityRoles: sanitizeRoleList(parsed.data.visibilityRoles) } : {}),
+      ...(parsed.data.visibilityUserIds !== undefined ? { visibilityUserIds: sanitizeUserIdList(parsed.data.visibilityUserIds) } : {}),
+    });
+    if (!updated) return res.status(404).json({ message: "Document not found" });
+    res.json(updated);
   });
 
   // Update client settings for a project member (admin/manager only)
