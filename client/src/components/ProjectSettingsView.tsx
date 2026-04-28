@@ -105,7 +105,7 @@ export default function ProjectSettingsView({
   const [revealedMap, setRevealedMap] = useState<Record<number, { secret: string; password: string }>>({});
   const [editingCredentialId, setEditingCredentialId] = useState<number | null>(null);
   const [credentialName, setCredentialName] = useState("");
-  const [credentialType, setCredentialType] = useState("other");
+  const [credentialType, setCredentialType] = useState("");
   const [credentialUrl, setCredentialUrl] = useState("");
   const [credentialUsername, setCredentialUsername] = useState("");
   const [credentialHost, setCredentialHost] = useState("");
@@ -246,7 +246,7 @@ export default function ProjectSettingsView({
   const resetCredentialForm = () => {
     setEditingCredentialId(null);
     setCredentialName("");
-    setCredentialType("other");
+    setCredentialType("");
     setCredentialUrl("");
     setCredentialUsername("");
     setCredentialHost("");
@@ -280,9 +280,10 @@ export default function ProjectSettingsView({
   const saveCredentialMutation = useMutation({
     mutationFn: async () => {
       if (!credentialName.trim()) throw new Error("Credential name is required");
+      if (!credentialType.trim()) throw new Error("Credential type is required");
       const body = {
         name: credentialName.trim(),
-        type: credentialType,
+        type: credentialType.trim(),
         url: credentialUrl.trim() || undefined,
         username: credentialUsername.trim() || undefined,
         host: credentialHost.trim() || undefined,
@@ -697,24 +698,25 @@ export default function ProjectSettingsView({
                     <Input
                       value={credentialType}
                       onChange={(e) => setCredentialType(e.target.value)}
-                      placeholder="api_token / db / ssh / git_pat / other"
+                      placeholder="e.g. Database, SSH, AWS, CRM, Hosting"
                     />
                   </div>
-                  <div className="grid gap-3 md:grid-cols-2">
-                    <div className="space-y-1">
-                      <Label>URL</Label>
-                      <Input value={credentialUrl} onChange={(e) => setCredentialUrl(e.target.value)} placeholder="https://..." />
-                    </div>
-                    <div className="space-y-1">
-                      <Label>Username</Label>
-                      <Input value={credentialUsername} onChange={(e) => setCredentialUsername(e.target.value)} />
-                    </div>
+                  <p className="text-xs text-muted-foreground">
+                    Fill only the fields relevant to this credential. All fields support long values.
+                  </p>
+                  <div className="space-y-1">
+                    <Label>URL</Label>
+                    <Input value={credentialUrl} onChange={(e) => setCredentialUrl(e.target.value)} placeholder="https://..." />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Host</Label>
+                    <Input value={credentialHost} onChange={(e) => setCredentialHost(e.target.value)} placeholder="db.example.com / server ip" />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Username</Label>
+                    <Input value={credentialUsername} onChange={(e) => setCredentialUsername(e.target.value)} />
                   </div>
                   <div className="grid gap-3 md:grid-cols-3">
-                    <div className="space-y-1">
-                      <Label>Host</Label>
-                      <Input value={credentialHost} onChange={(e) => setCredentialHost(e.target.value)} />
-                    </div>
                     <div className="space-y-1">
                       <Label>Port</Label>
                       <Input value={credentialPort} onChange={(e) => setCredentialPort(e.target.value)} placeholder="5432" />
@@ -726,15 +728,15 @@ export default function ProjectSettingsView({
                   </div>
                   <div className="space-y-1">
                     <Label>Password {editingCredentialId ? "(leave blank to keep current)" : ""}</Label>
-                    <Textarea value={credentialPassword} onChange={(e) => setCredentialPassword(e.target.value)} rows={2} />
+                    <Textarea value={credentialPassword} onChange={(e) => setCredentialPassword(e.target.value)} rows={4} />
                   </div>
                   <div className="space-y-1">
                     <Label>{editingCredentialId ? "Secret (leave blank to keep current)" : "Secret"}</Label>
-                    <Textarea value={credentialSecret} onChange={(e) => setCredentialSecret(e.target.value)} rows={3} />
+                    <Textarea value={credentialSecret} onChange={(e) => setCredentialSecret(e.target.value)} rows={4} />
                   </div>
                   <div className="space-y-1">
                     <Label>Notes</Label>
-                    <Textarea value={credentialNotes} onChange={(e) => setCredentialNotes(e.target.value)} rows={3} />
+                    <Textarea value={credentialNotes} onChange={(e) => setCredentialNotes(e.target.value)} rows={4} />
                   </div>
                   <div className="space-y-2">
                     <Label>Visibility</Label>

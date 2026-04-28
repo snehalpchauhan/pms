@@ -203,7 +203,6 @@ function sortedTagList(tags: string[] | null | undefined): string[] {
 }
 
 const CREDENTIAL_VISIBILITY_MODES = ["project_members", "roles", "users"] as const;
-const CREDENTIAL_TYPES = ["api_token", "db", "ssh", "git_pat", "other"] as const;
 const WORKSPACE_ROLES = ["admin", "manager", "employee", "client"] as const;
 type WorkspaceRole = (typeof WORKSPACE_ROLES)[number];
 type CredentialVisibilityMode = (typeof CREDENTIAL_VISIBILITY_MODES)[number];
@@ -1335,7 +1334,7 @@ export async function registerRoutes(
 
   const credentialBodySchema = z.object({
     name: z.string().min(1).max(200),
-    type: z.enum(CREDENTIAL_TYPES).default("other"),
+    type: z.string().min(1).max(120),
     url: z.string().max(2000).optional().default(""),
     username: z.string().max(300).optional().default(""),
     host: z.string().max(300).optional().default(""),
@@ -1351,7 +1350,7 @@ export async function registerRoutes(
 
   const credentialPatchBodySchema = z.object({
     name: z.string().min(1).max(200).optional(),
-    type: z.enum(CREDENTIAL_TYPES).optional(),
+    type: z.string().min(1).max(120).optional(),
     url: z.string().max(2000).optional(),
     username: z.string().max(300).optional(),
     host: z.string().max(300).optional(),
