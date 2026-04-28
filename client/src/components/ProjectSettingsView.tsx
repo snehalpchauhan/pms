@@ -738,12 +738,19 @@ export default function ProjectSettingsView({
           </TabsContent>
 
           <TabsContent value="credentials">
-            <div className={credentialFormOpen ? "grid gap-4 lg:grid-cols-2" : "grid gap-4"}>
+            <div className="grid gap-4">
               {credentialFormOpen ? (
               <Card>
                 <CardHeader>
-                  <CardTitle>{editingCredentialId ? "Edit Credential" : "New Credential"}</CardTitle>
-                  <CardDescription>Secret value is encrypted at rest with visibility controls.</CardDescription>
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <CardTitle>{editingCredentialId ? "Edit Credential" : "New Credential"}</CardTitle>
+                      <CardDescription>Secret value is encrypted at rest with visibility controls.</CardDescription>
+                    </div>
+                    <Button type="button" size="sm" variant="outline" onClick={resetCredentialForm}>
+                      Back to list
+                    </Button>
+                  </div>
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <div className="space-y-1">
@@ -909,8 +916,7 @@ export default function ProjectSettingsView({
                   </div>
                 </CardContent>
               </Card>
-              ) : null}
-
+              ) : (
               <Card>
                 <CardHeader>
                   <div className="flex items-center justify-between gap-3">
@@ -1152,6 +1158,7 @@ export default function ProjectSettingsView({
                   ))}
                 </CardContent>
               </Card>
+              )}
             </div>
           </TabsContent>
         </Tabs>
