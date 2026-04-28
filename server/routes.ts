@@ -2029,6 +2029,39 @@ export async function registerRoutes(
     res.json({ message: "Settings updated" });
   });
 
+  // Update per-member task visibility for a project (owner/admin only)
+  app.patch("/api/projects/:id/members/:userId/task-visibility", requireAuth, async (req, res) => {
+    const currentUser = req.user as any;
+    const projectId = Number(req.params.id);
+    const userId = Number(req.params.userId);
+    const openProj = await requireOpenProjectForApi(res, projectId);
+    if (!openProj) return;
+    if (!Number.isInteger(userId) || userId <= 0) {
+      return res.status(400).json({ message: "Invalid user" });
+    }
+
+    const isProjectOwner = openProj.ownerId != null && Number(openProj.ownerId) === Number(currentUser.id);
+    if (currentUser.role !== "admin" && !isProjectOwner) {
+      return res.status(403).json({ message: "Only admin or project owner can change task visibility" });
+    }
+
+    const targetMembership = await storage.getProjectMembership(projectId, userId);
+    if (!targetMembership) {
+      return res.status(404).json({ message: "User is not a member of this project" });
+    }
+
+    const taskVisibilityRaw = String(req.body?.taskVisibility ?? "").trim();
+    const validTaskVisibilityValues = ["all", "own_assigned"] as const;
+    if (!validTaskVisibilityValues.includes(taskVisibilityRaw as (typeof validTaskVisibilityValues)[number])) {
+      return res.status(400).json({ message: "Invalid taskVisibility value" });
+    }
+
+    await storage.updateProjectMemberClientSettings(projectId, userId, {
+      taskVisibility: taskVisibilityRaw,
+    });
+    res.json({ message: "Task visibility updated" });
+  });
+
   // Check if project has a client with timecards enabled
   app.get("/api/projects/:id/has-client-timecards", requireAuth, async (req, res) => {
     const currentUser = req.user as any;
@@ -2053,7 +2086,26 @@ export async function registerRoutes(
     const allTasks: any[] = [];
     for (const project of projects) {
       const projectTasks = await storage.getTasksByProject(project.id);
-      projectTasks.forEach((t) =>
+      let visibleTasks = projectTasks;
+      if (currentUser.role !== "admin") {
+        const membership = await storage.getProjectMembership(project.id, currentUser.id);
+        if (membership?.taskVisibility === "own_assigned") {
+          const myId = Number(currentUser.id);
+          const allowedTaskIds = new Set<number>();
+          for (const task of projectTasks) {
+            if (Number(task.ownerId) === myId) {
+              allowedTaskIds.add(task.id);
+              continue;
+            }
+            const assignees = await storage.getTaskAssignees(task.id);
+            if (assignees.some((a) => Number(a.id) === myId)) {
+              allowedTaskIds.add(task.id);
+            }
+          }
+          visibleTasks = projectTasks.filter((task) => allowedTaskIds.has(task.id));
+        }
+      }
+      visibleTasks.forEach((t) =>
         allTasks.push({
           id: t.id,
           title: t.title,
@@ -2075,6 +2127,7 @@ export async function registerRoutes(
 
     // For client callers, enforce project membership (clients can only see their own projects' tasks)
     let clientMembership: any = null;
+    let memberTaskVisibility: string = "all";
     if (isClient) {
       clientMembership = await storage.getProjectMembership(projectId, currentUser.id);
       if (!clientMembership) {
@@ -2085,11 +2138,27 @@ export async function registerRoutes(
       if (!staffMem) {
         return res.status(403).json({ message: "Access denied: not a member of this project" });
       }
+      memberTaskVisibility = String(staffMem.taskVisibility || "all");
+    }
+    if (clientMembership?.taskVisibility) {
+      memberTaskVisibility = String(clientMembership.taskVisibility);
     }
 
     const projectTasks = await storage.getTasksByProject(projectId);
+    const filteredProjectTasks =
+      currentUser.role !== "admin" && memberTaskVisibility === "own_assigned"
+        ? (
+            await Promise.all(
+              projectTasks.map(async (task) => {
+                if (Number(task.ownerId) === Number(currentUser.id)) return task;
+                const assignees = await storage.getTaskAssignees(task.id);
+                return assignees.some((a) => Number(a.id) === Number(currentUser.id)) ? task : null;
+              }),
+            )
+          ).filter((task): task is (typeof projectTasks)[number] => task != null)
+        : projectTasks;
     const tasksWithDetails = await Promise.all(
-      projectTasks.map(async (task) => {
+      filteredProjectTasks.map(async (task) => {
         const assignees = await storage.getTaskAssignees(task.id);
         const checklist = await storage.getChecklistItems(task.id);
         const taskAttachments = await storage.getAttachments(task.id);
@@ -2130,12 +2199,25 @@ export async function registerRoutes(
     const open = await requireOpenProjectForApi(res, task.projectId);
     if (!open) return;
     let clientMembership: any = null;
+    let memberTaskVisibility: string = "all";
     if (currentUser.role === "client") {
       clientMembership = await storage.getProjectMembership(task.projectId, currentUser.id);
       if (!clientMembership) return res.status(403).json({ message: "Access denied" });
+      memberTaskVisibility = String(clientMembership.taskVisibility || "all");
     } else if (currentUser.role !== "admin") {
       const staffMem = await storage.getProjectMembership(task.projectId, currentUser.id);
       if (!staffMem) return res.status(403).json({ message: "Access denied" });
+      memberTaskVisibility = String(staffMem.taskVisibility || "all");
+    }
+    if (currentUser.role !== "admin" && memberTaskVisibility === "own_assigned") {
+      const isCreator = Number(task.ownerId) === Number(currentUser.id);
+      if (!isCreator) {
+        const assigneesForAccess = await storage.getTaskAssignees(task.id);
+        const isAssigned = assigneesForAccess.some((a) => Number(a.id) === Number(currentUser.id));
+        if (!isAssigned) {
+          return res.status(403).json({ message: "Access denied" });
+        }
+      }
     }
     const assignees = await storage.getTaskAssignees(task.id);
     const checklist = await storage.getChecklistItems(task.id);

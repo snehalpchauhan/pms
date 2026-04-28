@@ -50,6 +50,7 @@ interface MemberWithSettings {
   lastSeenAt?: string | Date | null;
   clientShowTimecards?: boolean;
   clientTaskAccess?: string;
+  taskVisibility?: string;
   notifyClientNewTask?: boolean;
   /** Set by GET /api/projects/:id/members when this user is the project creator (owner). */
   isProjectOwner?: boolean;
@@ -95,6 +96,7 @@ export default function TeamView({ project, currentUserRole }: TeamViewProps) {
       (project.ownerId != null && String(project.ownerId) === String(authUser?.id)) ||
       (resolvedOwnerIdStr != null && String(authUser?.id) === resolvedOwnerIdStr);
     const canManageClientSettings = currentUserRole === "manager" || currentUserRole === "admin";
+    const canManageTaskVisibility = currentUserRole === "admin" || isProjectOwnerUser;
     const canInviteRemoveMembers =
       currentUserRole === "manager" || currentUserRole === "admin" || isProjectOwnerUser;
     const canTransferOwner = currentUserRole === "admin";
@@ -273,6 +275,16 @@ export default function TeamView({ project, currentUserRole }: TeamViewProps) {
       }
     };
 
+    const handleTaskVisibilityChange = async (userId: string, taskVisibility: "all" | "own_assigned") => {
+      try {
+        await apiRequest("PATCH", `/api/projects/${numericProjectId}/members/${userId}/task-visibility`, { taskVisibility });
+        queryClient.invalidateQueries({ queryKey: ["/api/projects", numericProjectId, "members-with-settings"] });
+        toast({ title: "Task visibility updated" });
+      } catch {
+        toast({ title: "Failed to update task visibility", variant: "destructive" });
+      }
+    };
+
     return (
     <div className="p-8 space-y-8 bg-background/50 h-full overflow-y-auto">
         <div className="flex items-center justify-between">
@@ -341,8 +353,12 @@ export default function TeamView({ project, currentUserRole }: TeamViewProps) {
 
                   return (
                     <div key={user.id} className="space-y-0">
-                    <Card className={cn("hover:shadow-md transition-shadow border-border/60 relative group",
-                        ((user.role === 'client' || user.role === 'manager' || user.role === 'employee') && canManageClientSettings) && "rounded-b-none border-b-0"
+                    <Card className={cn(
+                      "hover:shadow-md transition-shadow border-border/60 relative group",
+                      (
+                        ((user.role === 'client' || user.role === 'manager' || user.role === 'employee') && canManageClientSettings) ||
+                        ((user.role === 'client' || user.role === 'manager' || user.role === 'employee') && canManageTaskVisibility)
+                      ) && "rounded-b-none border-b-0",
                     )}>
                         <CardHeader className="flex flex-row items-center gap-4 pb-2">
                             <Avatar className="h-12 w-12 border border-border">
@@ -423,7 +439,10 @@ export default function TeamView({ project, currentUserRole }: TeamViewProps) {
 
                     {/* Client settings row — visible to admin/manager only */}
                     {user.role === 'client' && canManageClientSettings && (
-                        <div className="bg-muted/40 border border-border/60 border-t-0 rounded-b-xl px-4 py-3 space-y-2" data-testid={`client-settings-${user.id}`}>
+                        <div className={cn(
+                          "bg-muted/40 border border-border/60 border-t-0 px-4 py-3 space-y-2",
+                          canManageTaskVisibility ? "rounded-none" : "rounded-b-xl",
+                        )} data-testid={`client-settings-${user.id}`}>
                             <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Client Access Settings</p>
                             <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-2">
@@ -461,7 +480,10 @@ export default function TeamView({ project, currentUserRole }: TeamViewProps) {
 
                     {/* Staff notification settings row — visible to admin/manager only, for manager/employee members */}
                     {(user.role === 'manager' || user.role === 'employee') && canManageClientSettings && (
-                        <div className="bg-muted/40 border border-border/60 border-t-0 rounded-b-xl px-4 py-3 space-y-2" data-testid={`staff-settings-${user.id}`}>
+                        <div className={cn(
+                          "bg-muted/40 border border-border/60 border-t-0 px-4 py-3 space-y-2",
+                          canManageTaskVisibility ? "rounded-none" : "rounded-b-xl",
+                        )} data-testid={`staff-settings-${user.id}`}>
                             <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Notifications</p>
                             <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-2">
@@ -476,6 +498,32 @@ export default function TeamView({ project, currentUserRole }: TeamViewProps) {
                                     onCheckedChange={(checked) => handleClientSettingChange(String(user.id), { notifyClientNewTask: checked })}
                                     data-testid={`switch-notify-client-task-${user.id}`}
                                 />
+                            </div>
+                        </div>
+                    )}
+                    {(user.role === 'client' || user.role === 'manager' || user.role === 'employee') && canManageTaskVisibility && (
+                        <div className="bg-muted/40 border border-border/60 border-t-0 rounded-b-xl px-4 py-3 space-y-2" data-testid={`task-visibility-${user.id}`}>
+                            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Task Visibility</p>
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                    <User className="w-3.5 h-3.5 text-muted-foreground" />
+                                    <div>
+                                      <span className="text-xs font-medium">Visible tasks</span>
+                                      <p className="text-[10px] text-muted-foreground leading-tight">All tasks or only created/assigned tasks</p>
+                                    </div>
+                                </div>
+                                <Select
+                                    value={user.taskVisibility || "all"}
+                                    onValueChange={(v: "all" | "own_assigned") => handleTaskVisibilityChange(String(user.id), v)}
+                                >
+                                    <SelectTrigger className="w-[180px] h-7 text-xs" data-testid={`select-task-visibility-${user.id}`}>
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="all">Everyone's tasks</SelectItem>
+                                        <SelectItem value="own_assigned">Only created and assigned</SelectItem>
+                                    </SelectContent>
+                                </Select>
                             </div>
                         </div>
                     )}

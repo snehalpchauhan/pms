@@ -134,6 +134,7 @@ CREATE TABLE "project_members" (
 	"user_id" integer,
 	"client_show_timecards" boolean DEFAULT false,
 	"client_task_access" text DEFAULT 'feedback',
+	"task_visibility" text DEFAULT 'all',
 	CONSTRAINT "project_members_project_id_user_id_pk" PRIMARY KEY("project_id","user_id")
 );
 CREATE TABLE "projects" (
