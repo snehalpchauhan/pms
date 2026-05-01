@@ -1792,47 +1792,53 @@ export function TaskDetailPage({
                                          <TaskTimelineDatesDisplay start={startDateVal} due={dueDateVal} />
                                        </Button>
                                      </PopoverTrigger>
-                                     <PopoverContent className="w-auto max-h-[min(85vh,520px)] overflow-y-auto p-0" align="start">
-                                       <div className="border-b border-border p-2">
-                                         <div className="mb-1 text-xs font-medium text-muted-foreground">From</div>
-                                         <CalendarComponent
-                                           mode="single"
-                                           selected={startDateVal}
-                                           onSelect={(d) => void persistTimelineDate("startDate", d)}
-                                           initialFocus
-                                         />
-                                         {startDateVal && (
-                                           <Button
-                                             type="button"
-                                             variant="ghost"
-                                             size="sm"
-                                             className="mt-2 w-full h-8 text-xs"
-                                             disabled={timelineSaving}
-                                             onClick={() => void persistTimelineDate("startDate", undefined)}
-                                           >
-                                             Clear from date
-                                           </Button>
-                                         )}
-                                       </div>
-                                       <div className="p-2">
-                                         <div className="mb-1 text-xs font-medium text-muted-foreground">To</div>
-                                         <CalendarComponent
-                                           mode="single"
-                                           selected={dueDateVal}
-                                           onSelect={(d) => void persistTimelineDate("dueDate", d)}
-                                         />
-                                         {dueDateVal && (
-                                           <Button
-                                             type="button"
-                                             variant="ghost"
-                                             size="sm"
-                                             className="mt-2 w-full h-8 text-xs"
-                                             disabled={timelineSaving}
-                                             onClick={() => void persistTimelineDate("dueDate", undefined)}
-                                           >
-                                             Clear to date
-                                           </Button>
-                                         )}
+                                     <PopoverContent
+                                       className="w-auto max-w-[calc(100vw-1.5rem)] p-2 sm:p-3"
+                                       align="start"
+                                     >
+                                       {/* One row: From + To side by side — avoids tall stacked calendars and inner scroll */}
+                                       <div className="flex max-w-full flex-row flex-nowrap items-start gap-3 overflow-x-auto sm:gap-4">
+                                         <div className="min-w-0 shrink-0">
+                                           <div className="mb-1 text-xs font-medium text-muted-foreground">From</div>
+                                           <CalendarComponent
+                                             mode="single"
+                                             selected={startDateVal}
+                                             onSelect={(d) => void persistTimelineDate("startDate", d)}
+                                             initialFocus
+                                           />
+                                           {startDateVal && (
+                                             <Button
+                                               type="button"
+                                               variant="ghost"
+                                               size="sm"
+                                               className="mt-2 w-full min-w-[240px] max-w-[min(100%,280px)] h-8 text-xs"
+                                               disabled={timelineSaving}
+                                               onClick={() => void persistTimelineDate("startDate", undefined)}
+                                             >
+                                               Clear from date
+                                             </Button>
+                                           )}
+                                         </div>
+                                         <div className="min-w-0 shrink-0 border-l border-border pl-3 sm:pl-4">
+                                           <div className="mb-1 text-xs font-medium text-muted-foreground">To</div>
+                                           <CalendarComponent
+                                             mode="single"
+                                             selected={dueDateVal}
+                                             onSelect={(d) => void persistTimelineDate("dueDate", d)}
+                                           />
+                                           {dueDateVal && (
+                                             <Button
+                                               type="button"
+                                               variant="ghost"
+                                               size="sm"
+                                               className="mt-2 w-full min-w-[240px] max-w-[min(100%,280px)] h-8 text-xs"
+                                               disabled={timelineSaving}
+                                               onClick={() => void persistTimelineDate("dueDate", undefined)}
+                                             >
+                                               Clear to date
+                                             </Button>
+                                           )}
+                                         </div>
                                        </div>
                                      </PopoverContent>
                                    </Popover>
