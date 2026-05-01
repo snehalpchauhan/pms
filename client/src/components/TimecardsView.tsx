@@ -56,7 +56,7 @@ import {
   countWordsInText,
 } from "@shared/timeLogDescription";
 
-const PAGE_SIZE = 25;
+const PAGE_SIZE_OPTIONS = [10, 25, 50, 100] as const;
 
 /** Log Time modal: default SelectTrigger uses nowrap + line-clamp-1; long task names overflow without these overrides. */
 const LOG_TIME_SELECT_TRIGGER = cn(
@@ -129,6 +129,7 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
   } = useTimecardsFiltersAndEntries(currentUserRole, currentProject);
 
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<number>(25);
 
   const [summaryOpen, setSummaryOpen] = useState(false);
 
@@ -264,13 +265,13 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
 
   useEffect(() => {
     setPage(1);
-  }, [applied]);
+  }, [applied, pageSize]);
 
-  const totalPages = Math.max(1, Math.ceil(entries.length / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(entries.length / pageSize));
   const paginatedEntries = useMemo(() => {
-    const start = (page - 1) * PAGE_SIZE;
-    return entries.slice(start, start + PAGE_SIZE);
-  }, [entries, page]);
+    const start = (page - 1) * pageSize;
+    return entries.slice(start, start + pageSize);
+  }, [entries, page, pageSize]);
 
   const groupedPaginatedEntries = useMemo(() => {
     const groups: Array<{ logDate: string; label: string; entries: any[] }> = [];
@@ -552,7 +553,7 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
   if (isClient) {
     const projectName = currentProject?.name || "this project";
     return (
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+      <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
         <div className="border-b border-border/50 bg-muted/10 px-6 py-5 shrink-0">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="flex min-w-0 items-start gap-3">
@@ -658,6 +659,24 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
               </div>
             ) : (
               <div className="space-y-3">
+                <div className="flex items-center justify-between gap-3 px-1">
+                  <p className="text-xs text-muted-foreground tabular-nums">
+                    {entries.length} {entries.length === 1 ? "entry" : "entries"}
+                    {totalPages > 1 ? ` · page ${page} of ${totalPages}` : ""}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground">Rows</span>
+                    <select
+                      value={pageSize}
+                      onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
+                      className="h-7 rounded-md border border-input bg-background px-2 text-xs text-foreground shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                    >
+                      {PAGE_SIZE_OPTIONS.map((n) => (
+                        <option key={n} value={n}>{n}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
                 <div className="bg-background border border-border/50 rounded-xl shadow-sm min-w-0 max-w-full overflow-x-hidden">
                   <table className="w-full table-fixed border-collapse text-sm" data-testid="table-client-time-log">
                     <colgroup>
@@ -725,10 +744,10 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
                     </tbody>
                   </table>
                 </div>
-                {entries.length > 0 ? (
+                {totalPages > 1 && (
                   <div className="flex flex-wrap items-center justify-between gap-3 px-1">
-                    <p className="text-xs text-muted-foreground">
-                      Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, entries.length)} of {entries.length}
+                    <p className="text-xs text-muted-foreground tabular-nums">
+                      {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, entries.length)} of {entries.length}
                     </p>
                     <div className="flex items-center gap-2">
                       <Button
@@ -744,7 +763,7 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
                         Previous
                       </Button>
                       <span className="text-xs text-muted-foreground tabular-nums">
-                        Page {page} of {totalPages}
+                        {page} / {totalPages}
                       </span>
                       <Button
                         type="button"
@@ -760,7 +779,7 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
                       </Button>
                     </div>
                   </div>
-                ) : null}
+                )}
               </div>
             )}
           </div>
@@ -770,7 +789,7 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
   }
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+    <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
       {/* Header */}
       <div className="border-b border-border/50 bg-muted/10 shrink-0 space-y-5 px-6 py-5">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
@@ -941,6 +960,26 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
               </div>
             ) : (
               <div className="space-y-3">
+                {/* Table toolbar: count + page-size */}
+                <div className="flex items-center justify-between gap-3 px-1">
+                  <p className="text-xs text-muted-foreground tabular-nums">
+                    {entries.length} {entries.length === 1 ? "entry" : "entries"}
+                    {totalPages > 1 ? ` · page ${page} of ${totalPages}` : ""}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground">Rows</span>
+                    <select
+                      value={pageSize}
+                      onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
+                      className="h-7 rounded-md border border-input bg-background px-2 text-xs text-foreground shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                      data-testid="select-page-size"
+                    >
+                      {PAGE_SIZE_OPTIONS.map((n) => (
+                        <option key={n} value={n}>{n}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
                 <div className="bg-background border border-border/50 rounded-xl shadow-sm min-w-0 max-w-full overflow-x-hidden">
                   <table className="w-full table-fixed border-collapse text-sm" data-testid="table-time-log">
                     <colgroup>
@@ -1048,40 +1087,42 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
                     </tbody>
                   </table>
                 </div>
-                <div className="flex flex-wrap items-center justify-between gap-3 px-1">
-                  <p className="text-xs text-muted-foreground">
-                    Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, entries.length)} of {entries.length}
-                  </p>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-8 gap-1"
-                      disabled={page <= 1}
-                      onClick={() => setPage((p) => Math.max(1, p - 1))}
-                      data-testid="button-timecards-prev"
-                    >
-                      <ChevronLeft className="w-3.5 h-3.5" />
-                      Previous
-                    </Button>
-                    <span className="text-xs text-muted-foreground tabular-nums">
-                      Page {page} of {totalPages}
-                    </span>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-8 gap-1"
-                      disabled={page >= totalPages}
-                      onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                      data-testid="button-timecards-next"
-                    >
-                      Next
-                      <ChevronRight className="w-3.5 h-3.5" />
-                    </Button>
+                {totalPages > 1 && (
+                  <div className="flex flex-wrap items-center justify-between gap-3 px-1">
+                    <p className="text-xs text-muted-foreground tabular-nums">
+                      {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, entries.length)} of {entries.length}
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 gap-1"
+                        disabled={page <= 1}
+                        onClick={() => setPage((p) => Math.max(1, p - 1))}
+                        data-testid="button-timecards-prev"
+                      >
+                        <ChevronLeft className="w-3.5 h-3.5" />
+                        Previous
+                      </Button>
+                      <span className="text-xs text-muted-foreground tabular-nums">
+                        {page} / {totalPages}
+                      </span>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 gap-1"
+                        disabled={page >= totalPages}
+                        onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                        data-testid="button-timecards-next"
+                      >
+                        Next
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             )}
           </div>
