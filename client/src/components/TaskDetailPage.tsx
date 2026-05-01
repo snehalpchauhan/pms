@@ -1583,11 +1583,11 @@ export function TaskDetailPage({
                          </DialogContent>
                      </Dialog>
 
-                     {/* Metadata: people (created / assigned by / assigned to) + timeline + tags; hours row below */}
+                     {/* Metadata: row1 = Who + Assignment + Timeline (3 cols); row2 = Tags full width */}
                      <div className="bg-muted/20 border border-border/50 rounded-xl overflow-hidden">
                      <div className="grid grid-cols-1 md:grid-cols-12 gap-x-6 gap-y-4 p-5 md:items-start md:pb-4">
                         {/* Who created / who assigned (metadata only) */}
-                        <div className="space-y-2 md:col-span-3 min-w-0">
+                        <div className="space-y-2 md:col-span-4 min-w-0">
                              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Who</div>
                              <div className="rounded-lg border border-border/50 bg-background/50 p-3 space-y-3">
                                 <div className="space-y-1">
@@ -1608,7 +1608,7 @@ export function TaskDetailPage({
                         </div>
 
                         {/* Assignment: assignees only (separate from Who) */}
-                        <div className="space-y-2 md:col-span-3 min-w-0">
+                        <div className="space-y-2 md:col-span-4 min-w-0">
                              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Assignment</div>
                              <div className="rounded-lg border border-border/50 bg-background/50 p-3 space-y-2">
                                 {!taskPeopleMeta.hasAssignees ? (
@@ -1759,7 +1759,7 @@ export function TaskDetailPage({
                         </div>
 
                         {/* Dates - Start & Due */}
-                        <div className="space-y-2 md:col-span-3 min-w-0">
+                        <div className="space-y-2 md:col-span-4 min-w-0">
                              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Timeline</div>
                              <div className="flex flex-wrap items-center gap-x-2 gap-y-2">
                                  {(!isClient || isFullAccess) ? (
@@ -1855,8 +1855,8 @@ export function TaskDetailPage({
                              </div>
                         </div>
 
-                         {/* Tags */}
-                         <div className="space-y-2 md:col-span-3 min-w-0">
+                         {/* Tags — full width on second row (md+) */}
+                         <div className="space-y-2 md:col-span-12 min-w-0 pt-2 md:border-t md:border-border/40 md:pt-4">
                              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Tags</div>
                              <div className="flex flex-wrap gap-2">
                                 {tags.map((tag) => (
