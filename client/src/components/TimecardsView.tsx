@@ -19,6 +19,7 @@ import {
   downloadTimecardsPdf,
 } from "@/lib/timecardsExport";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
@@ -571,54 +572,79 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
     const projectName = currentProject?.name || "this project";
     return (
       <div className="flex-1 h-full overflow-hidden flex flex-col">
-        <div className="p-6 border-b border-border/50 shrink-0">
-          <div className="flex items-center gap-3">
-            <Clock className="w-6 h-6 text-primary" />
-            <div>
-              <h2 className="text-xl font-display font-bold text-foreground">Hours Shared With You</h2>
-              <p className="text-sm text-muted-foreground">
-                Time entries shared by the team for <span className="font-medium text-foreground">{projectName}</span>
-              </p>
+        <div className="border-b border-border/50 bg-muted/10 px-6 py-5 shrink-0">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="flex min-w-0 items-start gap-3">
+              <Clock className="mt-0.5 h-6 w-6 shrink-0 text-primary" />
+              <div className="min-w-0 space-y-1">
+                <h2 className="font-display text-xl font-bold tracking-tight text-foreground">Hours Shared With You</h2>
+                <p className="text-sm text-muted-foreground">
+                  Time entries shared by the team for{" "}
+                  <span className="font-medium text-foreground">{projectName}</span>
+                </p>
+              </div>
             </div>
-            <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
-              <Button size="sm" className="h-9 gap-1.5" onClick={commitSearch} disabled={isLoading} data-testid="button-client-timecards-search">
-                <Search className="w-3.5 h-3.5" />
+            <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
+              <Button
+                size="sm"
+                variant="secondary"
+                className="h-9 gap-1.5 sm:order-first"
+                onClick={commitSearch}
+                disabled={isLoading}
+                data-testid="button-client-timecards-search"
+              >
+                <Search className="h-3.5 w-3.5" />
                 Search
               </Button>
-              <div className="flex items-center gap-3 rounded-lg border border-primary/20 bg-primary/5 px-4 py-2.5">
-                <Timer className="h-5 w-5 shrink-0 text-primary" />
+              <div className="flex items-center gap-2.5 rounded-lg border border-border/60 bg-background px-3 py-2 shadow-sm">
+                <Timer className="h-4 w-4 shrink-0 text-primary" />
                 <div className="text-right leading-tight">
-                  <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Total hours</p>
-                  <p className="text-xl font-bold tabular-nums text-primary" data-testid="text-total-hours">
+                  <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Total</p>
+                  <p className="text-lg font-bold tabular-nums text-foreground" data-testid="text-total-hours">
                     {hasLoadedEntries ? `${totalHours.toFixed(1)}h` : "—"}
                   </p>
-                  <p className="text-xs text-muted-foreground">
-                    {hasLoadedEntries ? `${entries.length} ${entries.length === 1 ? "entry" : "entries"}` : "Not loaded"}
+                  <p className="text-[11px] text-muted-foreground">
+                    {hasLoadedEntries ? `${entries.length} ${entries.length === 1 ? "entry" : "entries"}` : "—"}
                   </p>
                 </div>
               </div>
-              {hasLoadedEntries && entries.length > 0 && (
+              {hasLoadedEntries && entries.length > 0 ? (
                 <>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-9 gap-1.5"
-                    onClick={() => setSummaryOpen(true)}
-                    data-testid="button-summary-client"
-                  >
-                    <BarChart3 className="w-3.5 h-3.5" />
-                    Summary
-                  </Button>
-                  <Button variant="outline" size="sm" className="h-9 gap-1.5" onClick={handleExportExcel} data-testid="button-export-xlsx-client">
-                    <FileSpreadsheet className="w-3.5 h-3.5" />
-                    Excel
-                  </Button>
-                  <Button variant="outline" size="sm" className="h-9 gap-1.5" onClick={handleExportPdf} data-testid="button-export-pdf-client">
-                    <FileDown className="w-3.5 h-3.5" />
-                    PDF
-                  </Button>
+                  <Separator orientation="vertical" className="hidden h-9 lg:block" />
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-9 gap-1.5"
+                      onClick={() => setSummaryOpen(true)}
+                      data-testid="button-summary-client"
+                    >
+                      <BarChart3 className="h-3.5 w-3.5" />
+                      Summary
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-9 gap-1.5"
+                      onClick={handleExportExcel}
+                      data-testid="button-export-xlsx-client"
+                    >
+                      <FileSpreadsheet className="h-3.5 w-3.5" />
+                      Excel
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-9 gap-1.5"
+                      onClick={handleExportPdf}
+                      data-testid="button-export-pdf-client"
+                    >
+                      <FileDown className="h-3.5 w-3.5" />
+                      PDF
+                    </Button>
+                  </div>
                 </>
-              )}
+              ) : null}
             </div>
           </div>
         </div>
@@ -758,80 +784,85 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
   return (
     <div className="flex-1 h-full overflow-hidden flex flex-col">
       {/* Header */}
-      <div className="p-6 border-b border-border/50 space-y-4 shrink-0">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="flex min-w-0 flex-wrap items-start gap-4">
-            <div className="flex items-center gap-3">
-              <Clock className="h-7 w-7 shrink-0 text-primary" />
-              <div>
-                <h2 className="font-display text-xl font-bold text-foreground">Timecards</h2>
-                <p className="text-sm text-muted-foreground">
-                  {isAdmin ? "All team members' time logs" : isManagerOrAdmin ? "Your team's time logs" : "Your personal time log"}
-                </p>
-                <p className="text-xs text-muted-foreground/80 mt-1">
-                  Use <strong>Search</strong> to load the time log
-                  {isManagerOrAdmin ? " and the timecards summary (when From and To dates are set)" : ""} — data is not
-                  fetched until you search.
-                </p>
-              </div>
+      <div className="border-b border-border/50 bg-muted/10 shrink-0 space-y-5 px-6 py-5">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div className="flex min-w-0 items-start gap-3">
+            <Clock className="mt-0.5 h-7 w-7 shrink-0 text-primary" />
+            <div className="min-w-0 space-y-1">
+              <h2 className="font-display text-xl font-bold tracking-tight text-foreground">Timecards</h2>
+              <p className="text-sm text-muted-foreground">
+                {isAdmin ? "All team members' time logs" : isManagerOrAdmin ? "Your team's time logs" : "Your personal time log"}
+              </p>
+              <p className="text-xs text-muted-foreground/90">
+                Use <strong className="font-medium text-foreground">Search</strong> to load the time log
+                {isManagerOrAdmin ? (
+                  <>
+                    {" "}
+                    and the timecards summary when{" "}
+                    <strong className="font-medium text-foreground">From</strong> and{" "}
+                    <strong className="font-medium text-foreground">To</strong> are set.
+                  </>
+                ) : (
+                  "."
+                )}
+              </p>
             </div>
-            <div className="flex items-center gap-3 rounded-lg border border-primary/20 bg-primary/5 px-4 py-2.5">
-              <Timer className="h-5 w-5 shrink-0 text-primary" />
-              <div className="leading-tight">
-                <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Total hours</p>
-                <p className="text-2xl font-bold tabular-nums text-primary" data-testid="text-total-hours">
+          </div>
+          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end xl:shrink-0">
+            <div className="flex items-center gap-2.5 rounded-lg border border-border/60 bg-background px-3 py-2 shadow-sm">
+              <Timer className="h-4 w-4 shrink-0 text-primary" />
+              <div className="text-right leading-tight">
+                <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Total</p>
+                <p className="text-lg font-bold tabular-nums text-foreground" data-testid="text-total-hours">
                   {hasLoadedEntries ? `${totalHours.toFixed(1)}h` : "—"}
                 </p>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-[11px] text-muted-foreground">
                   {hasLoadedEntries ? (
                     <>
                       {entries.length} {entries.length === 1 ? "entry" : "entries"}
-                      {isManagerOrAdmin ? " (filtered)" : ""}
+                      {isManagerOrAdmin ? " · filtered" : ""}
                     </>
                   ) : (
-                    "Run Search to load"
+                    "Not loaded"
                   )}
                 </p>
               </div>
             </div>
-          </div>
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            {hasLoadedEntries && entries.length > 0 && (
+            {hasLoadedEntries && entries.length > 0 ? (
               <>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-9 gap-1.5"
-                  onClick={() => setSummaryOpen(true)}
-                  data-testid="button-summary"
-                >
-                  <BarChart3 className="w-3.5 h-3.5" />
-                  Summary
-                </Button>
-                <Button variant="outline" size="sm" className="h-9 gap-1.5" onClick={handleExportExcel} data-testid="button-export-xlsx">
-                  <FileSpreadsheet className="w-3.5 h-3.5" />
-                  Excel
-                </Button>
-                <Button variant="outline" size="sm" className="h-9 gap-1.5" onClick={handleExportPdf} data-testid="button-export-pdf">
-                  <FileDown className="w-3.5 h-3.5" />
-                  PDF
-                </Button>
+                <Separator orientation="vertical" className="hidden h-9 sm:block" />
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-9 gap-1.5"
+                    onClick={() => setSummaryOpen(true)}
+                    data-testid="button-summary"
+                  >
+                    <BarChart3 className="h-3.5 w-3.5" />
+                    Summary
+                  </Button>
+                  <Button variant="outline" size="sm" className="h-9 gap-1.5" onClick={handleExportExcel} data-testid="button-export-xlsx">
+                    <FileSpreadsheet className="h-3.5 w-3.5" />
+                    Excel
+                  </Button>
+                  <Button variant="outline" size="sm" className="h-9 gap-1.5" onClick={handleExportPdf} data-testid="button-export-pdf">
+                    <FileDown className="h-3.5 w-3.5" />
+                    PDF
+                  </Button>
+                </div>
               </>
-            )}
-            <Button
-              onClick={() => setLogOpen(true)}
-              className="gap-2"
-              data-testid="button-log-time"
-            >
-              <Plus className="w-4 h-4" />
-              Log Time
+            ) : null}
+            <Button size="sm" className="h-9 gap-1.5 px-4 shadow-sm" onClick={() => setLogOpen(true)} data-testid="button-log-time">
+              <Plus className="h-4 w-4" />
+              Log time
             </Button>
           </div>
         </div>
 
         {/* Filters */}
-        <div className="flex flex-wrap gap-3 items-center">
-          <Filter className="w-4 h-4 text-muted-foreground shrink-0" />
+        <div className="flex flex-wrap items-center gap-3 border-t border-border/40 pt-4">
+          <Filter className="h-4 w-4 shrink-0 text-muted-foreground" />
           {isManagerOrAdmin && (
             <div className="flex items-center gap-1.5">
               <Users className="w-3.5 h-3.5 text-muted-foreground shrink-0" aria-hidden />
