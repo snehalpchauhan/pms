@@ -49,6 +49,8 @@ import { format, isToday, parseISO } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import type { ClientPermissions } from "@/App";
 import type { Project } from "@/lib/mockData";
+import type { TimecardDateFormatPreset } from "@shared/timecardDateFormat";
+import TimecardsComplianceSummary from "@/components/TimecardsComplianceSummary";
 import {
   WORK_CATEGORIES,
   buildStoredTimeDescription,
@@ -160,6 +162,7 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
     logoUrl?: string | null;
     timeLogMinDescriptionWords?: number;
     timeLogMaxHoursPerEntry?: number | null;
+    timecardDateDisplayFormat?: TimecardDateFormatPreset;
   }>({
     queryKey: ["/api/company-settings"],
     queryFn: async () => {
@@ -885,6 +888,14 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
 
       <ScrollArea className="flex-1">
         <div className="space-y-3 p-6">
+          {isManagerOrAdmin ? (
+            <TimecardsComplianceSummary
+              dateDisplayPreset={
+                companySettingsForTime?.timecardDateDisplayFormat ?? "DD/MM/YYYY"
+              }
+            />
+          ) : null}
+
           {/* Detailed Log */}
           <div className="space-y-3">
             <h3 className="text-sm font-semibold text-foreground">

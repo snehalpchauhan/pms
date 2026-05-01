@@ -28,7 +28,11 @@ import {
 import { isValidProjectColor, sanitizeProjectColor } from "@shared/projectColors";
 import { timeLogNoteMeetsMinWords } from "@shared/timeLogDescription";
 import type { Project } from "@shared/schema";
-import { runAdminMonthlyDigestAllStaff, runEmployeeMonthlyDigests } from "./jobs/timecardDigest";
+import {
+  getTimecardComplianceSummary,
+  runAdminMonthlyDigestAllStaff,
+  runEmployeeMonthlyDigests,
+} from "./jobs/timecardDigest";
 
 /**
  * VoiceLink integration — session-token third-party API.
@@ -829,6 +833,38 @@ export async function registerRoutes(
       admin,
       employees,
     });
+  });
+
+  /** Admin/manager: weekday compliance grid (same rules as monthly digest emails). */
+  app.get("/api/timecards-compliance-summary", requireAuth, async (req, res) => {
+    const currentUser = req.user as { role?: string };
+    if (currentUser.role !== "admin" && currentUser.role !== "manager") {
+      return res.status(403).json({ message: "Only administrators and managers can view this summary" });
+    }
+    const startDate = String(req.query.startDate ?? "").trim();
+    const endDate = String(req.query.endDate ?? "").trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate) || !/^\d{4}-\d{2}-\d{2}$/.test(endDate)) {
+      return res.status(400).json({ message: "startDate and endDate are required (YYYY-MM-DD)" });
+    }
+    if (startDate > endDate) {
+      return res.status(400).json({ message: "startDate must be on or before endDate" });
+    }
+    const t0 = new Date(`${startDate}T00:00:00.000Z`).getTime();
+    const t1 = new Date(`${endDate}T00:00:00.000Z`).getTime();
+    const spanDays = Math.floor((t1 - t0) / 86400000) + 1;
+    if (spanDays > 400 || spanDays < 1) {
+      return res.status(400).json({ message: "Invalid date range (max 400 days)" });
+    }
+    let filterUserId: number | undefined;
+    if (req.query.userId != null && String(req.query.userId).trim() !== "") {
+      const uid = Number(req.query.userId);
+      if (!Number.isInteger(uid) || uid <= 0) {
+        return res.status(400).json({ message: "Invalid userId" });
+      }
+      filterUserId = uid;
+    }
+    const data = await getTimecardComplianceSummary(startDate, endDate, filterUserId);
+    res.json(data);
   });
 
   // Users

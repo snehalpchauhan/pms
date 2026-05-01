@@ -577,3 +577,84 @@ export async function sendEmployeeDailyMissedHtmlDigests(now = new Date()): Prom
   }
   return { emailed, skipped };
 }
+
+async function getStaffForCompliance(): Promise<UserRow[]> {
+  const rows = await db
+    .select({ id: users.id, name: users.name, email: users.email, role: users.role })
+    .from(users);
+  return rows.filter((u) => u.role === "employee" || u.role === "manager");
+}
+
+export type ComplianceDayCell = {
+  dateYmd: string;
+  hours: number;
+  metRequirement: boolean;
+  missingHours: number;
+};
+
+export type CompliancePersonRow = {
+  userId: number;
+  name: string;
+  email: string | null;
+  days: ComplianceDayCell[];
+  gapDayCount: number;
+  totalMissingHours: number;
+};
+
+/** Weekdays only; same 8h rule as digest emails — for HR / admin UI. */
+export async function getTimecardComplianceSummary(
+  startYmd: string,
+  endYmd: string,
+  filterUserId?: number,
+): Promise<{
+  requiredHoursPerDay: number;
+  startYmd: string;
+  endYmd: string;
+  weekdays: string[];
+  people: CompliancePersonRow[];
+}> {
+  const dayKeys = weekdayKeysBetween(startYmd, endYmd);
+  let staff = await getStaffForCompliance();
+  if (filterUserId != null && Number.isInteger(filterUserId) && filterUserId > 0) {
+    staff = staff.filter((u) => u.id === filterUserId);
+  }
+  const totals = await totalsByUserByDate(startYmd, endYmd);
+  const people: CompliancePersonRow[] = [];
+  for (const u of staff) {
+    const byDate = totals.get(u.id) ?? new Map<string, number>();
+    const days: ComplianceDayCell[] = dayKeys.map((dateYmd) => {
+      const hours = byDate.get(dateYmd) ?? 0;
+      const metRequirement = hours >= REQUIRED_HOURS_PER_DAY;
+      return {
+        dateYmd,
+        hours,
+        metRequirement,
+        missingHours: hoursMissing(hours),
+      };
+    });
+    let gapDayCount = 0;
+    let totalMissingHours = 0;
+    for (const d of days) {
+      if (!d.metRequirement) {
+        gapDayCount++;
+        totalMissingHours += d.missingHours;
+      }
+    }
+    people.push({
+      userId: u.id,
+      name: u.name,
+      email: u.email?.trim() ? u.email.trim() : null,
+      days,
+      gapDayCount,
+      totalMissingHours: Math.round(totalMissingHours * 100) / 100,
+    });
+  }
+  people.sort((a, b) => b.gapDayCount - a.gapDayCount || a.name.localeCompare(b.name));
+  return {
+    requiredHoursPerDay: REQUIRED_HOURS_PER_DAY,
+    startYmd,
+    endYmd,
+    weekdays: dayKeys,
+    people,
+  };
+}
