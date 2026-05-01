@@ -441,6 +441,20 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
     if (page > totalPages) setPage(totalPages);
   }, [page, totalPages]);
 
+  /** Deep link from sidebar: #timecards-summary */
+  useEffect(() => {
+    const scrollIfNeeded = () => {
+      if (typeof window === "undefined") return;
+      if (window.location.hash.replace(/^#/, "") !== "timecards-summary") return;
+      window.requestAnimationFrame(() => {
+        document.getElementById("pms-timecards-summary-anchor")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    };
+    scrollIfNeeded();
+    window.addEventListener("hashchange", scrollIfNeeded);
+    return () => window.removeEventListener("hashchange", scrollIfNeeded);
+  }, []);
+
   const showMemberColumn = isClient || isManagerOrAdmin;
 
   const exportMeta = useMemo(

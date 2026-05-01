@@ -92,6 +92,7 @@ export default function TimecardsComplianceSummary({
   const busy = isLoading || isFetching;
 
   return (
+    <div id="pms-timecards-summary-anchor" className="scroll-mt-4">
     <Card className="border-border/60 shadow-sm">
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-base">
@@ -272,5 +273,6 @@ export default function TimecardsComplianceSummary({
         )}
       </CardContent>
     </Card>
+    </div>
   );
 }
