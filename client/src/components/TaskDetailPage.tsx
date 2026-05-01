@@ -34,7 +34,7 @@ import { cn, getUserInitials } from "@/lib/utils";
 import { useState, useEffect, useMemo, useRef } from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { format, formatDistanceToNow, isSameDay } from "date-fns";
+import { format, formatDistanceToNow } from "date-fns";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -131,19 +131,17 @@ function parseTaskDateStr(s: string | undefined): Date | undefined {
   return isNaN(dt.getTime()) ? undefined : dt;
 }
 
-/** One-line range: "1 – 4 Apr", "30 Apr – 2 May"; single date if only one side set. */
-function formatTaskTimelineRange(start: Date | undefined, due: Date | undefined): string {
-  if (!start && !due) return "Add dates";
-  if (start && !due) return format(start, "d MMM");
-  if (!start && due) return format(due, "d MMM");
-  const s = start!;
-  const e = due!;
-  if (isSameDay(s, e)) return format(s, "d MMM");
-  const sameMonth = s.getFullYear() === e.getFullYear() && s.getMonth() === e.getMonth();
-  if (sameMonth) return `${format(s, "d")} – ${format(e, "d MMM")}`;
-  const sameYear = s.getFullYear() === e.getFullYear();
-  if (sameYear) return `${format(s, "d MMM")} – ${format(e, "d MMM")}`;
-  return `${format(s, "d MMM yyyy")} – ${format(e, "d MMM yyyy")}`;
+/** Start + due on two lines in one column (one icon beside this in the trigger). */
+function TaskTimelineDatesDisplay({ start, due }: { start: Date | undefined; due: Date | undefined }) {
+  if (!start && !due) {
+    return <span className="text-muted-foreground">Add dates</span>;
+  }
+  return (
+    <div className="flex flex-col items-center gap-0 leading-[1.2] tabular-nums">
+      <span className={cn(!start && "text-muted-foreground")}>{start ? format(start, "d MMM") : "—"}</span>
+      <span className={cn(!due && "text-muted-foreground")}>{due ? format(due, "d MMM") : "—"}</span>
+    </div>
+  );
 }
 
 function CommentItem({
@@ -1772,7 +1770,7 @@ export function TaskDetailPage({
                              </div>
                         </div>
 
-                        {/* Dates — single row: one icon + compact range (e.g. 1 – 4 Apr, 30 Apr – 2 May) */}
+                        {/* Dates — one column: start + due on separate lines, single calendar icon */}
                         <div className="space-y-2 md:col-span-4 min-w-0">
                              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Timeline</div>
                              <div className="w-full min-w-0 rounded-lg border border-border/40 bg-background/40 p-1">
@@ -1784,12 +1782,12 @@ export function TaskDetailPage({
                                          variant="outline"
                                          disabled={timelineSaving}
                                          className={cn(
-                                           "h-7 w-full min-w-0 justify-center gap-1.5 px-2 bg-background border-border/50 shadow-sm text-[11px] font-medium tabular-nums",
+                                           "h-auto min-h-7 w-full min-w-0 justify-center gap-2 px-2 py-1.5 bg-background border-border/50 shadow-sm text-[11px] font-medium",
                                            !startDateVal && !dueDateVal && "text-muted-foreground border-dashed",
                                          )}
                                        >
-                                         <CalendarCheck className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                                         <span className="min-w-0 truncate">{formatTaskTimelineRange(startDateVal, dueDateVal)}</span>
+                                         <CalendarCheck className="h-3.5 w-3.5 shrink-0 self-center text-muted-foreground" />
+                                         <TaskTimelineDatesDisplay start={startDateVal} due={dueDateVal} />
                                        </Button>
                                      </PopoverTrigger>
                                      <PopoverContent className="w-auto max-h-[min(85vh,520px)] overflow-y-auto p-0" align="start">
@@ -1839,19 +1837,23 @@ export function TaskDetailPage({
                                  ) : (
                                      <div
                                        className={cn(
-                                         "flex h-7 w-full min-w-0 items-center justify-center gap-1.5 rounded-md border bg-background px-2 text-[11px] font-medium tabular-nums shadow-sm",
+                                         "flex h-auto min-h-7 w-full min-w-0 items-center justify-center gap-2 rounded-md border bg-background px-2 py-1.5 text-[11px] font-medium shadow-sm",
                                          !task.startDate && !task.dueDate
                                            ? "border-dashed border-border/50 text-muted-foreground opacity-80"
                                            : "border-border/50",
                                        )}
                                      >
-                                       <CalendarCheck className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                                       <span className="min-w-0 truncate">
-                                         {formatTaskTimelineRange(
-                                           parseTaskDateStr(task.startDate) ?? (task.startDate ? new Date(task.startDate) : undefined),
-                                           parseTaskDateStr(task.dueDate) ?? (task.dueDate ? new Date(task.dueDate) : undefined),
-                                         )}
-                                       </span>
+                                       <CalendarCheck className="h-3.5 w-3.5 shrink-0 self-center text-muted-foreground" />
+                                       <TaskTimelineDatesDisplay
+                                         start={
+                                           parseTaskDateStr(task.startDate) ??
+                                           (task.startDate ? new Date(task.startDate) : undefined)
+                                         }
+                                         due={
+                                           parseTaskDateStr(task.dueDate) ??
+                                           (task.dueDate ? new Date(task.dueDate) : undefined)
+                                         }
+                                       />
                                      </div>
                                  )}
                              </div>
