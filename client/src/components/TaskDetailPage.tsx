@@ -131,16 +131,18 @@ function parseTaskDateStr(s: string | undefined): Date | undefined {
   return isNaN(dt.getTime()) ? undefined : dt;
 }
 
-/** Start + due on two lines in one column (one icon beside this in the trigger). */
+/** One row: From … to … (grid stays a single column; text is inline). */
 function TaskTimelineDatesDisplay({ start, due }: { start: Date | undefined; due: Date | undefined }) {
   if (!start && !due) {
     return <span className="text-muted-foreground">Add dates</span>;
   }
   return (
-    <div className="flex flex-col items-center gap-0 leading-[1.2] tabular-nums">
+    <span className="inline-flex min-w-0 flex-row flex-wrap items-center justify-center gap-x-1 text-center tabular-nums leading-tight">
+      <span className="text-muted-foreground">From</span>
       <span className={cn(!start && "text-muted-foreground")}>{start ? format(start, "d MMM") : "—"}</span>
+      <span className="text-muted-foreground">to</span>
       <span className={cn(!due && "text-muted-foreground")}>{due ? format(due, "d MMM") : "—"}</span>
-    </div>
+    </span>
   );
 }
 
@@ -1770,7 +1772,7 @@ export function TaskDetailPage({
                              </div>
                         </div>
 
-                        {/* Dates — one column: start + due on separate lines, single calendar icon */}
+                        {/* Dates — one grid column; one row: From … to … + single calendar icon */}
                         <div className="space-y-2 md:col-span-4 min-w-0">
                              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Timeline</div>
                              <div className="w-full min-w-0 rounded-lg border border-border/40 bg-background/40 p-1">
@@ -1782,7 +1784,7 @@ export function TaskDetailPage({
                                          variant="outline"
                                          disabled={timelineSaving}
                                          className={cn(
-                                           "h-auto min-h-7 w-full min-w-0 justify-center gap-2 px-2 py-1.5 bg-background border-border/50 shadow-sm text-[11px] font-medium",
+                                           "h-auto min-h-7 w-full min-w-0 justify-center gap-2 px-2 py-1.5 sm:py-1 bg-background border-border/50 shadow-sm text-[11px] font-medium",
                                            !startDateVal && !dueDateVal && "text-muted-foreground border-dashed",
                                          )}
                                        >
@@ -1792,7 +1794,7 @@ export function TaskDetailPage({
                                      </PopoverTrigger>
                                      <PopoverContent className="w-auto max-h-[min(85vh,520px)] overflow-y-auto p-0" align="start">
                                        <div className="border-b border-border p-2">
-                                         <div className="mb-1 text-xs font-medium text-muted-foreground">Start</div>
+                                         <div className="mb-1 text-xs font-medium text-muted-foreground">From</div>
                                          <CalendarComponent
                                            mode="single"
                                            selected={startDateVal}
@@ -1808,12 +1810,12 @@ export function TaskDetailPage({
                                              disabled={timelineSaving}
                                              onClick={() => void persistTimelineDate("startDate", undefined)}
                                            >
-                                             Clear start date
+                                             Clear from date
                                            </Button>
                                          )}
                                        </div>
                                        <div className="p-2">
-                                         <div className="mb-1 text-xs font-medium text-muted-foreground">Due</div>
+                                         <div className="mb-1 text-xs font-medium text-muted-foreground">To</div>
                                          <CalendarComponent
                                            mode="single"
                                            selected={dueDateVal}
@@ -1828,7 +1830,7 @@ export function TaskDetailPage({
                                              disabled={timelineSaving}
                                              onClick={() => void persistTimelineDate("dueDate", undefined)}
                                            >
-                                             Clear due date
+                                             Clear to date
                                            </Button>
                                          )}
                                        </div>
@@ -1837,7 +1839,7 @@ export function TaskDetailPage({
                                  ) : (
                                      <div
                                        className={cn(
-                                         "flex h-auto min-h-7 w-full min-w-0 items-center justify-center gap-2 rounded-md border bg-background px-2 py-1.5 text-[11px] font-medium shadow-sm",
+                                         "flex h-auto min-h-7 w-full min-w-0 items-center justify-center gap-2 rounded-md border bg-background px-2 py-1.5 sm:py-1 text-[11px] font-medium shadow-sm",
                                          !task.startDate && !task.dueDate
                                            ? "border-dashed border-border/50 text-muted-foreground opacity-80"
                                            : "border-border/50",
