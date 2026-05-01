@@ -6,8 +6,9 @@ import { CSS } from "@dnd-kit/utilities";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { MessageSquare, Paperclip, Calendar, Clock, AlertTriangle } from "lucide-react";
+import { MessageSquare, Paperclip, Calendar, Clock, AlertTriangle, UserRound } from "lucide-react";
 import { isTaskOverInvested, parseTaskHoursField } from "@/lib/taskHours";
+import { formatTaskOwnerAttribution } from "@/lib/taskOwnerAttribution";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 
@@ -56,6 +57,7 @@ export function TaskCard({ task, onClick, disableDrag = false }: TaskCardProps) 
     return "Client Request";
   })();
   const discussionCommentCount = task.comments.filter((c) => !isSystemTaskComment(c)).length;
+  const ownerAttribution = formatTaskOwnerAttribution(task, users, currentUser?.id ?? null);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: task.id,
     data: { type: "task" as const, task },
@@ -129,6 +131,15 @@ export function TaskCard({ task, onClick, disableDrag = false }: TaskCardProps) 
             <PriorityBadge priority={task.priority} />
           </div>
           <h4 className="font-medium text-sm leading-snug text-foreground group-hover:text-primary transition-colors">{task.title}</h4>
+          {ownerAttribution ? (
+            <p
+              className="flex items-center gap-1 text-[10px] text-muted-foreground leading-tight mt-1 min-w-0"
+              title={ownerAttribution}
+            >
+              <UserRound className="w-3 h-3 shrink-0 opacity-80" aria-hidden />
+              <span className="truncate">{ownerAttribution}</span>
+            </p>
+          ) : null}
         </CardHeader>
         <CardContent className="p-3 pt-2">{/* keep layout */}</CardContent>
         <CardFooter className="p-3 pt-0 flex items-center justify-between text-muted-foreground">

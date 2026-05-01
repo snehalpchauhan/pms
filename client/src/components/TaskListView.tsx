@@ -1,7 +1,7 @@
 import { Task, Project, Status } from "@/lib/mockData";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { CheckCircle2, Circle, Clock, MoreHorizontal, Timer, AlertTriangle } from "lucide-react";
+import { CheckCircle2, Circle, Clock, MoreHorizontal, Timer, AlertTriangle, UserRound } from "lucide-react";
 import { isTaskOverInvested, parseTaskHoursField } from "@/lib/taskHours";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
@@ -10,6 +10,7 @@ import { useAppData } from "@/hooks/useAppData";
 import { isToday, isTomorrow, isThisWeek, isPast } from "date-fns";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { formatTaskOwnerAttribution } from "@/lib/taskOwnerAttribution";
 
 interface TaskListViewProps {
     tasks: Task[];
@@ -115,6 +116,7 @@ export default function TaskListView({ tasks, project, onTaskClick, completeColu
                     const actual = task.totalHours ?? 0;
                     const overInvested = isTaskOverInvested(estimated, actual);
                     const owner = task.ownerId != null ? users[String(task.ownerId)] : null;
+                    const ownerAttribution = formatTaskOwnerAttribution(task, users, currentUser?.id ?? null);
                     // Determine client-request by task owner (owner is a client), not a tag.
                     // Keep tag fallback for older tasks.
                     const isClientRequest = owner?.role === "client" || task.tags.includes("[Client Request]");
@@ -130,11 +132,19 @@ export default function TaskListView({ tasks, project, onTaskClick, completeColu
                             )}
                             onClick={() => onTaskClick && onTaskClick(task)}
                         >
-                            <div className="col-span-6 flex items-center gap-3">
+                            <div className="col-span-6 flex items-start gap-3 min-w-0">
                                 {getStatusIcon(task.status)}
+                                <div className="min-w-0 flex-1 flex flex-col gap-0.5">
                                 <span className="font-medium text-sm text-foreground group-hover:text-primary transition-colors">
                                     {task.title}
                                 </span>
+                                {ownerAttribution ? (
+                                    <span className="flex items-center gap-1 text-[10px] text-muted-foreground truncate" title={ownerAttribution}>
+                                        <UserRound className="w-3 h-3 shrink-0 opacity-80" aria-hidden />
+                                        {ownerAttribution}
+                                    </span>
+                                ) : null}
+                                </div>
                                 {task.tags.filter(t => t !== "[Client Request]").length > 0 && (
                                     <Badge
                                         variant="outline"
