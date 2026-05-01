@@ -186,6 +186,7 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
     try {
       await apiRequest("DELETE", `/api/time-entries/${id}`);
       queryClient.invalidateQueries({ queryKey: ["/api/time-entries"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/timecards-compliance-summary"] });
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
       toast({ title: "Entry deleted" });
     } catch {
@@ -235,6 +236,7 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
         clientVisible: clientTimecardsEnabled ? logClientVisible : false,
       });
       queryClient.invalidateQueries({ queryKey: ["/api/time-entries"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/timecards-compliance-summary"] });
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
       toast({ title: "Time logged successfully" });
       setLogOpen(false);
@@ -766,7 +768,11 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
                 <p className="text-sm text-muted-foreground">
                   {isAdmin ? "All team members' time logs" : isManagerOrAdmin ? "Your team's time logs" : "Your personal time log"}
                 </p>
-                <p className="text-xs text-muted-foreground/80 mt-1">Use Search to load entries — data is not fetched until you search.</p>
+                <p className="text-xs text-muted-foreground/80 mt-1">
+                  Use <strong>Search</strong> to load the time log
+                  {isManagerOrAdmin ? " and the timecards summary (when From and To dates are set)" : ""} — data is not
+                  fetched until you search.
+                </p>
               </div>
             </div>
             <div className="flex items-center gap-3 rounded-lg border border-primary/20 bg-primary/5 px-4 py-2.5">
@@ -904,9 +910,8 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
         <div className="space-y-3 p-6">
           {isManagerOrAdmin ? (
             <TimecardsComplianceSummary
-              dateDisplayPreset={
-                companySettingsForTime?.timecardDateDisplayFormat ?? "DD/MM/YYYY"
-              }
+              dateDisplayPreset={companySettingsForTime?.timecardDateDisplayFormat ?? "DD/MM/YYYY"}
+              applied={applied}
             />
           ) : null}
 
