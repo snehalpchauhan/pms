@@ -1,4 +1,4 @@
-import { Bell, Check, Clock, AlertCircle, MessageSquare, ListChecks } from "lucide-react";
+import { Bell, Check, Clock, AlertCircle, MessageSquare, ListChecks, AtSign } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -33,7 +33,9 @@ interface NotificationPreferences {
 export function NotificationsPopover() {
   const [isOpen, setIsOpen] = useState(false);
   const [onlyUnread, setOnlyUnread] = useState(false);
-  const [typeFilter, setTypeFilter] = useState<"all" | "task" | "comment" | "timecard" | "project" | "document" | "credential">("all");
+  const [typeFilter, setTypeFilter] = useState<
+    "all" | "task" | "comment" | "timecard" | "project" | "document" | "credential" | "message"
+  >("all");
   const { user } = useAuth();
 
   const notificationsQuery = useQuery<Notification[]>({
@@ -122,7 +124,10 @@ export function NotificationsPopover() {
   const notifications = notificationsQuery.data ?? [];
   const unreadCount = unreadQuery.data?.count ?? notifications.filter((n) => !n.readAt).length;
 
-  const getIcon = (type: string) => {
+  const getIcon = (type: string, entityType?: string) => {
+    if (type.includes("channel_mention") || entityType === "message") {
+      return <AtSign className="w-4 h-4 text-sky-500" />;
+    }
     if (type.includes("assignment")) return <Check className="w-4 h-4 text-primary" />;
     if (type.includes("comment")) return <MessageSquare className="w-4 h-4 text-blue-500" />;
     if (type.includes("timecard")) return <Clock className="w-4 h-4 text-amber-500" />;
@@ -199,6 +204,7 @@ export function NotificationsPopover() {
               <option value="project">Projects</option>
               <option value="document">Documents</option>
               <option value="credential">Credentials</option>
+              <option value="message">Chat mentions</option>
             </select>
           </div>
           <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
@@ -233,7 +239,7 @@ export function NotificationsPopover() {
                     >
                       <div className="flex gap-3">
                         <div className={cn("mt-1 shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-background border border-border/50", !notification.readAt && "border-primary/20 bg-primary/5")}>
-                          {getIcon(notification.type)}
+                          {getIcon(notification.type, notification.entityType)}
                         </div>
                         <div className="flex-1 space-y-1">
                           <div className="flex justify-between items-start">
@@ -265,7 +271,7 @@ export function NotificationsPopover() {
                     >
                       <div className="flex gap-3">
                         <div className={cn("mt-1 shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-background border border-border/50", !notification.readAt && "border-primary/20 bg-primary/5")}>
-                          {getIcon(notification.type)}
+                          {getIcon(notification.type, notification.entityType)}
                         </div>
                         <div className="flex-1 space-y-1">
                           <div className="flex justify-between items-start">

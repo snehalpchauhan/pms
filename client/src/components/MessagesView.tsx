@@ -10,7 +10,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { formatChatMarkdown } from "@/lib/chatMarkdown";
-import { ChatRichComposer } from "@/components/ChatRichComposer";
+import { ChatRichComposer, type ChatMentionCandidate } from "@/components/ChatRichComposer";
 import { EditChannelModal } from "@/components/EditChannelModal";
 import { useVoiceLink } from "@/context/VoiceLinkContext";
 
@@ -51,7 +51,7 @@ export default function MessagesView({ project, channelId, onChannelDeleted }: M
   const dmPeerNumericId = dmPeerIdStr ? Number(dmPeerIdStr) : NaN;
   const dmUser = isDM && dmPeerIdStr ? users[dmPeerIdStr] : null;
 
-  const { data: dmChannelId } = useQuery({
+  const dmChannelQuery = useQuery({
     queryKey: ["/api/projects", project.id, "direct-messages", dmPeerNumericId],
     queryFn: async () => {
       const res = await apiRequest("POST", `/api/projects/${project.id}/direct-messages`, {
@@ -64,6 +64,34 @@ export default function MessagesView({ project, channelId, onChannelDeleted }: M
     staleTime: Infinity,
     retry: false,
   });
+  const dmChannelId = dmChannelQuery.data;
+
+  const numericProjectIdForMembers = Number(project.id);
+  const { data: mentionCandidates = [] } = useQuery<ChatMentionCandidate[]>({
+    queryKey: ["/api/projects", project.id, "chat-mention-members"],
+    queryFn: async () => {
+      const res = await fetch(`/api/projects/${numericProjectIdForMembers}/members`, { credentials: "include" });
+      if (!res.ok) return [];
+      const rows = (await res.json()) as Array<{ id: number | string; name?: string; username?: string }>;
+      return rows.map((r) => ({
+        id: r.id,
+        name: String(r.name ?? "").trim() || String(r.username ?? "").trim() || "User",
+        username: String(r.username ?? "").trim(),
+      }));
+    },
+    enabled: Number.isInteger(numericProjectIdForMembers) && numericProjectIdForMembers > 0,
+    staleTime: 60_000,
+  });
+
+  useEffect(() => {
+    if (!dmChannelQuery.isError || !isDM) return;
+    toast({
+      title: "Could not open direct message",
+      description:
+        dmChannelQuery.error instanceof Error ? dmChannelQuery.error.message : "Try again or pick another conversation.",
+      variant: "destructive",
+    });
+  }, [dmChannelQuery.isError, dmChannelQuery.error, isDM, toast]);
 
   const numericChannelId =
     isDM && dmChannelId != null
@@ -461,6 +489,7 @@ export default function MessagesView({ project, channelId, onChannelDeleted }: M
             }
             onSend={handleComposerSend}
             initialMarkdown={editingMessageId ? editingInitialMarkdown : undefined}
+            mentionCandidates={mentionCandidates}
           />
         </div>
       </div>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Image from "@tiptap/extension-image";
@@ -7,7 +7,9 @@ import Link from "@tiptap/extension-link";
 import Underline from "@tiptap/extension-underline";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Smile, Paperclip, Loader2 } from "lucide-react";
+import { Smile, Paperclip, Loader2, AtSign } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -17,6 +19,8 @@ import { cn } from "@/lib/utils";
 
 const QUICK_EMOJIS = ["😀", "👍", "❤️", "🎉", "✅", "🔥", "👀", "🙏", "💬", "📎"];
 
+export type ChatMentionCandidate = { id: string | number; name: string; username: string };
+
 export type ChatRichComposerProps = {
   channelId: number | null;
   placeholder: string;
@@ -24,12 +28,22 @@ export type ChatRichComposerProps = {
   onSend: (markdown: string) => Promise<void>;
   /** Optional initial markdown to prefill editor (used for editing messages). */
   initialMarkdown?: string;
+  /** Project members for @mentions (inserts `@login` — server notifies on that pattern). */
+  mentionCandidates?: ChatMentionCandidate[];
 };
 
-export function ChatRichComposer({ channelId, placeholder, onSend, initialMarkdown }: ChatRichComposerProps) {
+export function ChatRichComposer({
+  channelId,
+  placeholder,
+  onSend,
+  initialMarkdown,
+  mentionCandidates = [],
+}: ChatRichComposerProps) {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
+  const [mentionOpen, setMentionOpen] = useState(false);
+  const [mentionFilter, setMentionFilter] = useState("");
   const onSendRef = useRef(onSend);
   onSendRef.current = onSend;
 
@@ -181,6 +195,30 @@ export function ChatRichComposer({ channelId, placeholder, onSend, initialMarkdo
     editor?.chain().focus().insertContent(emoji).run();
   };
 
+  const filteredMentions = useMemo(() => {
+    const q = mentionFilter.trim().toLowerCase();
+    const list = mentionCandidates.filter((m) => m.username?.trim());
+    if (!q) return list;
+    return list.filter(
+      (m) =>
+        m.name.toLowerCase().includes(q) ||
+        String(m.username).toLowerCase().includes(q) ||
+        String(m.id) === q,
+    );
+  }, [mentionCandidates, mentionFilter]);
+
+  const insertMention = useCallback(
+    (m: ChatMentionCandidate) => {
+      if (!editor) return;
+      const u = String(m.username).trim();
+      if (!u) return;
+      editor.chain().focus().insertContent(`@${u} `).run();
+      setMentionOpen(false);
+      setMentionFilter("");
+    },
+    [editor],
+  );
+
   if (!editor) {
     return (
       <div className="min-h-[6rem] rounded-md border border-border/50 bg-muted/20 animate-pulse" aria-hidden />
@@ -292,11 +330,68 @@ export function ChatRichComposer({ channelId, placeholder, onSend, initialMarkdo
               </div>
             </PopoverContent>
           </Popover>
+          {mentionCandidates.length > 0 && (
+            <Popover
+              open={mentionOpen}
+              onOpenChange={(o) => {
+                setMentionOpen(o);
+                if (!o) setMentionFilter("");
+              }}
+            >
+              <PopoverTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  title="Mention (@username)"
+                >
+                  <AtSign className="w-4 h-4" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-72 p-0" align="end">
+                <div className="border-b border-border p-2">
+                  <Input
+                    placeholder="Search name or username…"
+                    value={mentionFilter}
+                    onChange={(e) => setMentionFilter(e.target.value)}
+                    className="h-8 text-xs"
+                  />
+                </div>
+                <ScrollArea className="max-h-52">
+                  <div className="p-1">
+                    {filteredMentions.length === 0 ? (
+                      <p className="px-2 py-3 text-xs text-muted-foreground">No matches</p>
+                    ) : (
+                      filteredMentions.map((m) => (
+                        <button
+                          key={String(m.id)}
+                          type="button"
+                          className="flex w-full flex-col items-start gap-0 rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted"
+                          onClick={() => insertMention(m)}
+                        >
+                          <span className="font-medium text-foreground">{m.name}</span>
+                          <span className="text-muted-foreground">@{m.username}</span>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </ScrollArea>
+              </PopoverContent>
+            </Popover>
+          )}
           <Button size="sm" className="px-6" type="button" onClick={() => void handleSubmit()} disabled={!canSend}>
             Send
           </Button>
         </div>
       </div>
+      {mentionCandidates.length > 0 && (
+        <p className="mt-1.5 text-[10px] text-muted-foreground">
+          Use <span className="font-mono text-foreground">@username</span> (login name) to notify someone in this
+          project.
+        </p>
+      )}
     </div>
   );
 }

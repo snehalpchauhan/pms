@@ -142,8 +142,7 @@ export function Sidebar({ currentView, currentChannelId, onViewChange, currentPr
     ? channels.filter((c) => c.projectId === currentProject.id && c.type !== "direct")
     : [];
 
-  const dmMembersProjectId =
-    !isClient && currentProject ? Number(currentProject.id) : null;
+  const dmMembersProjectId = currentProject ? Number(currentProject.id) : null;
   const { data: projectMembersForDm = [] } = useQuery<Array<{ id: string | number }>>({
     queryKey: ["/api/projects", dmMembersProjectId, "members-with-settings"],
     queryFn: async () => {
@@ -620,8 +619,7 @@ export function Sidebar({ currentView, currentChannelId, onViewChange, currentPr
                                 )}
                             </div>
 
-                            {!isClient && (
-                                <>
+                            <>
                                     <div>
                                         <div className="flex items-center justify-between px-2 mb-2 group">
                                             <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Channels</h3>
@@ -712,8 +710,7 @@ export function Sidebar({ currentView, currentChannelId, onViewChange, currentPr
                                             })}
                                         </div>
                                     </div>
-                                </>
-                            )}
+                            </>
 
                             {isClient && (
                                 <div className="px-2 py-3 bg-muted/30 rounded-lg border border-border/40">

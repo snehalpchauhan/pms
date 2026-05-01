@@ -295,7 +295,7 @@ function canAccessDocument(
 }
 
 type NotificationPriority = "low" | "normal" | "high";
-type NotificationEntityType = "task" | "comment" | "project" | "timecard" | "document" | "credential";
+type NotificationEntityType = "task" | "comment" | "project" | "timecard" | "document" | "credential" | "message";
 
 async function emitNotificationsForUsers(args: {
   actorUserId?: number | null;
@@ -331,6 +331,56 @@ async function emitNotificationsForUsers(args: {
     });
     notifyUserNotification(userId);
   }
+}
+
+/** @username tokens in chat markdown (login username, case-insensitive). */
+function collectUsernameMentionsFromChatText(content: string): string[] {
+  const found = new Set<string>();
+  const re = /@([a-zA-Z0-9._-]{2,80})\b/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(content)) !== null) {
+    found.add(m[1].toLowerCase());
+  }
+  return Array.from(found);
+}
+
+async function notifyMessageMentionsIfProjectChannel(opts: {
+  channelId: number;
+  projectId: number | null | undefined;
+  messageId: number;
+  content: string;
+  authorUserId: number;
+  authorDisplayName: string;
+}): Promise<void> {
+  const pid = opts.projectId;
+  if (pid == null || !Number.isInteger(Number(pid))) return;
+  const projectId = Number(pid);
+  const members = await storage.getProjectMembers(projectId);
+  const usernameToId = new Map<string, number>();
+  for (const u of members) {
+    const un = u.username;
+    if (un && String(un).trim()) usernameToId.set(String(un).trim().toLowerCase(), u.id);
+  }
+  const tokens = collectUsernameMentionsFromChatText(opts.content);
+  const recipientIds: number[] = [];
+  for (const t of tokens) {
+    const id = usernameToId.get(t);
+    if (id != null && Number(id) !== Number(opts.authorUserId)) recipientIds.push(Number(id));
+  }
+  if (recipientIds.length === 0) return;
+  const preview = opts.content.length > 180 ? `${opts.content.slice(0, 177)}…` : opts.content;
+  await emitNotificationsForUsers({
+    actorUserId: opts.authorUserId,
+    recipientUserIds: recipientIds,
+    type: "channel_mention",
+    title: `${opts.authorDisplayName} mentioned you`,
+    message: preview,
+    entityType: "message",
+    entityId: opts.messageId,
+    projectId,
+    channelId: opts.channelId,
+    meta: { messageId: opts.messageId, channelId: opts.channelId },
+  });
 }
 
 const notificationPreferencesPatchSchema = z.object({
@@ -1271,9 +1321,6 @@ export async function registerRoutes(
 
   app.post("/api/projects/:id/direct-messages", requireAuth, async (req, res) => {
     const currentUser = req.user as any;
-    if (currentUser.role === "client") {
-      return res.status(403).json({ message: "Clients cannot start direct messages" });
-    }
     const projectId = Number(req.params.id);
     const peerUserId = Number(req.body?.peerUserId);
     if (!Number.isInteger(projectId) || projectId <= 0) {
@@ -3595,6 +3642,25 @@ export async function registerRoutes(
       content,
     });
     notifyChannelMessages(channelId);
+    try {
+      const ch = await storage.getChannel(channelId);
+      const author = await storage.getUser(currentUser.id);
+      const authorDisplayName =
+        author?.name?.trim() ||
+        (currentUser as { name?: string }).name?.trim() ||
+        (currentUser as { username?: string }).username?.trim() ||
+        "Someone";
+      await notifyMessageMentionsIfProjectChannel({
+        channelId,
+        projectId: ch?.projectId ?? null,
+        messageId: message.id,
+        content,
+        authorUserId: currentUser.id,
+        authorDisplayName,
+      });
+    } catch (e) {
+      console.error("[mentions] notify failed:", e);
+    }
     res.status(201).json(message);
   });
 
