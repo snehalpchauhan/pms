@@ -27,14 +27,14 @@ import { useAppData } from "@/hooks/useAppData";
 import { useAuth } from "@/hooks/useAuth";
 import { apiRequest } from "@/lib/queryClient";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
-import { Calendar, Paperclip, Tag, User as UserIcon, CheckCircle2, MessageSquare, Plus, X, Reply, Clock, History, FileText, Activity, Repeat, CalendarCheck, CheckSquare, Trash2, Download, Lock, RotateCcw, AlertTriangle, Pencil } from "lucide-react";
+import { Paperclip, Tag, User as UserIcon, CheckCircle2, MessageSquare, Plus, X, Reply, Clock, History, FileText, Activity, Repeat, CalendarCheck, CheckSquare, Trash2, Download, Lock, RotateCcw, AlertTriangle, Pencil } from "lucide-react";
 import { getEstimatedHoursFromTaskPayload, isTaskOverInvested, parseTaskHoursField } from "@/lib/taskHours";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn, getUserInitials } from "@/lib/utils";
 import { useState, useEffect, useMemo, useRef } from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { format, formatDistanceToNow } from "date-fns";
+import { format, formatDistanceToNow, isSameDay } from "date-fns";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -129,6 +129,21 @@ function parseTaskDateStr(s: string | undefined): Date | undefined {
   }
   const dt = new Date(str);
   return isNaN(dt.getTime()) ? undefined : dt;
+}
+
+/** One-line range: "1 – 4 Apr", "30 Apr – 2 May"; single date if only one side set. */
+function formatTaskTimelineRange(start: Date | undefined, due: Date | undefined): string {
+  if (!start && !due) return "Add dates";
+  if (start && !due) return format(start, "d MMM");
+  if (!start && due) return format(due, "d MMM");
+  const s = start!;
+  const e = due!;
+  if (isSameDay(s, e)) return format(s, "d MMM");
+  const sameMonth = s.getFullYear() === e.getFullYear() && s.getMonth() === e.getMonth();
+  if (sameMonth) return `${format(s, "d")} – ${format(e, "d MMM")}`;
+  const sameYear = s.getFullYear() === e.getFullYear();
+  if (sameYear) return `${format(s, "d MMM")} – ${format(e, "d MMM")}`;
+  return `${format(s, "d MMM yyyy")} – ${format(e, "d MMM yyyy")}`;
 }
 
 function CommentItem({
@@ -552,8 +567,7 @@ export function TaskDetailPage({
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [startDateVal, setStartDateVal] = useState<Date | undefined>(() => parseTaskDateStr(task.startDate));
   const [dueDateVal, setDueDateVal] = useState<Date | undefined>(() => parseTaskDateStr(task.dueDate));
-  const [startDatePopoverOpen, setStartDatePopoverOpen] = useState(false);
-  const [dueDatePopoverOpen, setDueDatePopoverOpen] = useState(false);
+  const [timelinePopoverOpen, setTimelinePopoverOpen] = useState(false);
   const [timelineSaving, setTimelineSaving] = useState(false);
   const [rightPanelTab, setRightPanelTab] = useState("comments");
 
@@ -951,8 +965,6 @@ export function TaskDetailPage({
     setTimelineSaving(true);
     try {
       await patchTask({ [field]: date ? format(date, "yyyy-MM-dd") : null });
-      if (isStart) setStartDatePopoverOpen(false);
-      else setDueDatePopoverOpen(false);
     } catch {
       if (isStart) setStartDateVal(prevStart);
       else setDueDateVal(prevDue);
@@ -1760,98 +1772,86 @@ export function TaskDetailPage({
                              </div>
                         </div>
 
-                        {/* Dates - Start & Due (compact single row: equal flex columns) */}
+                        {/* Dates — single row: one icon + compact range (e.g. 1 – 4 Apr, 30 Apr – 2 May) */}
                         <div className="space-y-2 md:col-span-4 min-w-0">
                              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Timeline</div>
-                             <div className="flex w-full min-w-0 items-stretch gap-1 rounded-lg border border-border/40 bg-background/40 p-1">
+                             <div className="w-full min-w-0 rounded-lg border border-border/40 bg-background/40 p-1">
                                  {(!isClient || isFullAccess) ? (
-                                   <Popover open={startDatePopoverOpen} onOpenChange={setStartDatePopoverOpen}>
+                                   <Popover open={timelinePopoverOpen} onOpenChange={setTimelinePopoverOpen}>
                                      <PopoverTrigger asChild>
                                        <Button
                                          type="button"
                                          variant="outline"
                                          disabled={timelineSaving}
                                          className={cn(
-                                           "h-7 min-w-0 flex-1 basis-0 justify-center gap-1 px-1.5 sm:px-2 bg-background border-border/50 shadow-sm text-[11px] font-medium tabular-nums",
-                                           !startDateVal && "text-muted-foreground border-dashed",
+                                           "h-7 w-full min-w-0 justify-center gap-1.5 px-2 bg-background border-border/50 shadow-sm text-[11px] font-medium tabular-nums",
+                                           !startDateVal && !dueDateVal && "text-muted-foreground border-dashed",
                                          )}
                                        >
-                                         <CalendarCheck className="h-3 w-3 shrink-0 text-muted-foreground" />
-                                         <span className="min-w-0 truncate">{startDateVal ? format(startDateVal, "M/d/yy") : "Start"}</span>
+                                         <CalendarCheck className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                                         <span className="min-w-0 truncate">{formatTaskTimelineRange(startDateVal, dueDateVal)}</span>
                                        </Button>
                                      </PopoverTrigger>
-                                     <PopoverContent className="w-auto p-0" align="start">
-                                       <CalendarComponent
-                                         mode="single"
-                                         selected={startDateVal}
-                                         onSelect={(d) => void persistTimelineDate("startDate", d)}
-                                         initialFocus
-                                       />
-                                       {startDateVal && (
-                                         <div className="border-t border-border p-2">
+                                     <PopoverContent className="w-auto max-h-[min(85vh,520px)] overflow-y-auto p-0" align="start">
+                                       <div className="border-b border-border p-2">
+                                         <div className="mb-1 text-xs font-medium text-muted-foreground">Start</div>
+                                         <CalendarComponent
+                                           mode="single"
+                                           selected={startDateVal}
+                                           onSelect={(d) => void persistTimelineDate("startDate", d)}
+                                           initialFocus
+                                         />
+                                         {startDateVal && (
                                            <Button
                                              type="button"
                                              variant="ghost"
                                              size="sm"
-                                             className="w-full h-8 text-xs"
+                                             className="mt-2 w-full h-8 text-xs"
                                              disabled={timelineSaving}
                                              onClick={() => void persistTimelineDate("startDate", undefined)}
                                            >
                                              Clear start date
                                            </Button>
-                                         </div>
-                                       )}
+                                         )}
+                                       </div>
+                                       <div className="p-2">
+                                         <div className="mb-1 text-xs font-medium text-muted-foreground">Due</div>
+                                         <CalendarComponent
+                                           mode="single"
+                                           selected={dueDateVal}
+                                           onSelect={(d) => void persistTimelineDate("dueDate", d)}
+                                         />
+                                         {dueDateVal && (
+                                           <Button
+                                             type="button"
+                                             variant="ghost"
+                                             size="sm"
+                                             className="mt-2 w-full h-8 text-xs"
+                                             disabled={timelineSaving}
+                                             onClick={() => void persistTimelineDate("dueDate", undefined)}
+                                           >
+                                             Clear due date
+                                           </Button>
+                                         )}
+                                       </div>
                                      </PopoverContent>
                                    </Popover>
-                                 ) : task.startDate ? (
-                                     <div className="flex h-7 min-w-0 flex-1 basis-0 items-center justify-center gap-1 rounded-md border border-border/50 bg-background px-1.5 text-[11px] font-medium tabular-nums shadow-sm">
-                                        <CalendarCheck className="h-3 w-3 shrink-0 text-muted-foreground" />
-                                        <span className="min-w-0 truncate">{format(parseTaskDateStr(task.startDate) || new Date(task.startDate), "M/d/yy")}</span>
-                                     </div>
                                  ) : (
-                                    <div className="flex h-7 min-w-0 flex-1 basis-0 items-center justify-center gap-1 rounded-md border border-dashed border-border/50 bg-background px-1.5 text-[11px] text-muted-foreground opacity-80 tabular-nums">
-                                        <CalendarCheck className="h-3 w-3 shrink-0" />
-                                        <span className="truncate">Start</span>
-                                    </div>
-                                 )}
-                                 
-                                 <span className="flex w-5 shrink-0 items-center justify-center text-[11px] font-medium text-muted-foreground/70" aria-hidden>→</span>
-
-                                 {(!isClient || isFullAccess) ? (
-                                     <Popover open={dueDatePopoverOpen} onOpenChange={setDueDatePopoverOpen}>
-                                        <PopoverTrigger asChild>
-                                            <Button type="button" variant="outline" disabled={timelineSaving} className={cn("h-7 min-w-0 flex-1 basis-0 justify-center gap-1 px-1.5 sm:px-2 bg-background border-border/50 shadow-sm text-[11px] font-medium tabular-nums", !dueDateVal && "text-muted-foreground border-dashed")}>
-                                                <Calendar className="h-3 w-3 shrink-0 text-muted-foreground" />
-                                                <span className="min-w-0 truncate">{dueDateVal ? format(dueDateVal, "M/d/yy") : "Due"}</span>
-                                            </Button>
-                                        </PopoverTrigger>
-                                        <PopoverContent className="w-auto p-0" align="start">
-                                            <CalendarComponent
-                                              mode="single"
-                                              selected={dueDateVal}
-                                              onSelect={(d) => void persistTimelineDate("dueDate", d)}
-                                              initialFocus
-                                            />
-                                            {dueDateVal && (
-                                              <div className="border-t border-border p-2">
-                                                <Button
-                                                  type="button"
-                                                  variant="ghost"
-                                                  size="sm"
-                                                  className="w-full h-8 text-xs"
-                                                  disabled={timelineSaving}
-                                                  onClick={() => void persistTimelineDate("dueDate", undefined)}
-                                                >
-                                                  Clear due date
-                                                </Button>
-                                              </div>
-                                            )}
-                                        </PopoverContent>
-                                    </Popover>
-                                 ) : (
-                                     <div className="flex h-7 min-w-0 flex-1 basis-0 items-center justify-center gap-1 rounded-md border border-border/50 bg-background px-1.5 text-[11px] font-medium tabular-nums shadow-sm">
-                                         <Calendar className="h-3 w-3 shrink-0 text-muted-foreground" />
-                                         <span className="min-w-0 truncate">{dueDateVal ? format(dueDateVal, "M/d/yy") : "—"}</span>
+                                     <div
+                                       className={cn(
+                                         "flex h-7 w-full min-w-0 items-center justify-center gap-1.5 rounded-md border bg-background px-2 text-[11px] font-medium tabular-nums shadow-sm",
+                                         !task.startDate && !task.dueDate
+                                           ? "border-dashed border-border/50 text-muted-foreground opacity-80"
+                                           : "border-border/50",
+                                       )}
+                                     >
+                                       <CalendarCheck className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                                       <span className="min-w-0 truncate">
+                                         {formatTaskTimelineRange(
+                                           parseTaskDateStr(task.startDate) ?? (task.startDate ? new Date(task.startDate) : undefined),
+                                           parseTaskDateStr(task.dueDate) ?? (task.dueDate ? new Date(task.dueDate) : undefined),
+                                         )}
+                                       </span>
                                      </div>
                                  )}
                              </div>
