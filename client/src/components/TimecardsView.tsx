@@ -793,19 +793,6 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
               <p className="text-sm text-muted-foreground">
                 {isAdmin ? "All team members' time logs" : isManagerOrAdmin ? "Your team's time logs" : "Your personal time log"}
               </p>
-              <p className="text-xs text-muted-foreground/90">
-                Use <strong className="font-medium text-foreground">Search</strong> to load the time log
-                {isManagerOrAdmin ? (
-                  <>
-                    {" "}
-                    and the timecards summary when{" "}
-                    <strong className="font-medium text-foreground">From</strong> and{" "}
-                    <strong className="font-medium text-foreground">To</strong> are set.
-                  </>
-                ) : (
-                  "."
-                )}
-              </p>
             </div>
           </div>
           <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end xl:shrink-0">
@@ -860,78 +847,82 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
           </div>
         </div>
 
-        {/* Filters */}
-        <div className="flex flex-wrap items-center gap-3 border-t border-border/40 pt-4">
-          <Filter className="h-4 w-4 shrink-0 text-muted-foreground" />
-          {isManagerOrAdmin && (
+        {/* Filters: controls wrap on the left; Search stays on the right */}
+        <div className="flex flex-col gap-3 border-t border-border/40 pt-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
+            <Filter className="h-4 w-4 shrink-0 text-muted-foreground" />
+            {isManagerOrAdmin && (
+              <div className="flex items-center gap-1.5">
+                <Users className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                <SearchableSelect
+                  value={filterUserId}
+                  onValueChange={setFilterUserId}
+                  options={memberFilterOptions}
+                  placeholder="All members"
+                  searchPlaceholder="Search members…"
+                  triggerClassName="w-[200px]"
+                  data-testid="select-filter-user"
+                />
+              </div>
+            )}
             <div className="flex items-center gap-1.5">
-              <Users className="w-3.5 h-3.5 text-muted-foreground shrink-0" aria-hidden />
+              <Folder className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
               <SearchableSelect
-                value={filterUserId}
-                onValueChange={setFilterUserId}
-                options={memberFilterOptions}
-                placeholder="All members"
-                searchPlaceholder="Search members…"
+                value={filterProjectId}
+                onValueChange={setFilterProjectId}
+                options={projectFilterOptions}
+                placeholder="All projects"
+                searchPlaceholder="Search projects…"
                 triggerClassName="w-[200px]"
-                data-testid="select-filter-user"
+                data-testid="select-filter-project"
               />
             </div>
-          )}
-          <div className="flex items-center gap-1.5">
-            <Folder className="w-3.5 h-3.5 text-muted-foreground shrink-0" aria-hidden />
-            <SearchableSelect
-              value={filterProjectId}
-              onValueChange={setFilterProjectId}
-              options={projectFilterOptions}
-              placeholder="All projects"
-              searchPlaceholder="Search projects…"
-              triggerClassName="w-[200px]"
-              data-testid="select-filter-project"
+            <div className="flex items-center gap-1.5">
+              <Tag className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
+              <SearchableSelect
+                value={filterTaskId}
+                onValueChange={setFilterTaskId}
+                options={taskFilterOptions}
+                placeholder={filterProjectId === "all" ? "Select project for tasks" : "All tasks in project"}
+                searchPlaceholder="Search tasks…"
+                disabled={filterProjectId === "all"}
+                triggerClassName="w-[220px]"
+                data-testid="select-filter-task"
+              />
+            </div>
+            <Input
+              type="date"
+              value={filterStartDate}
+              onChange={(e) => setFilterStartDate(e.target.value)}
+              className="h-9 w-[150px] text-sm"
+              data-testid="input-filter-start-date"
+            />
+            <span className="text-xs text-muted-foreground">to</span>
+            <Input
+              type="date"
+              value={filterEndDate}
+              onChange={(e) => setFilterEndDate(e.target.value)}
+              className="h-9 w-[150px] text-sm"
+              data-testid="input-filter-end-date"
             />
           </div>
-          <div className="flex items-center gap-1.5">
-            <Tag className="w-3.5 h-3.5 text-muted-foreground shrink-0" aria-hidden />
-            <SearchableSelect
-              value={filterTaskId}
-              onValueChange={setFilterTaskId}
-              options={taskFilterOptions}
-              placeholder={filterProjectId === "all" ? "Select project for tasks" : "All tasks in project"}
-              searchPlaceholder="Search tasks…"
-              disabled={filterProjectId === "all"}
-              triggerClassName="w-[220px]"
-              data-testid="select-filter-task"
-            />
-          </div>
-          <Input
-            type="date"
-            value={filterStartDate}
-            onChange={e => setFilterStartDate(e.target.value)}
-            className="w-[150px] h-9 text-sm"
-            data-testid="input-filter-start-date"
-          />
-          <span className="text-muted-foreground text-xs">to</span>
-          <Input
-            type="date"
-            value={filterEndDate}
-            onChange={e => setFilterEndDate(e.target.value)}
-            className="w-[150px] h-9 text-sm"
-            data-testid="input-filter-end-date"
-          />
-          <Button
-            size="sm"
-            className="h-9 gap-1.5"
-            onClick={commitSearch}
-            disabled={isLoading}
-            data-testid="button-timecards-search"
-          >
-            <Search className="w-3.5 h-3.5" />
-            Search
-          </Button>
-          {hasActiveFilters && (
-            <Button variant="ghost" size="sm" className="h-9 text-xs" onClick={clearFiltersAndPage} data-testid="button-clear-filters">
-              Clear filters
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 lg:pl-4">
+            <Button
+              size="sm"
+              className="h-9 min-w-[7.5rem] gap-1.5"
+              onClick={commitSearch}
+              disabled={isLoading}
+              data-testid="button-timecards-search"
+            >
+              <Search className="h-3.5 w-3.5" />
+              Search
             </Button>
-          )}
+            {hasActiveFilters ? (
+              <Button variant="ghost" size="sm" className="h-9 text-xs" onClick={clearFiltersAndPage} data-testid="button-clear-filters">
+                Clear filters
+              </Button>
+            ) : null}
+          </div>
         </div>
       </div>
 
@@ -951,17 +942,9 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
         <div className="space-y-3 p-6">
           {/* Detailed Log */}
           <div className="space-y-3">
-            <div className="space-y-1">
-              <h3 className="text-sm font-semibold text-foreground">
-                {isManagerOrAdmin ? "Full Time Log" : "My Time Log"}
-              </h3>
-              {isManagerOrAdmin ? (
-                <p className="text-xs text-muted-foreground max-w-3xl">
-                  Rows here follow <strong>project</strong> and <strong>task</strong> filters. For weekday totals vs 8h
-                  across all projects, use the <strong>Timecards summary</strong> section above.
-                </p>
-              ) : null}
-            </div>
+            <h3 className="text-sm font-semibold text-foreground">
+              {isManagerOrAdmin ? "Time log" : "My time log"}
+            </h3>
 
             {!hasLoadedEntries && !isLoading ? (
               <div className="text-center py-16 border-2 border-dashed border-border/50 rounded-xl space-y-3">

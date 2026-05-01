@@ -53,41 +53,13 @@ export default function TimecardsComplianceSummary({
   return (
     <div id="pms-timecards-summary-anchor" className="scroll-mt-4 min-w-0 w-full max-w-full">
       <Card className="border-border/60 shadow-sm min-w-0">
-        <CardHeader className="pb-3 space-y-3">
-          <div>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <ClipboardList className="h-5 w-5 text-primary shrink-0" />
-              Timecards summary
-            </CardTitle>
-            <div className="text-sm text-muted-foreground space-y-2 leading-relaxed pt-1">
-              <p>
-                <strong className="text-foreground">Time log</strong> (below this card) lists each time entry — task, work
-                type, hours — and respects <strong>project</strong>, <strong>task</strong>, <strong>member</strong>, and{" "}
-                <strong>dates</strong> when you Search.
-              </p>
-              <p>
-                <strong className="text-foreground">Timecards summary</strong> is an HR-style grid: <strong>weekdays only</strong>
-                , total hours logged that day per person (summed across <em>all</em> projects), compared to the same{" "}
-                <strong>{data?.requiredHoursPerDay ?? 8}h</strong> rule as digest emails. It uses only <strong>From</strong>,{" "}
-                <strong>To</strong>, and <strong>Member</strong> from the filters row plus Search — not project/task. Green =
-                met minimum; amber = short.
-              </p>
-            </div>
-          </div>
+        <CardHeader className="pb-2 pt-4 px-6">
+          <CardTitle className="flex items-center gap-2 text-base font-semibold">
+            <ClipboardList className="h-5 w-5 text-primary shrink-0" />
+            Timecards summary
+          </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4 min-w-0">
-          {!applied ? (
-            <p className="text-sm text-muted-foreground">
-              Choose <strong>From</strong> and <strong>To</strong> dates (and optionally a member), then click{" "}
-              <strong>Search</strong> above — this grid loads together with the time log.
-            </p>
-          ) : !startDate || !endDate ? (
-            <p className="text-sm text-muted-foreground">
-              Set both <strong>From</strong> and <strong>To</strong> dates in the filters above, then click{" "}
-              <strong>Search</strong> to load the summary.
-            </p>
-          ) : null}
-
+        <CardContent className="min-w-0 space-y-3 px-6 pb-4 pt-0">
           {error ? (
             <p className="text-sm text-destructive whitespace-pre-wrap">
               {error instanceof Error ? error.message : String(error)}
