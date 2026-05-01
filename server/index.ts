@@ -3,6 +3,7 @@ import { registerRoutes } from "./routes";
 import { attachChatWebSocket } from "./realtime";
 import { serveStatic } from "./static";
 import { createServer } from "http";
+import { logEmailOutboundSummary } from "./email";
 import { startSchedulers } from "./scheduler";
 
 const app = express();
@@ -67,6 +68,7 @@ app.use((req, res, next) => {
   await registerRoutes(httpServer, app);
   attachChatWebSocket(httpServer);
   await startSchedulers();
+  logEmailOutboundSummary();
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
     const status = err.status || err.statusCode || 500;

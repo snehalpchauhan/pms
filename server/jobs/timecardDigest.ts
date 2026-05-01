@@ -1,6 +1,7 @@
 /**
- * Scheduled timecard digest emails: admin (all staff → settings recipients) and per-employee.
+ * Scheduled timecard digest emails: admin (all staff → Company “summary” recipients) and per-employee.
  * Opt-in via env vars — see `startSchedulers` in server/scheduler.ts.
+ * Use `TIME_DIGEST_MONTHLY_ENABLED=true` to send both the monthly admin rollup and each employee’s monthly mail.
  */
 import { and, gte, lte, sql } from "drizzle-orm";
 import {
@@ -428,7 +429,7 @@ export async function runAdminMonthlyDigestAllStaff(now = new Date()): Promise<{
     periodStartYmd: startYmd,
     periodEndYmd: endYmd,
     heading: "PMS monthly timecard summary",
-    subheading: `All employees — previous calendar month (${format(parseISO(startYmd), "MMMM yyyy")})`,
+    subheading: `All employees — previous calendar month (${format(parseISO(startYmd), "MMMM yyyy")}). Each person lists every weekday in that month; amber/red rows are below ${REQUIRED_HOURS_PER_DAY}h.`,
     listMode: "all-staff",
   });
   const subject = `PMS: Monthly timecard summary — ${format(parseISO(startYmd), "MMMM yyyy")}`;
@@ -479,16 +480,26 @@ export async function runEmployeeMonthlyDigests(now = new Date()): Promise<{ ema
   let emailed = 0;
   let skipped = 0;
   for (const r of rows) {
+    const gapDays = r.days.filter((d) => d.hours < REQUIRED_HOURS_PER_DAY);
+    const gapLabels = gapDays.map((d) => formatYmdForTimecardDisplay(d.dateYmd, fmt));
+    const incompleteSummary =
+      gapLabels.length > 0
+        ? `Weekdays below ${REQUIRED_HOURS_PER_DAY}h: ${gapLabels.join(", ")}. Details in the table below.`
+        : `No incomplete weekdays — each weekday in this period met or exceeded ${REQUIRED_HOURS_PER_DAY}h.`;
     const { text, html } = buildDigestEmailContent({
       rows: [r],
       dateDisplayPreset: fmt,
       periodStartYmd: startYmd,
       periodEndYmd: endYmd,
-      heading: "PMS: Your monthly timecard",
-      subheading: `${monthLabel} (weekdays ${p1} – ${p2})`,
+      heading: "PMS: Your monthly timecard summary",
+      subheading: `${monthLabel}, weekdays ${p1} – ${p2}. ${incompleteSummary}`,
       listMode: "all-staff",
     });
-    const subject = `PMS: Your monthly timecard — ${monthLabel}`;
+    const gapCount = gapDays.length;
+    const subject =
+      gapCount > 0
+        ? `PMS: Monthly timecard — ${monthLabel} (${gapCount} incomplete weekday${gapCount === 1 ? "" : "s"})`
+        : `PMS: Monthly timecard — ${monthLabel}`;
     try {
       const res = await sendEmail({ to: r.email, subject, text, html });
       if (res.sent) emailed++;

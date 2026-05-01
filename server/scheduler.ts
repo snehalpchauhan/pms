@@ -60,10 +60,18 @@ export async function startSchedulers(): Promise<void> {
 
   const digestAdminDaily = truthy("TIME_DIGEST_ADMIN_DAILY_ENABLED");
   const digestAdminWeekly = truthy("TIME_DIGEST_ADMIN_WEEKLY_ENABLED");
-  const digestAdminMonthly = truthy("TIME_DIGEST_ADMIN_MONTHLY_ENABLED");
+  /** One flag: consolidated monthly → summary recipients + one mail per employee with their days (see timecardDigest). */
+  const digestMonthlyFull = truthy("TIME_DIGEST_MONTHLY_ENABLED");
+  const digestAdminMonthly = truthy("TIME_DIGEST_ADMIN_MONTHLY_ENABLED") || digestMonthlyFull;
   const digestEmployeeWeekly = truthy("TIME_DIGEST_EMPLOYEE_WEEKLY_ENABLED");
-  const digestEmployeeMonthly = truthy("TIME_DIGEST_EMPLOYEE_MONTHLY_ENABLED");
+  const digestEmployeeMonthly = truthy("TIME_DIGEST_EMPLOYEE_MONTHLY_ENABLED") || digestMonthlyFull;
   const taskDueEnabled = truthy("TASK_DUE_NOTIFICATIONS_ENABLED");
+
+  if (digestMonthlyFull) {
+    console.log(
+      "[scheduler] TIME_DIGEST_MONTHLY_ENABLED: monthly admin digest (all staff → Company summary emails) + monthly employee digest (each person → own incomplete weekdays)",
+    );
+  }
 
   if (reminders) {
     /** Midnight each day in company TZ when set; weekend sends are no-ops inside jobs. */
@@ -228,7 +236,7 @@ export async function startSchedulers(): Promise<void> {
 
   if (!reminders && !adminSummaryLegacy && !anyDigest && !taskDueEnabled) {
     console.log(
-      "[scheduler] timecard email jobs disabled. Enable TIME_REMINDERS_ENABLED (daily miss HTML + Fri text), and/or TIME_DIGEST_* (see server/scheduler.ts), and/or legacy TIME_ADMIN_SUMMARY_ENABLED; restart pms.service.",
+      "[scheduler] timecard email jobs disabled. Enable TIME_REMINDERS_ENABLED (daily miss HTML + Fri text), TIME_DIGEST_MONTHLY_ENABLED (both monthly admin + employee digests), individual TIME_DIGEST_* flags (see server/scheduler.ts), or legacy TIME_ADMIN_SUMMARY_ENABLED; restart pms.service.",
     );
   }
 }

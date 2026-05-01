@@ -854,12 +854,19 @@ export default function CompanySettingsView() {
                                             className="font-mono text-sm"
                                         />
                                         <p className="text-xs text-muted-foreground">
-                                            One address per line. Recipients for consolidated admin digests: enable{" "}
+                                            One address per line. Consolidated admin digests (everyone’s weekdays in one email) go here —
+                                            enable{" "}
                                             <code className="text-xs bg-muted px-1 rounded">TIME_DIGEST_ADMIN_DAILY_ENABLED</code>,{" "}
-                                            <code className="text-xs bg-muted px-1 rounded">TIME_DIGEST_ADMIN_WEEKLY_ENABLED</code>, or{" "}
-                                            <code className="text-xs bg-muted px-1 rounded">TIME_DIGEST_ADMIN_MONTHLY_ENABLED</code>{" "}
-                                            on the server (see <code className="text-xs bg-muted px-1 rounded">server/scheduler.ts</code>
-                                            ). Legacy week-to-date job uses{" "}
+                                            <code className="text-xs bg-muted px-1 rounded">TIME_DIGEST_ADMIN_WEEKLY_ENABLED</code>,{" "}
+                                            <code className="text-xs bg-muted px-1 rounded">TIME_DIGEST_ADMIN_MONTHLY_ENABLED</code>, or{" "}
+                                            <code className="text-xs bg-muted px-1 rounded">TIME_DIGEST_MONTHLY_ENABLED</code>{" "}
+                                            (monthly admin + one email per employee with their own incomplete days). Per-employee weekly
+                                            summaries still need{" "}
+                                            <code className="text-xs bg-muted px-1 rounded">TIME_DIGEST_EMPLOYEE_WEEKLY_ENABLED</code>.
+                                            See <code className="text-xs bg-muted px-1 rounded">server/scheduler.ts</code>. Incomplete
+                                            previous-day reminders + Friday text use{" "}
+                                            <code className="text-xs bg-muted px-1 rounded">TIME_REMINDERS_ENABLED</code>. Legacy
+                                            week-to-date rollup uses{" "}
                                             <code className="text-xs bg-muted px-1 rounded">TIME_ADMIN_SUMMARY_ENABLED</code>. If empty,
                                             fall back to <code className="text-xs bg-muted px-1 rounded">TIME_ADMIN_SUMMARY_TO</code>.
                                         </p>

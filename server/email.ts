@@ -30,10 +30,10 @@ function getBrevoApiKey(): string | undefined {
   return env("BREVO_API_KEY") ?? env("BREVO_KEY");
 }
 
+/** True when SMTP credentials and a usable From address are set (see sendEmail / defaultFromAddress). */
 function smtpConfigured(): boolean {
-  return Boolean(
-    env("SMTP_HOST") && env("SMTP_PORT") && env("SMTP_USER") && env("SMTP_PASS") && (env("SMTP_FROM") || env("BREVO_FROM_EMAIL")),
-  );
+  const hasFrom = Boolean(env("SMTP_FROM") || env("BREVO_FROM_EMAIL") || env("SMTP_FROM_EMAIL"));
+  return Boolean(env("SMTP_HOST") && env("SMTP_PORT") && env("SMTP_USER") && env("SMTP_PASS") && hasFrom);
 }
 
 let transporterPromise: Promise<nodemailer.Transporter> | null = null;
@@ -134,11 +134,11 @@ export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult>
     return {
       sent: false,
       reason:
-        "Email not configured: set BREVO_API_KEY (or BREVO_KEY) for Brevo, or set SMTP_HOST/SMTP_PORT/SMTP_USER/SMTP_PASS and SMTP_FROM / BREVO_FROM_EMAIL",
+        "Email not configured: set BREVO_API_KEY (or BREVO_KEY) for Brevo, or set SMTP_HOST/SMTP_PORT/SMTP_USER/SMTP_PASS and one of SMTP_FROM, BREVO_FROM_EMAIL, or SMTP_FROM_EMAIL",
     };
   }
 
-  const from = env("SMTP_FROM") ?? env("BREVO_FROM_EMAIL") ?? defaultFromAddress().email;
+  const from = env("SMTP_FROM") ?? env("BREVO_FROM_EMAIL") ?? env("SMTP_FROM_EMAIL") ?? defaultFromAddress().email;
   const transporter = await getTransporter();
   await transporter.sendMail({
     from,
@@ -149,6 +149,25 @@ export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult>
   });
   console.log("[email] SMTP sent:", { to: recipients });
   return { sent: true };
+}
+
+/**
+ * Log once at process start so operators can see whether outbound email is available.
+ * Scheduled mail additionally requires TIME_REMINDERS_ENABLED / TIME_DIGEST_* etc. (see scheduler logs).
+ */
+export function logEmailOutboundSummary(): void {
+  if (brevoConfigured()) {
+    const { email, name } = defaultFromAddress();
+    console.log("[email] outbound transport: Brevo API · sender", `${name} <${email}>`);
+    return;
+  }
+  if (smtpConfigured()) {
+    console.log("[email] outbound transport: SMTP · host", env("SMTP_HOST"), "· port", env("SMTP_PORT"));
+    return;
+  }
+  console.warn(
+    "[email] outbound transport: NOT CONFIGURED — set BREVO_API_KEY (or BREVO_KEY), or full SMTP_* plus SMTP_FROM / BREVO_FROM_EMAIL / SMTP_FROM_EMAIL on this process. UI-only settings do not inject API keys.",
+  );
 }
 
 const BREVO_EVENTS_URL = "https://api.brevo.com/v3/smtp/statistics/events";
