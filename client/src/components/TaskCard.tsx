@@ -146,23 +146,24 @@ export function TaskCard({ task, onClick, disableDrag = false }: TaskCardProps) 
                 </span>
               </div>
             ) : null}
-            <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
-              <span className="shrink-0 text-muted-foreground/90">Assigned to</span>
-              {people.hasAssignees ? (
-                <div className="flex -space-x-1.5 min-w-0">
+            {people.hasAssignees ? (
+              <div className="space-y-1">
+                <div className="text-muted-foreground/90 shrink-0">Assigned to</div>
+                <div className="flex flex-col gap-1.5 min-w-0">
                   {people.assigneeUsers.map((user) => (
-                    <Avatar key={user.id} className="h-5 w-5 border-2 border-background ring-1 ring-border/10" title={user.name}>
-                      <AvatarImage src={user.avatar} />
-                      <AvatarFallback className="text-[9px]">{user.name.charAt(0)}</AvatarFallback>
-                    </Avatar>
+                    <div key={user.id} className="flex items-center gap-2 min-w-0">
+                      <Avatar className="h-5 w-5 shrink-0 border border-border/40" title={user.name}>
+                        <AvatarImage src={user.avatar} />
+                        <AvatarFallback className="text-[9px]">{user.name.charAt(0)}</AvatarFallback>
+                      </Avatar>
+                      <span className="text-[10px] font-medium text-foreground/90 break-words min-w-0 leading-snug">{user.name}</span>
+                    </div>
                   ))}
                 </div>
-              ) : (
-                <Badge variant="secondary" className="h-5 px-1.5 text-[9px] font-medium uppercase tracking-wide text-muted-foreground">
-                  Unassigned
-                </Badge>
-              )}
-            </div>
+              </div>
+            ) : (
+              <p className="text-[10px] font-medium text-muted-foreground">Unassigned</p>
+            )}
           </div>
         </CardHeader>
         <CardContent className="p-3 pt-2">{/* keep layout */}</CardContent>

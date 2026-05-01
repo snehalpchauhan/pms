@@ -153,18 +153,16 @@ export default function TaskListView({ tasks, project, onTaskClick, completeColu
                                             </span>
                                         </div>
                                     ) : null}
-                                    <div className="flex flex-wrap items-center gap-1.5 min-w-0">
-                                        <span className="text-muted-foreground/90 shrink-0">Assigned to </span>
-                                        {people.hasAssignees ? (
-                                            <span className="font-medium text-foreground/90 truncate">
+                                    {people.hasAssignees ? (
+                                        <div className="min-w-0">
+                                            <span className="text-muted-foreground/90">Assigned to </span>
+                                            <span className="font-medium text-foreground/90 break-words">
                                                 {people.assigneeUsers.map((u) => u.name).join(", ")}
                                             </span>
-                                        ) : (
-                                            <Badge variant="secondary" className="h-5 px-1.5 text-[9px] font-medium uppercase tracking-wide text-muted-foreground">
-                                                Unassigned
-                                            </Badge>
-                                        )}
-                                    </div>
+                                        </div>
+                                    ) : (
+                                        <p className="font-medium text-muted-foreground">Unassigned</p>
+                                    )}
                                 </div>
                                 </div>
                                 {task.tags.filter(t => t !== "[Client Request]").length > 0 && (

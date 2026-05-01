@@ -259,33 +259,31 @@ export function TaskDetailModal({ task, open, onOpenChange }: TaskDetailModalPro
                             </p>
                         </div>
                     ) : null}
-                    <div>
-                        <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Assigned to</div>
-                        {!people.hasAssignees ? (
-                            <Badge variant="secondary" className="mt-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                                Unassigned
-                            </Badge>
-                        ) : (
+                    {!people.hasAssignees ? (
+                        <p className="font-medium text-muted-foreground">Unassigned</p>
+                    ) : (
+                        <div>
+                            <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Assigned to</div>
                             <div className="space-y-2 mt-1.5">
                                 {task.assignees.map((id) => {
                                     const user = users[id];
                                     if (!user) return null;
                                     return (
-                                        <div key={id} className="flex items-center gap-3 p-2 rounded-md hover:bg-muted/50 transition-colors cursor-pointer group border border-transparent hover:border-border/50">
-                                            <Avatar className="h-7 w-7">
+                                        <div key={id} className="flex items-center gap-3 p-2 rounded-md hover:bg-muted/50 transition-colors cursor-pointer group border border-transparent hover:border-border/50 min-w-0">
+                                            <Avatar className="h-7 w-7 shrink-0">
                                                 <AvatarImage src={user.avatar} />
                                                 <AvatarFallback>{user.name[0]}</AvatarFallback>
                                             </Avatar>
-                                            <span className="text-sm font-medium">{user.name}</span>
-                                            <Button variant="ghost" size="icon" className="h-6 w-6 ml-auto opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive">
+                                            <span className="text-sm font-medium break-words min-w-0 flex-1 leading-snug">{user.name}</span>
+                                            <Button variant="ghost" size="icon" className="h-6 w-6 ml-auto shrink-0 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive">
                                                 <X className="w-3 h-3" />
                                             </Button>
                                         </div>
                                     );
                                 })}
                             </div>
-                        )}
-                    </div>
+                        </div>
+                    )}
                 </div>
                 <Button variant="outline" size="sm" className="w-full justify-start text-muted-foreground h-9 border-dashed hover:bg-background hover:border-primary/50 hover:text-primary transition-all">
                     <Plus className="w-3 h-3 mr-2" /> Add Assignee
