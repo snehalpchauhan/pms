@@ -4,7 +4,6 @@ import { useAuth } from "@/hooks/useAuth";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { MessageSquare, Paperclip, Calendar, Clock, AlertTriangle } from "lucide-react";
 import { isTaskOverInvested, parseTaskHoursField } from "@/lib/taskHours";
@@ -147,20 +146,12 @@ export function TaskCard({ task, onClick, disableDrag = false }: TaskCardProps) 
               </div>
             ) : null}
             {people.hasAssignees ? (
-              <div className="space-y-1">
-                <div className="text-muted-foreground/90 shrink-0">Assigned to</div>
-                <div className="flex flex-col gap-1.5 min-w-0">
-                  {people.assigneeUsers.map((user) => (
-                    <div key={user.id} className="flex items-center gap-2 min-w-0">
-                      <Avatar className="h-5 w-5 shrink-0 border border-border/40" title={user.name}>
-                        <AvatarImage src={user.avatar} />
-                        <AvatarFallback className="text-[9px]">{user.name.charAt(0)}</AvatarFallback>
-                      </Avatar>
-                      <span className="text-[10px] font-medium text-foreground/90 break-words min-w-0 leading-snug">{user.name}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
+              <p className="text-[10px] leading-snug min-w-0">
+                <span className="text-muted-foreground/90">Assigned to </span>
+                <span className="font-medium text-foreground/90 break-words">
+                  {people.assigneeUsers.map((u) => u.name).join(", ")}
+                </span>
+              </p>
             ) : (
               <p className="text-[10px] font-medium text-muted-foreground">Unassigned</p>
             )}

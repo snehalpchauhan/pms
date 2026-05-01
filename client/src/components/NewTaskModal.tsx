@@ -109,6 +109,7 @@ export function NewTaskModal({ open, onOpenChange, project, membersProjectId, on
 
     const [selectedAssigneeIds, setSelectedAssigneeIds] = useState<Set<string>>(() => new Set());
     const [assigneeSearch, setAssigneeSearch] = useState("");
+    const [assigneePickerOpen, setAssigneePickerOpen] = useState(false);
     const [estimatedHoursInput, setEstimatedHoursInput] = useState("");
 
     const [projectMembers, setProjectMembers] = useState<ProjectMemberRow[]>([]);
@@ -179,6 +180,8 @@ export function NewTaskModal({ open, onOpenChange, project, membersProjectId, on
       if (!open) return;
       setSelectedAssigneeIds(new Set());
       setEstimatedHoursInput("");
+      setAssigneePickerOpen(false);
+      setAssigneeSearch("");
     }, [open]);
 
     const toggleAssignee = (userId: string) => {
@@ -456,7 +459,13 @@ export function NewTaskModal({ open, onOpenChange, project, membersProjectId, on
                                                     </div>
                                                 );
                                             })}
-                                            <Popover onOpenChange={(open) => { if (!open) setAssigneeSearch(""); }}>
+                                            <Popover
+                                                open={assigneePickerOpen}
+                                                onOpenChange={(open) => {
+                                                    setAssigneePickerOpen(open);
+                                                    if (!open) setAssigneeSearch("");
+                                                }}
+                                            >
                                                 <PopoverTrigger asChild>
                                                     <Button
                                                         type="button"
@@ -469,12 +478,12 @@ export function NewTaskModal({ open, onOpenChange, project, membersProjectId, on
                                                     </Button>
                                                 </PopoverTrigger>
                                                 <PopoverContent
-                                                    className="w-72 p-2"
+                                                    className="w-72 p-0 flex flex-col max-h-[min(80vh,22rem)]"
                                                     align="start"
                                                     onOpenAutoFocus={(e) => e.preventDefault()}
                                                 >
-                                                    <div className="space-y-1.5">
-                                                        <div className="text-xs font-semibold text-muted-foreground px-1 py-1">
+                                                    <div className="shrink-0 space-y-2 border-b border-border/50 p-2">
+                                                        <div className="text-xs font-semibold text-muted-foreground px-1">
                                                             Add assignee
                                                         </div>
                                                         <Input
@@ -484,9 +493,10 @@ export function NewTaskModal({ open, onOpenChange, project, membersProjectId, on
                                                             className="h-8 text-xs"
                                                             autoFocus
                                                         />
-                                                        <div className="max-h-60 overflow-y-auto space-y-0.5 pt-0.5">
+                                                    </div>
+                                                    <div className="min-h-0 max-h-60 overflow-y-auto overscroll-contain p-1">
                                                             {filteredAssignableMembers.length === 0 ? (
-                                                                <div className="text-xs text-muted-foreground px-2 py-2 italic">
+                                                                <div className="text-xs text-muted-foreground px-2 py-3 italic">
                                                                     {assigneeSearch.trim()
                                                                         ? "No members match your search."
                                                                         : projectMembers.length === 0
@@ -501,6 +511,7 @@ export function NewTaskModal({ open, onOpenChange, project, membersProjectId, on
                                                                         onClick={() => {
                                                                             toggleAssignee(String(m.id));
                                                                             setAssigneeSearch("");
+                                                                            setAssigneePickerOpen(false);
                                                                         }}
                                                                         className="flex items-center gap-2 w-full px-2 py-1.5 hover:bg-muted rounded-md text-sm transition-colors text-left"
                                                                     >
@@ -526,7 +537,6 @@ export function NewTaskModal({ open, onOpenChange, project, membersProjectId, on
                                                                     </button>
                                                                 ))
                                                             )}
-                                                        </div>
                                                     </div>
                                                 </PopoverContent>
                                             </Popover>

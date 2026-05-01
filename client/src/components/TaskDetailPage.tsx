@@ -1299,6 +1299,7 @@ export function TaskDetailPage({
 
   const toggleAssignee = async (userId: string) => {
     if (!canEditAssignees || !Number.isInteger(numericTaskId) || numericTaskId <= 0) return;
+    const isAdding = !assignees.includes(userId);
     const next = assignees.includes(userId)
       ? assignees.filter((id) => id !== userId)
       : [...assignees, userId];
@@ -1308,6 +1309,10 @@ export function TaskDetailPage({
     try {
       await apiRequest("PATCH", `/api/tasks/${numericTaskId}`, { assignees: payload });
       invalidateTasks();
+      if (isAdding) {
+        setAssigneePopoverOpen(false);
+        setAssigneeSearch("");
+      }
     } catch {
       setAssignees(prev);
       toast({ title: "Could not update assignees", variant: "destructive" });
@@ -1581,9 +1586,9 @@ export function TaskDetailPage({
                      {/* Metadata: people (created / assigned by / assigned to) + timeline + tags; hours row below */}
                      <div className="bg-muted/20 border border-border/50 rounded-xl overflow-hidden">
                      <div className="grid grid-cols-1 md:grid-cols-12 gap-x-6 gap-y-4 p-5 md:items-start md:pb-4">
-                        {/* Created by / Assigned by / Assigned to */}
-                        <div className="space-y-3 md:col-span-3 min-w-0">
-                             <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">People</div>
+                        {/* Who created / who assigned (metadata only) */}
+                        <div className="space-y-2 md:col-span-3 min-w-0">
+                             <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Who</div>
                              <div className="rounded-lg border border-border/50 bg-background/50 p-3 space-y-3">
                                 <div className="space-y-1">
                                   <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Created by</div>
@@ -1599,6 +1604,13 @@ export function TaskDetailPage({
                                     </p>
                                   </div>
                                 ) : null}
+                             </div>
+                        </div>
+
+                        {/* Assignment: assignees only (separate from Who) */}
+                        <div className="space-y-2 md:col-span-3 min-w-0">
+                             <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Assignment</div>
+                             <div className="rounded-lg border border-border/50 bg-background/50 p-3 space-y-2">
                                 {!taskPeopleMeta.hasAssignees ? (
                                   <div className="space-y-2">
                                     <p className="text-sm font-medium text-muted-foreground">Unassigned</p>
@@ -1615,56 +1627,54 @@ export function TaskDetailPage({
                                             <Plus className="w-3 h-3" />
                                           </Button>
                                         </PopoverTrigger>
-                                        <PopoverContent className="w-60 p-2" align="start">
-                                          <div className="space-y-1">
-                                            <div className="text-xs font-semibold text-muted-foreground px-2 py-1.5">Add assignee</div>
-                                            <p className="px-2 pb-1 text-[10px] text-muted-foreground">
+                                        <PopoverContent className="w-64 p-0 flex flex-col max-h-[min(80vh,22rem)]" align="start">
+                                          <div className="shrink-0 space-y-2 border-b border-border/50 p-2">
+                                            <div className="text-xs font-semibold text-muted-foreground px-1">Add assignee</div>
+                                            <p className="px-1 text-[10px] text-muted-foreground">
                                               Only people on this project can be assigned.
                                             </p>
-                                            <div className="px-2 pb-2">
-                                              <Input
-                                                value={assigneeSearch}
-                                                onChange={(e) => setAssigneeSearch(e.target.value)}
-                                                placeholder="Search members..."
-                                                className="h-8 text-xs"
-                                              />
-                                            </div>
-                                            <ScrollArea className="max-h-52 pr-1">
+                                            <Input
+                                              value={assigneeSearch}
+                                              onChange={(e) => setAssigneeSearch(e.target.value)}
+                                              placeholder="Search members…"
+                                              className="h-8 text-xs"
+                                            />
+                                          </div>
+                                          <div className="min-h-0 max-h-60 overflow-y-auto overscroll-contain p-1">
                                               {filteredAssignableProjectMembers.map((m) => (
                                                 <button
                                                   key={m.id}
                                                   type="button"
                                                   onClick={() => void toggleAssignee(String(m.id))}
-                                                  className="flex items-center gap-2 w-full px-2 py-1.5 hover:bg-muted rounded-md text-sm transition-colors"
+                                                  className="flex items-center gap-2 w-full px-2 py-1.5 hover:bg-muted rounded-md text-sm transition-colors text-left"
                                                 >
-                                                  <Avatar className="h-6 w-6">
+                                                  <Avatar className="h-6 w-6 shrink-0">
                                                     <AvatarImage src={m.avatar?.trim() || undefined} />
                                                     <AvatarFallback className="text-[10px]">
                                                       {getUserInitials(m.name, undefined)}
                                                     </AvatarFallback>
                                                   </Avatar>
-                                                  <span className="truncate">{m.name}</span>
+                                                  <span className="min-w-0 truncate">{m.name}</span>
                                                 </button>
                                               ))}
-                                            </ScrollArea>
-                                            {filteredAssignableProjectMembers.length === 0 && (
-                                              <div className="text-xs text-muted-foreground px-2 py-2 italic">
-                                                {projectMembersLoading
-                                                  ? "Loading members…"
-                                                  : assignableProjectMembers.length === 0
-                                                    ? projectMembers.length === 0
-                                                      ? "No members on this project yet. Add them under Members & Access."
-                                                      : "Everyone on this project is already assigned."
-                                                    : "No member matches your search."}
-                                              </div>
-                                            )}
+                                              {filteredAssignableProjectMembers.length === 0 && (
+                                                <div className="text-xs text-muted-foreground px-2 py-3 italic">
+                                                  {projectMembersLoading
+                                                    ? "Loading members…"
+                                                    : assignableProjectMembers.length === 0
+                                                      ? projectMembers.length === 0
+                                                        ? "No members on this project yet. Add them under Members & Access."
+                                                        : "Everyone on this project is already assigned."
+                                                      : "No member matches your search."}
+                                                </div>
+                                              )}
                                           </div>
                                         </PopoverContent>
                                       </Popover>
                                     ) : null}
                                   </div>
                                 ) : (
-                                <div className="space-y-2">
+                                <>
                                   <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Assigned to</div>
                              <div className="flex flex-col gap-2">
                                 {assignees.map(id => {
@@ -1697,40 +1707,38 @@ export function TaskDetailPage({
                                                 <Plus className="w-3 h-3" />
                                             </Button>
                                         </PopoverTrigger>
-                                        <PopoverContent className="w-60 p-2" align="start">
-                                            <div className="space-y-1">
-                                                <div className="text-xs font-semibold text-muted-foreground px-2 py-1.5">Add assignee</div>
-                                                <p className="px-2 pb-1 text-[10px] text-muted-foreground">
+                                        <PopoverContent className="w-64 p-0 flex flex-col max-h-[min(80vh,22rem)]" align="start">
+                                            <div className="shrink-0 space-y-2 border-b border-border/50 p-2">
+                                                <div className="text-xs font-semibold text-muted-foreground px-1">Add assignee</div>
+                                                <p className="px-1 text-[10px] text-muted-foreground">
                                                   Only people on this project can be assigned.
                                                 </p>
-                                                <div className="px-2 pb-2">
-                                                  <Input
+                                                <Input
                                                     value={assigneeSearch}
                                                     onChange={(e) => setAssigneeSearch(e.target.value)}
-                                                    placeholder="Search members..."
+                                                    placeholder="Search members…"
                                                     className="h-8 text-xs"
-                                                  />
-                                                </div>
-                                                <ScrollArea className="max-h-52 pr-1">
+                                                />
+                                            </div>
+                                            <div className="min-h-0 max-h-60 overflow-y-auto overscroll-contain p-1">
                                                   {filteredAssignableProjectMembers.map((m) => (
                                                       <button 
                                                           key={m.id}
                                                           type="button"
                                                           onClick={() => void toggleAssignee(String(m.id))}
-                                                          className="flex items-center gap-2 w-full px-2 py-1.5 hover:bg-muted rounded-md text-sm transition-colors"
+                                                          className="flex items-center gap-2 w-full px-2 py-1.5 hover:bg-muted rounded-md text-sm transition-colors text-left"
                                                       >
-                                                          <Avatar className="h-6 w-6">
+                                                          <Avatar className="h-6 w-6 shrink-0">
                                                               <AvatarImage src={m.avatar?.trim() || undefined} />
                                                               <AvatarFallback className="text-[10px]">
                                                                 {getUserInitials(m.name, undefined)}
                                                               </AvatarFallback>
                                                           </Avatar>
-                                                          <span className="truncate">{m.name}</span>
+                                                          <span className="min-w-0 truncate">{m.name}</span>
                                                       </button>
                                                   ))}
-                                                </ScrollArea>
-                                                {filteredAssignableProjectMembers.length === 0 && (
-                                                    <div className="text-xs text-muted-foreground px-2 py-2 italic">
+                                                  {filteredAssignableProjectMembers.length === 0 && (
+                                                    <div className="text-xs text-muted-foreground px-2 py-3 italic">
                                                       {projectMembersLoading
                                                         ? "Loading members…"
                                                         : assignableProjectMembers.length === 0
@@ -1739,19 +1747,19 @@ export function TaskDetailPage({
                                                               : "Everyone on this project is already assigned.")
                                                           : "No member matches your search."}
                                                     </div>
-                                                )}
+                                                  )}
                                             </div>
                                         </PopoverContent>
                                     </Popover>
                                 )}
                              </div>
-                                </div>
+                                </>
                                 )}
                              </div>
                         </div>
 
                         {/* Dates - Start & Due */}
-                        <div className="space-y-2 md:col-span-5 min-w-0">
+                        <div className="space-y-2 md:col-span-3 min-w-0">
                              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Timeline</div>
                              <div className="flex flex-wrap items-center gap-x-2 gap-y-2">
                                  {(!isClient || isFullAccess) ? (
@@ -1848,7 +1856,7 @@ export function TaskDetailPage({
                         </div>
 
                          {/* Tags */}
-                         <div className="space-y-2 md:col-span-4 min-w-0">
+                         <div className="space-y-2 md:col-span-3 min-w-0">
                              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Tags</div>
                              <div className="flex flex-wrap gap-2">
                                 {tags.map((tag) => (
