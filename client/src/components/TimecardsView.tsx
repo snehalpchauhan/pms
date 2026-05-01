@@ -633,8 +633,7 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
 
         {summaryDialog}
 
-        <div className="min-h-0 flex-1 overflow-auto">
-          <div className="min-w-0 p-6">
+        <div className="min-h-0 flex-1 overflow-hidden flex flex-col gap-3 p-6">
             {!hasLoadedEntries && !isLoading ? (
               <div className="text-center py-16 border-2 border-dashed border-border/50 rounded-xl space-y-3">
                 <Search className="w-10 h-10 text-muted-foreground/40 mx-auto" />
@@ -658,8 +657,8 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
                 </div>
               </div>
             ) : (
-              <div className="space-y-3">
-                <div className="flex items-center justify-between gap-3 px-1">
+              <>
+                <div className="flex items-center justify-between gap-3 px-1 shrink-0">
                   <p className="text-xs text-muted-foreground tabular-nums">
                     {entries.length} {entries.length === 1 ? "entry" : "entries"}
                     {totalPages > 1 ? ` · page ${page} of ${totalPages}` : ""}
@@ -677,7 +676,7 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
                     </select>
                   </div>
                 </div>
-                <div className="rounded-xl border border-border/50 bg-background shadow-sm">
+                <div className="flex-1 min-h-0 overflow-auto rounded-xl border border-border/50 bg-background shadow-sm">
                   <table
                     className="w-max min-w-full border-separate border-spacing-0 text-sm table-fixed"
                     data-testid="table-client-time-log"
@@ -691,19 +690,19 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
                     </colgroup>
                     <thead>
                       <tr className="[&_th]:border-b [&_th]:border-border/50 bg-muted/30">
-                        <th className="sticky left-0 top-0 z-[50] bg-muted/95 px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground backdrop-blur-sm supports-[backdrop-filter]:bg-muted/80 shadow-[4px_0_6px_-4px_rgba(0,0,0,0.12)] dark:shadow-[4px_0_6px_-4px_rgba(0,0,0,0.4)]">
+                        <th className="sticky left-0 top-0 z-[50] bg-muted px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground shadow-[4px_0_6px_-4px_rgba(0,0,0,0.12)] dark:shadow-[4px_0_6px_-4px_rgba(0,0,0,0.4)]">
                           Date
                         </th>
-                        <th className="sticky top-0 z-[40] bg-muted/95 px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground backdrop-blur-sm supports-[backdrop-filter]:bg-muted/80 min-w-[8rem]">
+                        <th className="sticky top-0 z-[40] bg-muted px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground min-w-[8rem]">
                           Member
                         </th>
-                        <th className="sticky top-0 z-[40] bg-muted/95 px-3 py-3 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground backdrop-blur-sm supports-[backdrop-filter]:bg-muted/80">
+                        <th className="sticky top-0 z-[40] bg-muted px-3 py-3 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                           Hours
                         </th>
-                        <th className="sticky top-0 z-[40] bg-muted/95 px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground backdrop-blur-sm supports-[backdrop-filter]:bg-muted/80 min-w-[140px]">
+                        <th className="sticky top-0 z-[40] bg-muted px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground min-w-[140px]">
                           Task
                         </th>
-                        <th className="sticky top-0 z-[40] bg-muted/95 px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground backdrop-blur-sm supports-[backdrop-filter]:bg-muted/80 min-w-[180px]">
+                        <th className="sticky top-0 z-[40] bg-muted px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground min-w-[180px]">
                           Work type
                         </th>
                       </tr>
@@ -736,7 +735,7 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
                               className="[&>td]:border-b [&>td]:border-border/25 last:border-0 hover:bg-muted/20 transition-colors"
                               data-testid={`row-client-time-entry-${entry.id}`}
                             >
-                              <td className="sticky left-0 z-[30] border-r border-border/40 bg-background/95 px-3 py-3 text-xs whitespace-nowrap align-top text-muted-foreground backdrop-blur-sm supports-[backdrop-filter]:bg-background/85 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)] dark:shadow-[2px_0_4px_-2px_rgba(0,0,0,0.35)]">
+                              <td className="sticky left-0 z-[30] border-r border-border/40 bg-background px-3 py-3 text-xs whitespace-nowrap align-top text-muted-foreground shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)] dark:shadow-[2px_0_4px_-2px_rgba(0,0,0,0.35)]">
                                 {entry.logDate}
                               </td>
                               <td className="px-3 py-3 min-w-0 align-top">
@@ -799,9 +798,8 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
                     </div>
                   </div>
                 )}
-              </div>
+              </>
             )}
-          </div>
         </div>
       </div>
     );
@@ -943,13 +941,16 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
 
       {summaryDialog}
 
-      <div className="min-h-0 flex-1 overflow-auto">
-        <div className="min-w-0 space-y-3 p-6">
-          {/* Detailed Log */}
-          <div className="space-y-3">
-            <h3 className="text-sm font-semibold text-foreground">
-              {isManagerOrAdmin ? "Time log" : "My time log"}
-            </h3>
+      {/*
+        * overflow-hidden + flex-col so the table wrapper below can be flex-1 min-h-0 overflow-auto.
+        * That makes the rounded-border div the sole scroll container, so sticky left-0 / top-0
+        * snap to the table's visible edges rather than the outer padded div.
+        */}
+      <div className="min-h-0 flex-1 overflow-hidden flex flex-col gap-3 p-6">
+        {/* Detailed Log */}
+        <h3 className="text-sm font-semibold text-foreground shrink-0">
+          {isManagerOrAdmin ? "Time log" : "My time log"}
+        </h3>
 
             {!hasLoadedEntries && !isLoading ? (
               <div className="text-center py-16 border-2 border-dashed border-border/50 rounded-xl space-y-3">
@@ -978,9 +979,9 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
                 </Button>
               </div>
             ) : (
-              <div className="space-y-3">
+              <>
                 {/* Table toolbar: count + page-size */}
-                <div className="flex items-center justify-between gap-3 px-1">
+                <div className="flex items-center justify-between gap-3 px-1 shrink-0">
                   <p className="text-xs text-muted-foreground tabular-nums">
                     {entries.length} {entries.length === 1 ? "entry" : "entries"}
                     {totalPages > 1 ? ` · page ${page} of ${totalPages}` : ""}
@@ -999,7 +1000,7 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
                     </select>
                   </div>
                 </div>
-                <div className="rounded-xl border border-border/50 bg-background shadow-sm">
+                <div className="flex-1 min-h-0 overflow-auto rounded-xl border border-border/50 bg-background shadow-sm">
                   <table
                     className="w-max min-w-full border-separate border-spacing-0 text-sm table-fixed"
                     data-testid="table-time-log"
@@ -1015,28 +1016,28 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
                     </colgroup>
                     <thead>
                       <tr className="[&_th]:border-b [&_th]:border-border/50 bg-muted/30">
-                        <th className="sticky left-0 top-0 z-[50] bg-muted/95 px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground backdrop-blur-sm supports-[backdrop-filter]:bg-muted/80 shadow-[4px_0_6px_-4px_rgba(0,0,0,0.12)] dark:shadow-[4px_0_6px_-4px_rgba(0,0,0,0.4)]">
+                        <th className="sticky left-0 top-0 z-[50] bg-muted px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground shadow-[4px_0_6px_-4px_rgba(0,0,0,0.12)] dark:shadow-[4px_0_6px_-4px_rgba(0,0,0,0.4)]">
                           Date
                         </th>
                         {showMemberColumn ? (
-                          <th className="sticky top-0 z-[40] bg-muted/95 px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground backdrop-blur-sm supports-[backdrop-filter]:bg-muted/80 min-w-[7.5rem]">
+                          <th className="sticky top-0 z-[40] bg-muted px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground min-w-[7.5rem]">
                             Member
                           </th>
                         ) : null}
-                        <th className="sticky top-0 z-[40] bg-muted/95 px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground backdrop-blur-sm supports-[backdrop-filter]:bg-muted/80 min-w-[120px]">
+                        <th className="sticky top-0 z-[40] bg-muted px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground min-w-[120px]">
                           Project
                         </th>
-                        <th className="sticky top-0 z-[40] bg-muted/95 px-3 py-3 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground backdrop-blur-sm supports-[backdrop-filter]:bg-muted/80 whitespace-nowrap">
+                        <th className="sticky top-0 z-[40] bg-muted px-3 py-3 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap">
                           Hours
                         </th>
-                        <th className="sticky top-0 z-[40] bg-muted/95 px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground backdrop-blur-sm supports-[backdrop-filter]:bg-muted/80 min-w-[140px]">
+                        <th className="sticky top-0 z-[40] bg-muted px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground min-w-[140px]">
                           Task
                         </th>
-                        <th className="sticky top-0 z-[40] bg-muted/95 px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground backdrop-blur-sm supports-[backdrop-filter]:bg-muted/80 min-w-[180px]">
+                        <th className="sticky top-0 z-[40] bg-muted px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground min-w-[180px]">
                           Work type &amp; description
                         </th>
                         <th
-                          className="sticky right-0 top-0 z-[45] w-14 min-w-[2.75rem] border-l border-border/50 bg-muted/95 px-3 py-3 shadow-[-6px_0_8px_-4px_rgba(0,0,0,0.08)] backdrop-blur-sm supports-[backdrop-filter]:bg-muted/80 dark:shadow-[-6px_0_8px_-4px_rgba(0,0,0,0.35)]"
+                          className="sticky right-0 top-0 z-[45] w-14 min-w-[2.75rem] border-l border-border/50 bg-muted px-3 py-3 shadow-[-6px_0_8px_-4px_rgba(0,0,0,0.08)] dark:shadow-[-6px_0_8px_-4px_rgba(0,0,0,0.35)]"
                           aria-label="Actions"
                         />
                       </tr>
@@ -1077,8 +1078,8 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
                               >
                                 <td
                                   className={cn(
-                                    "sticky left-0 z-[30] border-r border-border/40 px-3 py-3 text-xs whitespace-nowrap align-top text-muted-foreground shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)] backdrop-blur-sm supports-[backdrop-filter]:bg-background/85 dark:shadow-[2px_0_4px_-2px_rgba(0,0,0,0.35)]",
-                                    isPrivate ? "bg-muted/95 dark:bg-muted/90" : "bg-background/95",
+                                    "sticky left-0 z-[30] border-r border-border/40 px-3 py-3 text-xs whitespace-nowrap align-top text-muted-foreground shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)] dark:shadow-[2px_0_4px_-2px_rgba(0,0,0,0.35)]",
+                                    isPrivate ? "bg-muted" : "bg-background",
                                   )}
                                 >
                                   <div className="flex items-center gap-1.5 min-w-0">
@@ -1117,8 +1118,8 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
                                 </td>
                                 <td
                                   className={cn(
-                                    "sticky right-0 z-[35] border-l border-border/40 px-3 py-3 text-right align-top shadow-[-4px_0_6px_-4px_rgba(0,0,0,0.08)] backdrop-blur-sm supports-[backdrop-filter]:bg-background/85 dark:shadow-[-4px_0_6px_-4px_rgba(0,0,0,0.35)]",
-                                    isPrivate ? "bg-muted/95 dark:bg-muted/90" : "bg-background/95",
+                                    "sticky right-0 z-[35] border-l border-border/40 px-3 py-3 text-right align-top shadow-[-4px_0_6px_-4px_rgba(0,0,0,0.08)] dark:shadow-[-4px_0_6px_-4px_rgba(0,0,0,0.35)]",
+                                    isPrivate ? "bg-muted" : "bg-background",
                                   )}
                                 >
                                   {canDelete && (
@@ -1177,10 +1178,8 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
                     </div>
                   </div>
                 )}
-              </div>
+              </>
             )}
-          </div>
-        </div>
       </div>
 
       {/* Log Time Dialog */}

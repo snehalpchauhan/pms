@@ -283,8 +283,8 @@ export default function TeamSummaryView({ currentUserRole, currentProject }: Tea
         </div>
       </div>
 
-      {/* ── Single scroll viewport (nested overflow breaks table position:sticky) ── */}
-      <div className="min-h-0 flex-1 overflow-auto p-6">
+      {/* ── Content area: overflow-hidden so the table wrapper IS the sole scroll container ── */}
+      <div className="min-h-0 flex-1 overflow-hidden p-6 flex flex-col">
         {!hasLoadedEntries && !isLoading ? (
           <div className="rounded-xl border-2 border-dashed border-border/50 py-16 text-center space-y-2">
             <Search className="mx-auto h-10 w-10 text-muted-foreground/40" />
@@ -300,11 +300,11 @@ export default function TeamSummaryView({ currentUserRole, currentProject }: Tea
           </div>
         ) : (
           /*
-           * Layout: dates as ROWS (vertical), members as COLUMNS (horizontal)
-           * Date column is sticky-left. Scroll right for many members.
-           * Scroll down for many dates.
+           * The table wrapper IS the scroll container (overflow-auto + flex-1 min-h-0).
+           * sticky left-0 / top-0 cells therefore snap to the wrapper's visible edges,
+           * eliminating content bleed to the left of Date and above the header row.
            */
-          <div className="rounded-xl border border-border/50 bg-background shadow-sm">
+          <div className="flex-1 min-h-0 overflow-auto rounded-xl border border-border/50 bg-background shadow-sm">
             {/*
              * border-separate — required for position:sticky on <th>/<td>
              * (border-collapse disables sticky in most browsers.)
@@ -313,14 +313,14 @@ export default function TeamSummaryView({ currentUserRole, currentProject }: Tea
               <thead>
                 <tr>
                   {/* Corner cell: frozen when scrolling horizontally OR vertically */}
-                  <th className="sticky left-0 top-0 z-[50] border-b-2 border-r border-border/50 bg-muted/95 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground backdrop-blur-sm supports-[backdrop-filter]:bg-muted/80 min-w-[132px]">
+                  <th className="sticky left-0 top-0 z-[50] border-b-2 border-r border-border/50 bg-muted px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground min-w-[132px]">
                     Date
                   </th>
                   {/* Member columns: frozen on vertical scroll */}
                   {membersInData.map(({ id, name }) => (
                     <th
                       key={id}
-                      className="sticky top-0 z-[40] border-b-2 border-border/50 bg-muted/95 px-3 py-3 text-center backdrop-blur-sm supports-[backdrop-filter]:bg-muted/80 w-[110px] min-w-[90px] max-w-[130px]"
+                      className="sticky top-0 z-[40] border-b-2 border-border/50 bg-muted px-3 py-3 text-center w-[110px] min-w-[90px] max-w-[130px]"
                     >
                       <div className="flex flex-col items-center gap-1 overflow-hidden">
                         <Avatar className="h-6 w-6 shrink-0">
@@ -335,7 +335,7 @@ export default function TeamSummaryView({ currentUserRole, currentProject }: Tea
                       </div>
                     </th>
                   ))}
-                  <th className="sticky top-0 z-[40] border-l border-b-2 border-border/50 bg-muted/95 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground backdrop-blur-sm supports-[backdrop-filter]:bg-muted/80 whitespace-nowrap min-w-[84px]">
+                  <th className="sticky top-0 z-[40] border-l border-b-2 border-border/50 bg-muted px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap min-w-[84px]">
                     Total
                   </th>
                 </tr>
@@ -361,7 +361,7 @@ export default function TeamSummaryView({ currentUserRole, currentProject }: Tea
                       {/* Sticky date cell */}
                       <td className={cn(
                         "sticky left-0 z-[30] border-r border-border/40 px-4 py-2.5 whitespace-nowrap shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)] dark:shadow-[2px_0_4px_-2px_rgba(0,0,0,0.35)]",
-                        isWeekend ? "bg-muted/95 backdrop-blur-sm supports-[backdrop-filter]:bg-muted/80 dark:bg-muted/90" : "bg-background/95 backdrop-blur-sm supports-[backdrop-filter]:bg-background/90",
+                        isWeekend ? "bg-muted" : "bg-background",
                       )}>
                         <div className="flex items-center gap-2">
                           <span className={cn(
@@ -441,7 +441,7 @@ export default function TeamSummaryView({ currentUserRole, currentProject }: Tea
               {/* Footer: per-member totals + missing */}
               <tfoot>
                 <tr className="border-t-2 border-border/60 bg-muted/30">
-                  <td className="sticky left-0 z-[30] border-r border-t-2 border-border/50 bg-muted/95 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)] backdrop-blur-sm supports-[backdrop-filter]:bg-muted/80 dark:bg-muted/90">
+                  <td className="sticky left-0 z-[30] border-r border-t-2 border-border/50 bg-muted px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]">
                     Total
                   </td>
                   {membersInData.map(({ id }) => {
@@ -457,7 +457,7 @@ export default function TeamSummaryView({ currentUserRole, currentProject }: Tea
                   </td>
                 </tr>
                 <tr className="border-t border-border/30 bg-muted/10">
-                  <td className="sticky left-0 z-[30] border-r border-border/40 bg-muted/95 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-destructive/70 whitespace-nowrap shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)] backdrop-blur-sm supports-[backdrop-filter]:bg-muted/80 dark:bg-muted/90">
+                  <td className="sticky left-0 z-[30] border-r border-border/40 bg-muted px-4 py-2 text-xs font-semibold uppercase tracking-wider text-destructive/70 whitespace-nowrap shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]">
                     Missing
                   </td>
                   {membersInData.map(({ id }) => {
