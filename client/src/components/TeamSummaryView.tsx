@@ -308,23 +308,31 @@ export default function TeamSummaryView({ currentUserRole, currentProject }: Tea
             <table className="border-collapse text-xs" style={{ minWidth: "100%", tableLayout: "auto" }}>
               <thead>
                 <tr className="border-b-2 border-border/60 bg-muted/40">
-                  {/* Date header cell */}
-                  <th className="sticky left-0 z-20 border-r border-border/40 bg-muted/40 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap min-w-[130px]">
+                  {/* Corner: sticky both left AND top so it never moves */}
+                  <th className="sticky left-0 top-0 z-30 border-r border-b-2 border-border/40 bg-muted/40 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap min-w-[130px]">
                     Date
                   </th>
-                  {/* One column per member */}
+                  {/* Member columns: sticky top — stays visible while scrolling down */}
                   {membersInData.map(({ id, name }) => (
-                    <th key={id} className="px-3 py-3 text-center min-w-[100px] whitespace-nowrap">
-                      <div className="flex flex-col items-center gap-1">
-                        <Avatar className="h-6 w-6">
+                    <th
+                      key={id}
+                      className="sticky top-0 z-20 border-b-2 border-border/40 bg-muted/40 px-3 py-3 text-center w-[110px] min-w-[90px] max-w-[130px]"
+                    >
+                      <div className="flex flex-col items-center gap-1 overflow-hidden">
+                        <Avatar className="h-6 w-6 shrink-0">
                           <AvatarFallback className="text-[10px]">{name[0]}</AvatarFallback>
                         </Avatar>
-                        <span className="text-[11px] font-semibold text-foreground">{name}</span>
+                        <span
+                          className="block w-full truncate text-center text-[11px] font-semibold text-foreground leading-tight"
+                          title={name}
+                        >
+                          {name}
+                        </span>
                       </div>
                     </th>
                   ))}
-                  {/* Row total column */}
-                  <th className="border-l border-border/40 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap min-w-[80px]">
+                  {/* Total column: sticky top */}
+                  <th className="sticky top-0 z-20 border-l border-b-2 border-border/40 bg-muted/40 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap min-w-[80px]">
                     Total
                   </th>
                 </tr>
@@ -430,7 +438,7 @@ export default function TeamSummaryView({ currentUserRole, currentProject }: Tea
               {/* Footer: per-member totals + missing */}
               <tfoot>
                 <tr className="border-t-2 border-border/60 bg-muted/30">
-                  <td className="sticky left-0 z-10 border-r border-border/40 bg-muted/30 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap">
+                  <td className="sticky left-0 z-10 border-r border-t-2 border-border/40 bg-muted/30 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap">
                     Total
                   </td>
                   {membersInData.map(({ id }) => {
@@ -446,7 +454,7 @@ export default function TeamSummaryView({ currentUserRole, currentProject }: Tea
                   </td>
                 </tr>
                 <tr className="border-t border-border/30 bg-muted/10">
-                  <td className="sticky left-0 z-10 border-r border-border/40 bg-muted/10 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-destructive/70 whitespace-nowrap">
+                  <td className="sticky left-0 z-10 border-r border-border/40 bg-muted/10 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-destructive/70 whitespace-nowrap" style={{ background: "hsl(var(--muted) / 0.10)" }}>
                     Missing
                   </td>
                   {membersInData.map(({ id }) => {
