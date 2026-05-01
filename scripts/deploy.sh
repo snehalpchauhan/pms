@@ -202,6 +202,25 @@ run_remote() {
   fi
 }
 
+print_ssh_auth_help() {
+  cat <<EOF >&2
+
+==> SSH to ${DEPLOY_HOST} failed (authentication).
+    deploy.sh never stores credentials in git. Fix one of:
+
+    1) Create scripts/deploy.local.env from the example and set either:
+         - DEPLOY_SSH_PASSWORD + install sshpass (see deploy.local.env.example), or
+         - DEPLOY_SSH_KEY=/path/to/private_key (and install the matching pubkey on the server).
+
+    2) Or add your Mac SSH public key (~/.ssh/id_ed25519.pub) to the server user’s
+       ~/.ssh/authorized_keys (VPS panel: SSH keys, or paste via recovery console).
+
+    Defaults: host ${DEPLOY_HOST}  path ${DEPLOY_PATH}  (override with env vars).
+
+EOF
+}
+
+set +e
 run_remote <<'REMOTE'
 set -euo pipefail
 
@@ -267,3 +286,9 @@ esac
 
 echo "==> Done."
 REMOTE
+deploy_ssh_rc=$?
+set -euo pipefail
+if [[ "$deploy_ssh_rc" -ne 0 ]]; then
+  print_ssh_auth_help
+  exit "$deploy_ssh_rc"
+fi
