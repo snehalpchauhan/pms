@@ -310,7 +310,9 @@ function CommentItem({
               </div>
             </div>
           ) : (
-            <div className="text-sm text-foreground/90 leading-snug whitespace-pre-wrap">{comment.content}</div>
+            <div className="text-sm text-foreground/90 leading-snug prose prose-sm dark:prose-invert max-w-none [&_ul]:my-1 [&_ol]:my-1 [&_p]:my-0.5">
+              {formatChatMarkdown(comment.content || "")}
+            </div>
           )}
         </div>
         <div className="flex items-center gap-3 pl-1 flex-wrap">

@@ -1,3 +1,5 @@
+import { decodeBasicHtmlEntities } from "@/lib/decodeHtmlEntities";
+
 function escapeHtml(text: string): string {
   return text
     .replace(/&/g, "&amp;")
@@ -13,8 +15,8 @@ function escapeHtmlAttr(text: string): string {
 }
 
 function inlineMarkdownToHtml(md: string): string {
-  // Escape once up-front so later replacements can safely inject tags.
-  const escaped = escapeHtml(String(md ?? ""));
+  // Decode pasted entities, then escape for safe HTML.
+  const escaped = escapeHtml(decodeBasicHtmlEntities(String(md ?? "")));
 
   // images: ![alt](url)
   let s = escaped.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_m, alt, url) => {

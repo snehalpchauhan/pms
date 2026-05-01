@@ -1,19 +1,21 @@
 import type { ReactNode } from "react";
+import { decodeBasicHtmlEntities } from "@/lib/decodeHtmlEntities";
 
 function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 function formatPlainWithUrls(text: string, keyBase: string): ReactNode[] {
+  const decoded = decodeBasicHtmlEntities(text);
   const nodes: ReactNode[] = [];
   const re = /(https?:\/\/[^\s<]+[^<.,:;"')\]\s])/gi;
   let last = 0;
   let m: RegExpExecArray | null;
   let k = 0;
-  while ((m = re.exec(text)) !== null) {
+  while ((m = re.exec(decoded)) !== null) {
     if (m.index > last) {
       nodes.push(
-        <span key={`${keyBase}-t-${k++}`}>{escapeHtml(text.slice(last, m.index))}</span>,
+        <span key={`${keyBase}-t-${k++}`}>{escapeHtml(decoded.slice(last, m.index))}</span>,
       );
     }
     const href = m[1]!;
@@ -30,16 +32,16 @@ function formatPlainWithUrls(text: string, keyBase: string): ReactNode[] {
     );
     last = m.index + m[0].length;
   }
-  if (last < text.length) {
-    nodes.push(<span key={`${keyBase}-e-${k++}`}>{escapeHtml(text.slice(last))}</span>);
+  if (last < decoded.length) {
+    nodes.push(<span key={`${keyBase}-e-${k++}`}>{escapeHtml(decoded.slice(last))}</span>);
   }
-  return nodes.length ? nodes : [<span key={`${keyBase}-z`}>{escapeHtml(text)}</span>];
+  return nodes.length ? nodes : [<span key={`${keyBase}-z`}>{escapeHtml(decoded)}</span>];
 }
 
 function formatSegment(part: string, i: number): ReactNode {
   // Some inputs may escape markdown markers (e.g. "\+" or "\*") depending on the converter.
   // Normalize first so underline/bold/italic parsing still works.
-  const normalized = part.replace(/\\([+*])/g, "$1");
+  const normalized = part.replace(/\\([+*-])/g, "$1");
 
   // Bold + Italic: ***text***
   const boldItalic = /^\*\*\*([\s\S]+)\*\*\*$/.exec(normalized);
@@ -196,7 +198,7 @@ export function formatChatMarkdown(text: string): ReactNode {
 
 function formatChatLine(line: string, lineKey: number): ReactNode {
   // Normalize escaped markers BEFORE splitting, otherwise tokens won't match.
-  const normalizedLine = line.replace(/\\([+*])/g, "$1");
+  const normalizedLine = line.replace(/\\([+*-])/g, "$1");
   // Order matters: longer/combined tokens must come BEFORE the simpler ones
   // so e.g. `***Hiii***` isn't split into stray `*` + `**Hiii**` + `**`.
   const parts = normalizedLine.split(
