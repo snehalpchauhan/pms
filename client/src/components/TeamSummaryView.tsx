@@ -47,11 +47,9 @@ export default function TeamSummaryView({ currentUserRole, currentProject }: Tea
     clearFilters,
   } = useTimecardsFiltersAndEntries(currentUserRole, currentProject);
 
-  // Multi-select members (client-side filter)
   const [selectedMemberIds, setSelectedMemberIds] = useState<Set<string>>(new Set());
   const [memberPopoverOpen, setMemberPopoverOpen] = useState(false);
 
-  // All team members for the popover list
   const memberOptions = useMemo(
     () => usersArray.map((u) => ({ id: String(u.id), name: u.name })),
     [usersArray],
@@ -66,7 +64,6 @@ export default function TeamSummaryView({ currentUserRole, currentProject }: Tea
     });
   }
 
-  // Quick date presets
   function applyPreset(preset: "this-week" | "this-month" | "last-month") {
     const today = new Date();
     let start: Date, end: Date;
@@ -85,35 +82,31 @@ export default function TeamSummaryView({ currentUserRole, currentProject }: Tea
     setFilterEndDate(format(end, "yyyy-MM-dd"));
   }
 
-  // Filter entries client-side by selected members
+  // Client-side member filter
   const filteredEntries = useMemo(() => {
     if (selectedMemberIds.size === 0) return entries;
     return entries.filter((e: any) => selectedMemberIds.has(String(e.userId)));
   }, [entries, selectedMemberIds]);
 
-  // Weekday dates in the applied range
+  // All weekdays in range (+ any weekend dates that actually have entries)
   const displayDates = useMemo(() => {
-    if (!filterStartDate || !filterEndDate) return [];
-    const weekdaySet = new Set<string>();
-    let curr = parseISO(filterStartDate);
-    const rangeEnd = parseISO(filterEndDate);
-    while (!isAfter(curr, rangeEnd)) {
-      const dow = getDay(curr);
-      if (dow !== 0 && dow !== 6) weekdaySet.add(format(curr, "yyyy-MM-dd"));
-      curr = addDays(curr, 1);
-    }
-    // Also include any weekend dates that actually have entries
-    filteredEntries.forEach((e: any) => {
-      if (e.logDate && !weekdaySet.has(e.logDate)) {
-        const d = parseISO(e.logDate);
-        const dow = getDay(d);
-        if (dow === 0 || dow === 6) weekdaySet.add(e.logDate);
+    const set = new Set<string>();
+    if (filterStartDate && filterEndDate) {
+      let curr = parseISO(filterStartDate);
+      const rangeEnd = parseISO(filterEndDate);
+      while (!isAfter(curr, rangeEnd)) {
+        const dow = getDay(curr);
+        if (dow !== 0 && dow !== 6) set.add(format(curr, "yyyy-MM-dd"));
+        curr = addDays(curr, 1);
       }
+    }
+    filteredEntries.forEach((e: any) => {
+      if (e.logDate) set.add(e.logDate);
     });
-    return Array.from(weekdaySet).sort();
+    return Array.from(set).sort();
   }, [filterStartDate, filterEndDate, filteredEntries]);
 
-  // Members present in data
+  // Members present in data, alphabetical
   const membersInData = useMemo(() => {
     const seen = new Map<string, { name: string }>();
     filteredEntries.forEach((e: any) => {
@@ -128,7 +121,7 @@ export default function TeamSummaryView({ currentUserRole, currentProject }: Tea
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [filteredEntries, usersArray]);
 
-  // hours[userId][date] = total hours
+  // hoursGrid[userId][date] = hours
   const hoursGrid = useMemo(() => {
     const map: Record<string, Record<string, number>> = {};
     filteredEntries.forEach((e: any) => {
@@ -158,7 +151,7 @@ export default function TeamSummaryView({ currentUserRole, currentProject }: Tea
 
   if (!isManagerOrAdmin) {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
+      <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
         <BarChart3 className="h-12 w-12 text-muted-foreground/50" />
         <div className="max-w-sm space-y-1">
           <h2 className="text-lg font-semibold">Team summary</h2>
@@ -174,50 +167,41 @@ export default function TeamSummaryView({ currentUserRole, currentProject }: Tea
       : `${selectedMemberIds.size} member${selectedMemberIds.size > 1 ? "s" : ""}`;
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden">
-      {/* Header */}
+    <div className="flex h-full flex-col overflow-hidden">
+      {/* ── Header ─────────────────────────────────────────── */}
       <div className="shrink-0 space-y-4 border-b border-border/50 bg-muted/10 px-6 py-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex items-center gap-3">
             <BarChart3 className="h-7 w-7 text-primary" />
             <div>
               <h2 className="font-display text-xl font-bold text-foreground">Team summary</h2>
-              <p className="text-sm text-muted-foreground">Daily 8 h compliance across team members</p>
+              <p className="text-sm text-muted-foreground">Daily 8 h compliance — member × date grid</p>
             </div>
           </div>
+
           {hasLoadedEntries && (
             <div className="flex items-center gap-3">
-              <div className="flex items-center gap-2.5 rounded-lg border border-primary/20 bg-primary/5 px-4 py-2.5">
-                <div className="leading-tight text-right">
-                  <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Total hours</p>
-                  <p className="text-xl font-bold tabular-nums text-primary">{totalHours.toFixed(1)}h</p>
-                  <p className="text-[11px] text-muted-foreground">{filteredEntries.length} entries</p>
-                </div>
+              <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-2.5 text-right leading-tight">
+                <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Total hours</p>
+                <p className="text-xl font-bold tabular-nums text-primary">{totalHours.toFixed(1)}h</p>
+                <p className="text-[11px] text-muted-foreground">{filteredEntries.length} entries · {membersInData.length} member{membersInData.length !== 1 ? "s" : ""}</p>
               </div>
-              <div className="flex items-center gap-2.5 rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-2.5">
-                <div className="leading-tight text-right">
-                  <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Missing hours</p>
-                  <p className="text-xl font-bold tabular-nums text-destructive">{totalMissed.toFixed(0)}h</p>
-                  <p className="text-[11px] text-muted-foreground">across {membersInData.length} member{membersInData.length !== 1 ? "s" : ""}</p>
-                </div>
+              <div className="rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-2.5 text-right leading-tight">
+                <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Missing hours</p>
+                <p className="text-xl font-bold tabular-nums text-destructive">{totalMissed.toFixed(0)}h</p>
+                <p className="text-[11px] text-muted-foreground">{displayDates.filter(d => { const dow = getDay(parseISO(d)); return dow !== 0 && dow !== 6; }).length} working days</p>
               </div>
             </div>
           )}
         </div>
 
-        {/* Filters row */}
+        {/* ── Filters ──────────────────────────────────────── */}
         <div className="flex flex-wrap items-center gap-2 border-t border-border/40 pt-4">
           {/* Quick presets */}
           <div className="flex items-center gap-1 shrink-0">
-            <Button variant="outline" size="sm" className="h-8 text-xs px-3" onClick={() => applyPreset("this-week")}>
-              This week
-            </Button>
-            <Button variant="outline" size="sm" className="h-8 text-xs px-3" onClick={() => applyPreset("this-month")}>
-              This month
-            </Button>
-            <Button variant="outline" size="sm" className="h-8 text-xs px-3" onClick={() => applyPreset("last-month")}>
-              Last month
-            </Button>
+            <Button variant="outline" size="sm" className="h-8 px-3 text-xs" onClick={() => applyPreset("this-week")}>This week</Button>
+            <Button variant="outline" size="sm" className="h-8 px-3 text-xs" onClick={() => applyPreset("this-month")}>This month</Button>
+            <Button variant="outline" size="sm" className="h-8 px-3 text-xs" onClick={() => applyPreset("last-month")}>Last month</Button>
           </div>
 
           <div className="h-6 w-px shrink-0 bg-border/60" />
@@ -231,7 +215,7 @@ export default function TeamSummaryView({ currentUserRole, currentProject }: Tea
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-56 p-2" align="start">
-              <div className="space-y-0.5 max-h-60 overflow-y-auto">
+              <div className="max-h-60 space-y-0.5 overflow-y-auto">
                 <button
                   className={cn(
                     "flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm transition-colors hover:bg-muted",
@@ -239,12 +223,10 @@ export default function TeamSummaryView({ currentUserRole, currentProject }: Tea
                   )}
                   onClick={() => setSelectedMemberIds(new Set())}
                 >
-                  <span
-                    className={cn(
-                      "flex h-4 w-4 shrink-0 items-center justify-center rounded border border-input text-[10px]",
-                      selectedMemberIds.size === 0 && "border-primary bg-primary text-primary-foreground",
-                    )}
-                  >
+                  <span className={cn(
+                    "flex h-4 w-4 shrink-0 items-center justify-center rounded border border-input text-[10px]",
+                    selectedMemberIds.size === 0 && "border-primary bg-primary text-primary-foreground",
+                  )}>
                     {selectedMemberIds.size === 0 && "✓"}
                   </span>
                   All members
@@ -255,12 +237,10 @@ export default function TeamSummaryView({ currentUserRole, currentProject }: Tea
                     className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm transition-colors hover:bg-muted"
                     onClick={() => toggleMember(m.id)}
                   >
-                    <span
-                      className={cn(
-                        "flex h-4 w-4 shrink-0 items-center justify-center rounded border border-input text-[10px]",
-                        selectedMemberIds.has(m.id) && "border-primary bg-primary text-primary-foreground",
-                      )}
-                    >
+                    <span className={cn(
+                      "flex h-4 w-4 shrink-0 items-center justify-center rounded border border-input text-[10px]",
+                      selectedMemberIds.has(m.id) && "border-primary bg-primary text-primary-foreground",
+                    )}>
                       {selectedMemberIds.has(m.id) && "✓"}
                     </span>
                     {m.name}
@@ -295,13 +275,7 @@ export default function TeamSummaryView({ currentUserRole, currentProject }: Tea
                 Clear
               </Button>
             )}
-            <Button
-              size="sm"
-              className="h-9 gap-1.5 px-4"
-              onClick={commitSearch}
-              disabled={isLoading}
-              data-testid="button-team-summary-search"
-            >
+            <Button size="sm" className="h-9 gap-1.5 px-4" onClick={commitSearch} disabled={isLoading} data-testid="button-team-summary-search">
               <Search className="h-3.5 w-3.5" />
               Search
             </Button>
@@ -309,189 +283,196 @@ export default function TeamSummaryView({ currentUserRole, currentProject }: Tea
         </div>
       </div>
 
-      {/* Content */}
-      <div className="flex-1 min-h-0 overflow-auto">
-        <div className="p-6">
-          {!hasLoadedEntries && !isLoading ? (
-            <div className="space-y-2 rounded-xl border-2 border-dashed border-border/50 py-16 text-center">
-              <Search className="mx-auto h-10 w-10 text-muted-foreground/40" />
-              <p className="text-sm font-medium text-muted-foreground">Set a date range then click Search</p>
-              <p className="text-xs text-muted-foreground/70">
-                Use quick presets (This week / This month / Last month) or enter dates manually, then Search.
-              </p>
-            </div>
-          ) : isLoading ? (
-            <div className="py-16 text-center text-sm text-muted-foreground">Loading…</div>
-          ) : membersInData.length === 0 ? (
-            <div className="space-y-2 rounded-xl border-2 border-dashed border-border/50 py-16 text-center">
-              <p className="text-sm font-medium text-muted-foreground">No entries found for this range</p>
-              <p className="text-xs text-muted-foreground/70">Adjust filters and try again.</p>
-            </div>
-          ) : (
-            <div className="overflow-auto rounded-xl border border-border/50 bg-background shadow-sm">
-              <table className="border-collapse text-xs" style={{ tableLayout: "auto", minWidth: "100%" }}>
-                <thead>
-                  <tr className="border-b border-border/50 bg-muted/30">
-                    {/* Sticky member column */}
-                    <th className="sticky left-0 z-20 bg-muted/30 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap min-w-[170px] border-r border-border/30">
-                      Member
+      {/* ── Content ────────────────────────────────────────── */}
+      <div className="flex-1 overflow-auto p-6">
+        {!hasLoadedEntries && !isLoading ? (
+          <div className="rounded-xl border-2 border-dashed border-border/50 py-16 text-center space-y-2">
+            <Search className="mx-auto h-10 w-10 text-muted-foreground/40" />
+            <p className="text-sm font-medium text-muted-foreground">Set a date range then click Search</p>
+            <p className="text-xs text-muted-foreground/70">Use quick presets above or enter dates manually.</p>
+          </div>
+        ) : isLoading ? (
+          <div className="py-16 text-center text-sm text-muted-foreground">Loading…</div>
+        ) : membersInData.length === 0 ? (
+          <div className="rounded-xl border-2 border-dashed border-border/50 py-16 text-center space-y-2">
+            <p className="text-sm font-medium text-muted-foreground">No entries found for this range</p>
+            <p className="text-xs text-muted-foreground/70">Adjust filters and try again.</p>
+          </div>
+        ) : (
+          /*
+           * Layout: dates as ROWS (vertical), members as COLUMNS (horizontal)
+           * Date column is sticky-left. Scroll right for many members.
+           * Scroll down for many dates.
+           */
+          <div className="overflow-auto rounded-xl border border-border/50 bg-background shadow-sm">
+            <table className="border-collapse text-xs" style={{ minWidth: "100%", tableLayout: "auto" }}>
+              <thead>
+                <tr className="border-b-2 border-border/60 bg-muted/40">
+                  {/* Date header cell */}
+                  <th className="sticky left-0 z-20 border-r border-border/40 bg-muted/40 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap min-w-[130px]">
+                    Date
+                  </th>
+                  {/* One column per member */}
+                  {membersInData.map(({ id, name }) => (
+                    <th key={id} className="px-3 py-3 text-center min-w-[100px] whitespace-nowrap">
+                      <div className="flex flex-col items-center gap-1">
+                        <Avatar className="h-6 w-6">
+                          <AvatarFallback className="text-[10px]">{name[0]}</AvatarFallback>
+                        </Avatar>
+                        <span className="text-[11px] font-semibold text-foreground">{name}</span>
+                      </div>
                     </th>
-                    {displayDates.map((date) => {
-                      const dow = getDay(parseISO(date));
-                      const isWeekend = dow === 0 || dow === 6;
-                      return (
-                        <th
-                          key={date}
-                          className={cn(
-                            "px-2 py-3 text-center font-semibold uppercase tracking-wider whitespace-nowrap min-w-[68px]",
-                            isWeekend ? "text-muted-foreground/40 bg-muted/10" : "text-muted-foreground",
-                          )}
-                        >
-                          <div>{format(parseISO(date), "EEE")}</div>
-                          <div className="text-[10px] font-normal opacity-80">{format(parseISO(date), "d MMM")}</div>
-                        </th>
-                      );
-                    })}
-                    <th className="border-l border-border/30 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap">
-                      Total
-                    </th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-destructive/70 whitespace-nowrap">
-                      Missing
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {membersInData.map(({ id, name }) => {
-                    const memberDates = hoursGrid[id] || {};
-                    const memberTotal = Object.values(memberDates).reduce((s, h) => s + h, 0);
+                  ))}
+                  {/* Row total column */}
+                  <th className="border-l border-border/40 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap min-w-[80px]">
+                    Total
+                  </th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {displayDates.map((date) => {
+                  const dow = getDay(parseISO(date));
+                  const isWeekend = dow === 0 || dow === 6;
+                  const rowTotal = membersInData.reduce(
+                    (s, { id }) => s + (hoursGrid[id]?.[date] || 0),
+                    0,
+                  );
+
+                  return (
+                    <tr
+                      key={date}
+                      className={cn(
+                        "border-b border-border/20 last:border-0",
+                        isWeekend ? "bg-muted/10" : "hover:bg-muted/5 transition-colors",
+                      )}
+                    >
+                      {/* Sticky date cell */}
+                      <td className={cn(
+                        "sticky left-0 z-10 border-r border-border/40 px-4 py-2.5 whitespace-nowrap",
+                        isWeekend ? "bg-muted/10" : "bg-background",
+                      )}>
+                        <div className="flex items-center gap-2">
+                          <span className={cn(
+                            "text-[10px] font-bold uppercase w-7 shrink-0",
+                            isWeekend ? "text-muted-foreground/40" : "text-muted-foreground",
+                          )}>
+                            {format(parseISO(date), "EEE")}
+                          </span>
+                          <span className={cn(
+                            "text-sm font-medium tabular-nums",
+                            isWeekend ? "text-muted-foreground/50" : "text-foreground",
+                          )}>
+                            {format(parseISO(date), "d MMM")}
+                          </span>
+                        </div>
+                      </td>
+
+                      {/* Hour cell per member */}
+                      {membersInData.map(({ id }) => {
+                        const hours = hoursGrid[id]?.[date] || 0;
+                        const missed = isWeekend ? 0 : Math.max(0, WORK_HOURS - hours);
+
+                        if (isWeekend) {
+                          return (
+                            <td key={id} className="bg-muted/10 px-3 py-2.5 text-center">
+                              <span className="text-muted-foreground/25 text-xs">·</span>
+                            </td>
+                          );
+                        }
+
+                        if (hours === 0) {
+                          return (
+                            <td key={id} className="bg-red-50/60 dark:bg-red-950/15 px-3 py-2.5 text-center">
+                              <span className="text-xs font-semibold text-red-400 dark:text-red-500">—</span>
+                              <div className="text-[10px] text-red-400/70 tabular-nums">-8h</div>
+                            </td>
+                          );
+                        }
+
+                        if (hours >= WORK_HOURS) {
+                          return (
+                            <td key={id} className="bg-emerald-50/60 dark:bg-emerald-950/15 px-3 py-2.5 text-center">
+                              <span className="text-xs font-bold tabular-nums text-emerald-700 dark:text-emerald-400">
+                                {hours % 1 === 0 ? `${hours}h` : `${hours.toFixed(1)}h`}
+                              </span>
+                            </td>
+                          );
+                        }
+
+                        // Partial hours
+                        return (
+                          <td key={id} className="bg-amber-50/60 dark:bg-amber-950/15 px-3 py-2.5 text-center">
+                            <span className="text-xs font-bold tabular-nums text-amber-700 dark:text-amber-400">
+                              {hours % 1 === 0 ? `${hours}h` : `${hours.toFixed(1)}h`}
+                            </span>
+                            <div className="text-[10px] text-red-500/80 tabular-nums leading-none mt-0.5">
+                              -{missed % 1 === 0 ? `${missed}h` : `${missed.toFixed(1)}h`}
+                            </div>
+                          </td>
+                        );
+                      })}
+
+                      {/* Row total */}
+                      <td className={cn(
+                        "border-l border-border/40 px-4 py-2.5 text-right font-bold tabular-nums whitespace-nowrap",
+                        isWeekend ? "text-muted-foreground/30" : rowTotal === 0 ? "text-muted-foreground/50" : "text-foreground",
+                      )}>
+                        {isWeekend || rowTotal === 0
+                          ? "—"
+                          : rowTotal % 1 === 0 ? `${rowTotal}h` : `${rowTotal.toFixed(1)}h`}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+
+              {/* Footer: per-member totals + missing */}
+              <tfoot>
+                <tr className="border-t-2 border-border/60 bg-muted/30">
+                  <td className="sticky left-0 z-10 border-r border-border/40 bg-muted/30 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap">
+                    Total
+                  </td>
+                  {membersInData.map(({ id }) => {
+                    const memberTotal = Object.values(hoursGrid[id] || {}).reduce((s, h) => s + h, 0);
+                    return (
+                      <td key={id} className="px-3 py-2.5 text-center font-bold tabular-nums text-primary">
+                        {memberTotal % 1 === 0 ? `${memberTotal}h` : `${memberTotal.toFixed(1)}h`}
+                      </td>
+                    );
+                  })}
+                  <td className="border-l border-border/40 px-4 py-2.5 text-right font-bold tabular-nums text-primary whitespace-nowrap">
+                    {totalHours % 1 === 0 ? `${totalHours}h` : `${totalHours.toFixed(1)}h`}
+                  </td>
+                </tr>
+                <tr className="border-t border-border/30 bg-muted/10">
+                  <td className="sticky left-0 z-10 border-r border-border/40 bg-muted/10 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-destructive/70 whitespace-nowrap">
+                    Missing
+                  </td>
+                  {membersInData.map(({ id }) => {
                     const memberMissed = displayDates.reduce((s, date) => {
                       const dow = getDay(parseISO(date));
                       if (dow === 0 || dow === 6) return s;
-                      return s + Math.max(0, WORK_HOURS - (memberDates[date] || 0));
+                      return s + Math.max(0, WORK_HOURS - (hoursGrid[id]?.[date] || 0));
                     }, 0);
-
                     return (
-                      <tr
-                        key={id}
-                        className="border-b border-border/30 last:border-0 transition-colors hover:bg-muted/10"
-                        data-testid={`row-team-summary-${id}`}
-                      >
-                        {/* Sticky member cell */}
-                        <td className="sticky left-0 z-10 bg-background border-r border-border/30 px-4 py-2.5 whitespace-nowrap">
-                          <div className="flex items-center gap-2">
-                            <Avatar className="h-6 w-6 shrink-0">
-                              <AvatarFallback className="text-[10px]">{name[0]}</AvatarFallback>
-                            </Avatar>
-                            <span className="text-sm font-medium">{name}</span>
-                          </div>
-                        </td>
-
-                        {displayDates.map((date) => {
-                          const dow = getDay(parseISO(date));
-                          const isWeekend = dow === 0 || dow === 6;
-                          const hours = memberDates[date] || 0;
-                          const missed = isWeekend ? 0 : Math.max(0, WORK_HOURS - hours);
-
-                          let cellBg = "";
-                          if (isWeekend) {
-                            cellBg = "bg-muted/10";
-                          } else if (hours === 0) {
-                            cellBg = "bg-red-50 dark:bg-red-950/20";
-                          } else if (hours >= WORK_HOURS) {
-                            cellBg = "bg-emerald-50 dark:bg-emerald-950/20";
-                          } else {
-                            cellBg = "bg-amber-50 dark:bg-amber-950/20";
-                          }
-
-                          return (
-                            <td key={date} className={cn("px-1 py-2.5 text-center", cellBg)}>
-                              {isWeekend ? (
-                                <span className="text-muted-foreground/30 text-[10px]">·</span>
-                              ) : hours === 0 ? (
-                                <span className="text-[11px] text-red-400 dark:text-red-500 font-medium">—</span>
-                              ) : (
-                                <div>
-                                  <span
-                                    className={cn(
-                                      "text-xs font-semibold tabular-nums",
-                                      hours >= WORK_HOURS
-                                        ? "text-emerald-700 dark:text-emerald-400"
-                                        : "text-amber-700 dark:text-amber-400",
-                                    )}
-                                  >
-                                    {hours % 1 === 0 ? `${hours}h` : `${hours.toFixed(1)}h`}
-                                  </span>
-                                  {missed > 0 && (
-                                    <div className="text-[10px] text-red-500/80 tabular-nums leading-none mt-0.5">
-                                      -{missed % 1 === 0 ? missed : missed.toFixed(1)}h
-                                    </div>
-                                  )}
-                                </div>
-                              )}
-                            </td>
-                          );
-                        })}
-
-                        <td className="border-l border-border/30 px-4 py-2.5 text-right font-bold tabular-nums text-foreground whitespace-nowrap">
-                          {memberTotal % 1 === 0 ? `${memberTotal}h` : `${memberTotal.toFixed(1)}h`}
-                        </td>
-                        <td
-                          className={cn(
-                            "px-4 py-2.5 text-right font-bold tabular-nums whitespace-nowrap",
-                            memberMissed > 0 ? "text-destructive" : "text-muted-foreground/50",
-                          )}
-                        >
-                          {memberMissed > 0
-                            ? `-${memberMissed % 1 === 0 ? memberMissed : memberMissed.toFixed(1)}h`
-                            : "—"}
-                        </td>
-                      </tr>
+                      <td key={id} className={cn("px-3 py-2 text-center font-bold tabular-nums", memberMissed > 0 ? "text-destructive" : "text-muted-foreground/40")}>
+                        {memberMissed > 0
+                          ? `-${memberMissed % 1 === 0 ? `${memberMissed}h` : `${memberMissed.toFixed(1)}h`}`
+                          : "—"}
+                      </td>
                     );
                   })}
-                </tbody>
-
-                {/* Column totals footer */}
-                <tfoot>
-                  <tr className="border-t-2 border-border/50 bg-muted/20">
-                    <td className="sticky left-0 z-10 bg-muted/20 border-r border-border/30 px-4 py-2.5 text-sm font-semibold text-muted-foreground whitespace-nowrap">
-                      Daily total
-                    </td>
-                    {displayDates.map((date) => {
-                      const dow = getDay(parseISO(date));
-                      const isWeekend = dow === 0 || dow === 6;
-                      const dayTotal = membersInData.reduce((s, { id }) => s + (hoursGrid[id]?.[date] || 0), 0);
-                      return (
-                        <td
-                          key={date}
-                          className={cn("px-1 py-2.5 text-center text-xs font-semibold tabular-nums", isWeekend ? "text-muted-foreground/30" : "text-foreground")}
-                        >
-                          {isWeekend || dayTotal === 0
-                            ? "—"
-                            : dayTotal % 1 === 0
-                              ? `${dayTotal}h`
-                              : `${dayTotal.toFixed(1)}h`}
-                        </td>
-                      );
-                    })}
-                    <td className="border-l border-border/30 px-4 py-2.5 text-right font-bold tabular-nums text-primary whitespace-nowrap">
-                      {totalHours % 1 === 0 ? `${totalHours}h` : `${totalHours.toFixed(1)}h`}
-                    </td>
-                    <td
-                      className={cn(
-                        "px-4 py-2.5 text-right font-bold tabular-nums whitespace-nowrap",
-                        totalMissed > 0 ? "text-destructive" : "text-muted-foreground/50",
-                      )}
-                    >
-                      {totalMissed > 0
-                        ? `-${totalMissed % 1 === 0 ? totalMissed : totalMissed.toFixed(0)}h`
-                        : "—"}
-                    </td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          )}
-        </div>
+                  <td className={cn("border-l border-border/40 px-4 py-2 text-right font-bold tabular-nums whitespace-nowrap", totalMissed > 0 ? "text-destructive" : "text-muted-foreground/40")}>
+                    {totalMissed > 0
+                      ? `-${totalMissed % 1 === 0 ? `${totalMissed}h` : `${totalMissed.toFixed(0)}h`}`
+                      : "—"}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );
