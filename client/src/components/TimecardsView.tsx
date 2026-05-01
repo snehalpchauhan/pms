@@ -906,20 +906,31 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
 
       {summaryDialog}
 
-      <ScrollArea className="flex-1">
-        <div className="space-y-3 p-6">
-          {isManagerOrAdmin ? (
-            <TimecardsComplianceSummary
-              dateDisplayPreset={companySettingsForTime?.timecardDateDisplayFormat ?? "DD/MM/YYYY"}
-              applied={applied}
-            />
-          ) : null}
+      {/* Summary sits outside Radix ScrollArea so native horizontal scroll on the wide grid works */}
+      {isManagerOrAdmin ? (
+        <div className="shrink-0 border-b border-border/50 bg-muted/10 px-6 py-4 min-h-0">
+          <TimecardsComplianceSummary
+            dateDisplayPreset={companySettingsForTime?.timecardDateDisplayFormat ?? "DD/MM/YYYY"}
+            applied={applied}
+          />
+        </div>
+      ) : null}
 
+      <ScrollArea className="flex-1 min-h-0">
+        <div className="space-y-3 p-6">
           {/* Detailed Log */}
           <div className="space-y-3">
-            <h3 className="text-sm font-semibold text-foreground">
-              {isManagerOrAdmin ? "Full Time Log" : "My Time Log"}
-            </h3>
+            <div className="space-y-1">
+              <h3 className="text-sm font-semibold text-foreground">
+                {isManagerOrAdmin ? "Full Time Log" : "My Time Log"}
+              </h3>
+              {isManagerOrAdmin ? (
+                <p className="text-xs text-muted-foreground max-w-3xl">
+                  Rows here follow <strong>project</strong> and <strong>task</strong> filters. For weekday totals vs 8h
+                  across all projects, use the <strong>Timecards summary</strong> section above.
+                </p>
+              ) : null}
+            </div>
 
             {!hasLoadedEntries && !isLoading ? (
               <div className="text-center py-16 border-2 border-dashed border-border/50 rounded-xl space-y-3">

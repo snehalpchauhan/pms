@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ClipboardList } from "lucide-react";
 import { formatYmdForTimecardDisplay, type TimecardDateFormatPreset } from "@shared/timecardDateFormat";
@@ -51,21 +51,31 @@ export default function TimecardsComplianceSummary({
   const busy = canQuery && (isLoading || isFetching);
 
   return (
-    <div id="pms-timecards-summary-anchor" className="scroll-mt-4">
-      <Card className="border-border/60 shadow-sm">
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <ClipboardList className="h-5 w-5 text-primary shrink-0" />
-            Timecards summary
-          </CardTitle>
-          <CardDescription>
-            Weekdays only — same {data?.requiredHoursPerDay ?? 8}h target as digest emails. Green = met; amber = short. Uses
-            the <strong>From</strong>, <strong>To</strong>, and <strong>Member</strong> filters above with the same{" "}
-            <strong>Search</strong> as the time log. (Project and task filters apply only to the detailed log, not this
-            company-wide hours check.)
-          </CardDescription>
+    <div id="pms-timecards-summary-anchor" className="scroll-mt-4 min-w-0 w-full max-w-full">
+      <Card className="border-border/60 shadow-sm min-w-0">
+        <CardHeader className="pb-3 space-y-3">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <ClipboardList className="h-5 w-5 text-primary shrink-0" />
+              Timecards summary
+            </CardTitle>
+            <div className="text-sm text-muted-foreground space-y-2 leading-relaxed pt-1">
+              <p>
+                <strong className="text-foreground">Time log</strong> (below this card) lists each time entry — task, work
+                type, hours — and respects <strong>project</strong>, <strong>task</strong>, <strong>member</strong>, and{" "}
+                <strong>dates</strong> when you Search.
+              </p>
+              <p>
+                <strong className="text-foreground">Timecards summary</strong> is an HR-style grid: <strong>weekdays only</strong>
+                , total hours logged that day per person (summed across <em>all</em> projects), compared to the same{" "}
+                <strong>{data?.requiredHoursPerDay ?? 8}h</strong> rule as digest emails. It uses only <strong>From</strong>,{" "}
+                <strong>To</strong>, and <strong>Member</strong> from the filters row plus Search — not project/task. Green =
+                met minimum; amber = short.
+              </p>
+            </div>
+          </div>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-4 min-w-0">
           {!applied ? (
             <p className="text-sm text-muted-foreground">
               Choose <strong>From</strong> and <strong>To</strong> dates (and optionally a member), then click{" "}
@@ -105,9 +115,11 @@ export default function TimecardsComplianceSummary({
               ) : data.people.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No employees or managers match the member filter.</p>
               ) : (
-                <div className="rounded-lg border border-border/60 overflow-hidden">
-                  <div className="overflow-x-auto max-h-[min(70vh,720px)] overflow-y-auto">
-                    <table className="w-max min-w-full text-xs border-collapse">
+                <div
+                  className="max-h-[min(55vh,560px)] w-full min-w-0 overflow-auto rounded-lg border border-border/60 bg-background overscroll-x-contain"
+                  style={{ WebkitOverflowScrolling: "touch" }}
+                >
+                  <table className="w-max min-w-full text-xs border-collapse">
                       <thead>
                         <tr className="border-b border-border/60 bg-muted/40">
                           <th
@@ -186,8 +198,7 @@ export default function TimecardsComplianceSummary({
                           </tr>
                         ))}
                       </tbody>
-                    </table>
-                  </div>
+                  </table>
                 </div>
               )}
             </div>
