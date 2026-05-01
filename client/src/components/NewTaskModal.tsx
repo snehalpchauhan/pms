@@ -108,6 +108,7 @@ export function NewTaskModal({ open, onOpenChange, project, membersProjectId, on
     const [selectedDays, setSelectedDays] = useState<number[]>([]);
 
     const [selectedAssigneeIds, setSelectedAssigneeIds] = useState<Set<string>>(() => new Set());
+    const [assigneeSearch, setAssigneeSearch] = useState("");
     const [estimatedHoursInput, setEstimatedHoursInput] = useState("");
 
     const [projectMembers, setProjectMembers] = useState<ProjectMemberRow[]>([]);
@@ -167,6 +168,12 @@ export function NewTaskModal({ open, onOpenChange, project, membersProjectId, on
       () => sortedMembers.filter((m) => !selectedAssigneeIds.has(String(m.id))),
       [sortedMembers, selectedAssigneeIds],
     );
+
+    const filteredAssignableMembers = useMemo(() => {
+      const q = assigneeSearch.trim().toLowerCase();
+      if (!q) return assignableProjectMembers;
+      return assignableProjectMembers.filter((m) => m.name.toLowerCase().includes(q));
+    }, [assignableProjectMembers, assigneeSearch]);
 
     useEffect(() => {
       if (!open) return;
@@ -449,7 +456,7 @@ export function NewTaskModal({ open, onOpenChange, project, membersProjectId, on
                                                     </div>
                                                 );
                                             })}
-                                            <Popover>
+                                            <Popover onOpenChange={(open) => { if (!open) setAssigneeSearch(""); }}>
                                                 <PopoverTrigger asChild>
                                                     <Button
                                                         type="button"
@@ -461,44 +468,65 @@ export function NewTaskModal({ open, onOpenChange, project, membersProjectId, on
                                                         <Plus className="w-4 h-4" />
                                                     </Button>
                                                 </PopoverTrigger>
-                                                <PopoverContent className="w-60 p-2" align="start">
-                                                    <div className="space-y-1">
-                                                        <div className="text-xs font-semibold text-muted-foreground px-2 py-1.5">
+                                                <PopoverContent
+                                                    className="w-72 p-2"
+                                                    align="start"
+                                                    onOpenAutoFocus={(e) => e.preventDefault()}
+                                                >
+                                                    <div className="space-y-1.5">
+                                                        <div className="text-xs font-semibold text-muted-foreground px-1 py-1">
                                                             Add assignee
                                                         </div>
-                                                        <p className="px-2 pb-1 text-[10px] text-muted-foreground">
-                                                            Only people on this project can be assigned.
-                                                        </p>
-                                                        <div className="max-h-56 overflow-y-auto space-y-0.5">
-                                                            {assignableProjectMembers.map((m) => (
-                                                                <button
-                                                                    key={m.id}
-                                                                    type="button"
-                                                                    onClick={() => toggleAssignee(String(m.id))}
-                                                                    className="flex items-center gap-2 w-full px-2 py-1.5 hover:bg-muted rounded-md text-sm transition-colors text-left"
-                                                                >
-                                                                    <Avatar className="h-6 w-6">
-                                                                        <AvatarImage src={m.avatar?.trim() || undefined} />
-                                                                        <AvatarFallback className="text-[10px]">
-                                                                            {getUserInitials(m.name, undefined)}
-                                                                        </AvatarFallback>
-                                                                    </Avatar>
-                                                                    <span className="truncate">
-                                                                        {m.name}
-                                                                        {authUser?.id != null && String(authUser.id) === String(m.id) ? (
-                                                                            <span className="text-muted-foreground"> (you)</span>
-                                                                        ) : null}
-                                                                    </span>
-                                                                </button>
-                                                            ))}
+                                                        <Input
+                                                            placeholder="Search members…"
+                                                            value={assigneeSearch}
+                                                            onChange={(e) => setAssigneeSearch(e.target.value)}
+                                                            className="h-8 text-xs"
+                                                            autoFocus
+                                                        />
+                                                        <div className="max-h-60 overflow-y-auto space-y-0.5 pt-0.5">
+                                                            {filteredAssignableMembers.length === 0 ? (
+                                                                <div className="text-xs text-muted-foreground px-2 py-2 italic">
+                                                                    {assigneeSearch.trim()
+                                                                        ? "No members match your search."
+                                                                        : projectMembers.length === 0
+                                                                          ? "No members on this project yet."
+                                                                          : "Everyone on this project is already assigned."}
+                                                                </div>
+                                                            ) : (
+                                                                filteredAssignableMembers.map((m) => (
+                                                                    <button
+                                                                        key={m.id}
+                                                                        type="button"
+                                                                        onClick={() => {
+                                                                            toggleAssignee(String(m.id));
+                                                                            setAssigneeSearch("");
+                                                                        }}
+                                                                        className="flex items-center gap-2 w-full px-2 py-1.5 hover:bg-muted rounded-md text-sm transition-colors text-left"
+                                                                    >
+                                                                        <Avatar className="h-6 w-6 shrink-0">
+                                                                            <AvatarImage src={m.avatar?.trim() || undefined} />
+                                                                            <AvatarFallback className="text-[10px]">
+                                                                                {getUserInitials(m.name, undefined)}
+                                                                            </AvatarFallback>
+                                                                        </Avatar>
+                                                                        <div className="min-w-0 flex-1">
+                                                                            <span className="block truncate text-sm font-medium leading-tight">
+                                                                                {m.name}
+                                                                                {authUser?.id != null && String(authUser.id) === String(m.id) ? (
+                                                                                    <span className="text-muted-foreground font-normal"> (you)</span>
+                                                                                ) : null}
+                                                                            </span>
+                                                                            {m.role ? (
+                                                                                <span className="block truncate text-[10px] text-muted-foreground capitalize">
+                                                                                    {m.role}
+                                                                                </span>
+                                                                            ) : null}
+                                                                        </div>
+                                                                    </button>
+                                                                ))
+                                                            )}
                                                         </div>
-                                                        {assignableProjectMembers.length === 0 && (
-                                                            <div className="text-xs text-muted-foreground px-2 py-2 italic">
-                                                                {projectMembers.length === 0
-                                                                    ? "No members on this project yet."
-                                                                    : "Everyone on this project is already assigned."}
-                                                            </div>
-                                                        )}
                                                     </div>
                                                 </PopoverContent>
                                             </Popover>
