@@ -54,6 +54,7 @@ import {
   countWordsInText,
 } from "@shared/timeLogDescription";
 import { formatChatMarkdown } from "@/lib/chatMarkdown";
+import { getTaskPeopleMeta } from "@/lib/taskOwnerAttribution";
 
 const TASK_ATTACHMENT_MIMES = new Set([
   "image/png",
@@ -649,6 +650,11 @@ export function TaskDetailPage({
     if (!q) return assignableProjectMembers;
     return assignableProjectMembers.filter((m) => String(m.name || "").toLowerCase().includes(q));
   }, [assignableProjectMembers, assigneeSearch]);
+
+  const taskPeopleMeta = useMemo(
+    () => getTaskPeopleMeta(task.ownerId, assignees, users, currentUser?.id ?? null),
+    [task.ownerId, assignees, users, currentUser?.id],
+  );
 
   const { data: liveTask } = useQuery({
     queryKey: ["/api/tasks", task.id],
@@ -1572,12 +1578,34 @@ export function TaskDetailPage({
                          </DialogContent>
                      </Dialog>
 
-                     {/* Metadata: row 1 = assignees / timeline / tags; row 2 = hours (read-only estimate) */}
+                     {/* Metadata: people (created / assigned by / assigned to) + timeline + tags; hours row below */}
                      <div className="bg-muted/20 border border-border/50 rounded-xl overflow-hidden">
                      <div className="grid grid-cols-1 md:grid-cols-12 gap-x-6 gap-y-4 p-5 md:items-start md:pb-4">
-                        {/* Assignees */}
-                        <div className="space-y-2 md:col-span-3 min-w-0">
-                             <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Assignees</div>
+                        {/* Created by / Assigned by / Assigned to */}
+                        <div className="space-y-3 md:col-span-3 min-w-0">
+                             <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">People</div>
+                             <div className="rounded-lg border border-border/50 bg-background/50 p-3 space-y-3">
+                                <div className="space-y-1">
+                                  <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Created by</div>
+                                  <p className="text-sm font-medium text-foreground">
+                                    {taskPeopleMeta.createdByName ?? (task.ownerId != null ? "Unknown" : "—")}
+                                  </p>
+                                </div>
+                                {taskPeopleMeta.hasAssignees ? (
+                                  <div className="space-y-1">
+                                    <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Assigned by</div>
+                                    <p className="text-sm font-medium text-foreground">
+                                      {taskPeopleMeta.assignedByName ?? (task.ownerId != null ? "Unknown" : "—")}
+                                    </p>
+                                  </div>
+                                ) : null}
+                                <div className="space-y-2">
+                                  <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Assigned to</div>
+                                  {!taskPeopleMeta.hasAssignees ? (
+                                    <Badge variant="secondary" className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground w-fit">
+                                      Unassigned
+                                    </Badge>
+                                  ) : null}
                              <div className="flex flex-wrap gap-2">
                                 {assignees.map(id => {
                                     const user = users[id];
@@ -1656,6 +1684,8 @@ export function TaskDetailPage({
                                         </PopoverContent>
                                     </Popover>
                                 )}
+                             </div>
+                                </div>
                              </div>
                         </div>
 

@@ -6,9 +6,9 @@ import { CSS } from "@dnd-kit/utilities";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { MessageSquare, Paperclip, Calendar, Clock, AlertTriangle, UserRound } from "lucide-react";
+import { MessageSquare, Paperclip, Calendar, Clock, AlertTriangle } from "lucide-react";
 import { isTaskOverInvested, parseTaskHoursField } from "@/lib/taskHours";
-import { formatTaskOwnerAttribution } from "@/lib/taskOwnerAttribution";
+import { getTaskPeopleMeta } from "@/lib/taskOwnerAttribution";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 
@@ -57,7 +57,7 @@ export function TaskCard({ task, onClick, disableDrag = false }: TaskCardProps) 
     return "Client Request";
   })();
   const discussionCommentCount = task.comments.filter((c) => !isSystemTaskComment(c)).length;
-  const ownerAttribution = formatTaskOwnerAttribution(task, users, currentUser?.id ?? null);
+  const people = getTaskPeopleMeta(task.ownerId, task.assignees, users, currentUser?.id ?? null);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: task.id,
     data: { type: "task" as const, task },
@@ -131,18 +131,42 @@ export function TaskCard({ task, onClick, disableDrag = false }: TaskCardProps) 
             <PriorityBadge priority={task.priority} />
           </div>
           <h4 className="font-medium text-sm leading-snug text-foreground group-hover:text-primary transition-colors">{task.title}</h4>
-          {ownerAttribution ? (
-            <p
-              className="flex items-center gap-1 text-[10px] text-muted-foreground leading-tight mt-1 min-w-0"
-              title={ownerAttribution}
-            >
-              <UserRound className="w-3 h-3 shrink-0 opacity-80" aria-hidden />
-              <span className="truncate">{ownerAttribution}</span>
-            </p>
-          ) : null}
+          <div className="mt-1.5 space-y-1 text-[10px] leading-tight min-w-0">
+            <div className="flex min-w-0 gap-1">
+              <span className="shrink-0 text-muted-foreground/90">Created by</span>
+              <span className="truncate font-medium text-foreground/90">
+                {people.createdByName ?? (task.ownerId != null ? "Unknown" : "—")}
+              </span>
+            </div>
+            {people.hasAssignees ? (
+              <div className="flex min-w-0 gap-1">
+                <span className="shrink-0 text-muted-foreground/90">Assigned by</span>
+                <span className="truncate font-medium text-foreground/90">
+                  {people.assignedByName ?? (task.ownerId != null ? "Unknown" : "—")}
+                </span>
+              </div>
+            ) : null}
+            <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
+              <span className="shrink-0 text-muted-foreground/90">Assigned to</span>
+              {people.hasAssignees ? (
+                <div className="flex -space-x-1.5 min-w-0">
+                  {people.assigneeUsers.map((user) => (
+                    <Avatar key={user.id} className="h-5 w-5 border-2 border-background ring-1 ring-border/10" title={user.name}>
+                      <AvatarImage src={user.avatar} />
+                      <AvatarFallback className="text-[9px]">{user.name.charAt(0)}</AvatarFallback>
+                    </Avatar>
+                  ))}
+                </div>
+              ) : (
+                <Badge variant="secondary" className="h-5 px-1.5 text-[9px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Unassigned
+                </Badge>
+              )}
+            </div>
+          </div>
         </CardHeader>
         <CardContent className="p-3 pt-2">{/* keep layout */}</CardContent>
-        <CardFooter className="p-3 pt-0 flex items-center justify-between text-muted-foreground">
+        <CardFooter className="p-3 pt-0 flex items-center text-muted-foreground">
           <div className="flex items-center gap-3 text-xs">
             {discussionCommentCount > 0 && (
               <div className="flex items-center gap-1 hover:text-foreground">
@@ -179,19 +203,6 @@ export function TaskCard({ task, onClick, disableDrag = false }: TaskCardProps) 
                 </span>
               </div>
             )}
-          </div>
-
-          <div className="flex -space-x-2">
-            {task.assignees.map((userId) => {
-              const user = users[userId];
-              if (!user) return null;
-              return (
-                <Avatar key={user.id} className="h-6 w-6 border-2 border-background ring-1 ring-border/10">
-                  <AvatarImage src={user.avatar} />
-                  <AvatarFallback>{user.name.charAt(0)}</AvatarFallback>
-                </Avatar>
-              );
-            })}
           </div>
         </CardFooter>
       </Card>

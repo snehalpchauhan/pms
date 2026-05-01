@@ -13,6 +13,8 @@ import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { Task } from "@/lib/mockData";
 import { useAppData } from "@/hooks/useAppData";
+import { useAuth } from "@/hooks/useAuth";
+import { getTaskPeopleMeta } from "@/lib/taskOwnerAttribution";
 import { Calendar, Paperclip, Tag, User as UserIcon, CheckCircle2, MoreHorizontal, MessageSquare, Plus, X, Reply } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
@@ -26,8 +28,10 @@ interface TaskDetailModalProps {
 
 export function TaskDetailModal({ task, open, onOpenChange }: TaskDetailModalProps) {
   const { users } = useAppData();
+  const { user: currentUser } = useAuth();
   const [commentInput, setCommentInput] = useState("");
-  
+  const people = getTaskPeopleMeta(task?.ownerId, task?.assignees ?? [], users, currentUser?.id ?? null);
+
   if (!task) return null;
 
   return (
@@ -237,30 +241,55 @@ export function TaskDetailModal({ task, open, onOpenChange }: TaskDetailModalPro
                 </DialogClose>
              </div>
              
-             {/* Assignees */}
+             {/* People: created / assigned by / assigned to */}
              <div className="space-y-3">
-                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Assignees</h4>
-                <div className="space-y-2">
-                    {task.assignees.map(id => {
-                        const user = users[id];
-                        if (!user) return null;
-                        return (
-                            <div key={id} className="flex items-center gap-3 p-2 rounded-md hover:bg-muted/50 transition-colors cursor-pointer group border border-transparent hover:border-border/50">
-                                <Avatar className="h-7 w-7">
-                                    <AvatarImage src={user.avatar} />
-                                    <AvatarFallback>{user.name[0]}</AvatarFallback>
-                                </Avatar>
-                                <span className="text-sm font-medium">{user.name}</span>
-                                <Button variant="ghost" size="icon" className="h-6 w-6 ml-auto opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive">
-                                    <X className="w-3 h-3" />
-                                </Button>
+                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">People</h4>
+                <div className="rounded-lg border border-border/50 bg-background/80 p-3 space-y-3 text-sm">
+                    <div>
+                        <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Created by</div>
+                        <p className="font-medium text-foreground mt-0.5">
+                            {people.createdByName ?? (task.ownerId != null ? "Unknown" : "—")}
+                        </p>
+                    </div>
+                    {people.hasAssignees ? (
+                        <div>
+                            <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Assigned by</div>
+                            <p className="font-medium text-foreground mt-0.5">
+                                {people.assignedByName ?? (task.ownerId != null ? "Unknown" : "—")}
+                            </p>
+                        </div>
+                    ) : null}
+                    <div>
+                        <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Assigned to</div>
+                        {!people.hasAssignees ? (
+                            <Badge variant="secondary" className="mt-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                                Unassigned
+                            </Badge>
+                        ) : (
+                            <div className="space-y-2 mt-1.5">
+                                {task.assignees.map((id) => {
+                                    const user = users[id];
+                                    if (!user) return null;
+                                    return (
+                                        <div key={id} className="flex items-center gap-3 p-2 rounded-md hover:bg-muted/50 transition-colors cursor-pointer group border border-transparent hover:border-border/50">
+                                            <Avatar className="h-7 w-7">
+                                                <AvatarImage src={user.avatar} />
+                                                <AvatarFallback>{user.name[0]}</AvatarFallback>
+                                            </Avatar>
+                                            <span className="text-sm font-medium">{user.name}</span>
+                                            <Button variant="ghost" size="icon" className="h-6 w-6 ml-auto opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive">
+                                                <X className="w-3 h-3" />
+                                            </Button>
+                                        </div>
+                                    );
+                                })}
                             </div>
-                        )
-                    })}
-                     <Button variant="outline" size="sm" className="w-full justify-start text-muted-foreground h-9 border-dashed hover:bg-background hover:border-primary/50 hover:text-primary transition-all">
-                        <Plus className="w-3 h-3 mr-2" /> Add Assignee
-                     </Button>
+                        )}
+                    </div>
                 </div>
+                <Button variant="outline" size="sm" className="w-full justify-start text-muted-foreground h-9 border-dashed hover:bg-background hover:border-primary/50 hover:text-primary transition-all">
+                    <Plus className="w-3 h-3 mr-2" /> Add Assignee
+                </Button>
              </div>
 
              <Separator />
