@@ -27,7 +27,7 @@ import { useAppData } from "@/hooks/useAppData";
 import { useAuth } from "@/hooks/useAuth";
 import { apiRequest } from "@/lib/queryClient";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
-import { Calendar, Paperclip, Tag, User as UserIcon, CheckCircle2, MessageSquare, Plus, X, Reply, Clock, History, FileText, Activity, Repeat, CalendarCheck, ArrowRight, CheckSquare, Trash2, Download, Lock, RotateCcw, AlertTriangle, Pencil } from "lucide-react";
+import { Calendar, Paperclip, Tag, User as UserIcon, CheckCircle2, MessageSquare, Plus, X, Reply, Clock, History, FileText, Activity, Repeat, CalendarCheck, CheckSquare, Trash2, Download, Lock, RotateCcw, AlertTriangle, Pencil } from "lucide-react";
 import { getEstimatedHoursFromTaskPayload, isTaskOverInvested, parseTaskHoursField } from "@/lib/taskHours";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn, getUserInitials } from "@/lib/utils";
@@ -1760,10 +1760,10 @@ export function TaskDetailPage({
                              </div>
                         </div>
 
-                        {/* Dates - Start & Due */}
+                        {/* Dates - Start & Due (compact single row: equal flex columns) */}
                         <div className="space-y-2 md:col-span-4 min-w-0">
                              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Timeline</div>
-                             <div className="flex flex-nowrap items-center gap-x-2 min-w-0 overflow-x-auto overscroll-x-contain [-ms-overflow-style:none] [scrollbar-width:thin]">
+                             <div className="flex w-full min-w-0 items-stretch gap-1 rounded-lg border border-border/40 bg-background/40 p-1">
                                  {(!isClient || isFullAccess) ? (
                                    <Popover open={startDatePopoverOpen} onOpenChange={setStartDatePopoverOpen}>
                                      <PopoverTrigger asChild>
@@ -1772,12 +1772,12 @@ export function TaskDetailPage({
                                          variant="outline"
                                          disabled={timelineSaving}
                                          className={cn(
-                                           "h-[30px] shrink-0 px-2.5 sm:px-3 bg-background border-border/50 shadow-sm text-xs font-medium whitespace-nowrap",
+                                           "h-7 min-w-0 flex-1 basis-0 justify-center gap-1 px-1.5 sm:px-2 bg-background border-border/50 shadow-sm text-[11px] font-medium tabular-nums",
                                            !startDateVal && "text-muted-foreground border-dashed",
                                          )}
                                        >
-                                         <CalendarCheck className="mr-2 h-3.5 w-3.5 text-muted-foreground" />
-                                         {startDateVal ? format(startDateVal, "MMM d") : <span>Start</span>}
+                                         <CalendarCheck className="h-3 w-3 shrink-0 text-muted-foreground" />
+                                         <span className="min-w-0 truncate">{startDateVal ? format(startDateVal, "M/d/yy") : "Start"}</span>
                                        </Button>
                                      </PopoverTrigger>
                                      <PopoverContent className="w-auto p-0" align="start">
@@ -1804,25 +1804,25 @@ export function TaskDetailPage({
                                      </PopoverContent>
                                    </Popover>
                                  ) : task.startDate ? (
-                                     <div className="flex shrink-0 items-center gap-2 bg-background border border-border/50 px-2.5 sm:px-3 py-1.5 rounded-md shadow-sm text-xs font-medium whitespace-nowrap">
-                                        <CalendarCheck className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                                        <span>{format(parseTaskDateStr(task.startDate) || new Date(task.startDate), "MMM d")}</span>
+                                     <div className="flex h-7 min-w-0 flex-1 basis-0 items-center justify-center gap-1 rounded-md border border-border/50 bg-background px-1.5 text-[11px] font-medium tabular-nums shadow-sm">
+                                        <CalendarCheck className="h-3 w-3 shrink-0 text-muted-foreground" />
+                                        <span className="min-w-0 truncate">{format(parseTaskDateStr(task.startDate) || new Date(task.startDate), "M/d/yy")}</span>
                                      </div>
                                  ) : (
-                                    <div className="flex shrink-0 items-center gap-2 bg-background border border-dashed border-border/50 px-2.5 sm:px-3 py-1.5 rounded-md text-xs text-muted-foreground opacity-70 whitespace-nowrap">
-                                        <CalendarCheck className="w-3.5 h-3.5 shrink-0" />
-                                        <span>Start</span>
+                                    <div className="flex h-7 min-w-0 flex-1 basis-0 items-center justify-center gap-1 rounded-md border border-dashed border-border/50 bg-background px-1.5 text-[11px] text-muted-foreground opacity-80 tabular-nums">
+                                        <CalendarCheck className="h-3 w-3 shrink-0" />
+                                        <span className="truncate">Start</span>
                                     </div>
                                  )}
                                  
-                                 <ArrowRight className="w-3 h-3 shrink-0 text-muted-foreground/50" aria-hidden />
+                                 <span className="flex w-5 shrink-0 items-center justify-center text-[11px] font-medium text-muted-foreground/70" aria-hidden>→</span>
 
                                  {(!isClient || isFullAccess) ? (
                                      <Popover open={dueDatePopoverOpen} onOpenChange={setDueDatePopoverOpen}>
                                         <PopoverTrigger asChild>
-                                            <Button type="button" variant="outline" disabled={timelineSaving} className={cn("h-[30px] shrink-0 px-2.5 sm:px-3 bg-background border-border/50 shadow-sm text-xs font-medium whitespace-nowrap", !dueDateVal && "text-muted-foreground border-dashed")}>
-                                                <Calendar className="mr-2 h-3.5 w-3.5 text-muted-foreground" />
-                                                {dueDateVal ? format(dueDateVal, "MMM d") : <span>Due Date</span>}
+                                            <Button type="button" variant="outline" disabled={timelineSaving} className={cn("h-7 min-w-0 flex-1 basis-0 justify-center gap-1 px-1.5 sm:px-2 bg-background border-border/50 shadow-sm text-[11px] font-medium tabular-nums", !dueDateVal && "text-muted-foreground border-dashed")}>
+                                                <Calendar className="h-3 w-3 shrink-0 text-muted-foreground" />
+                                                <span className="min-w-0 truncate">{dueDateVal ? format(dueDateVal, "M/d/yy") : "Due"}</span>
                                             </Button>
                                         </PopoverTrigger>
                                         <PopoverContent className="w-auto p-0" align="start">
@@ -1849,9 +1849,9 @@ export function TaskDetailPage({
                                         </PopoverContent>
                                     </Popover>
                                  ) : (
-                                     <div className="flex shrink-0 items-center gap-2 bg-background border border-border/50 px-2.5 sm:px-3 py-1.5 rounded-md shadow-sm text-xs font-medium whitespace-nowrap">
-                                         <Calendar className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
-                                         <span>{dueDateVal ? format(dueDateVal, "MMM d") : "No due date"}</span>
+                                     <div className="flex h-7 min-w-0 flex-1 basis-0 items-center justify-center gap-1 rounded-md border border-border/50 bg-background px-1.5 text-[11px] font-medium tabular-nums shadow-sm">
+                                         <Calendar className="h-3 w-3 shrink-0 text-muted-foreground" />
+                                         <span className="min-w-0 truncate">{dueDateVal ? format(dueDateVal, "M/d/yy") : "—"}</span>
                                      </div>
                                  )}
                              </div>
