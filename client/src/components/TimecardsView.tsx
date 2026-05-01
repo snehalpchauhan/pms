@@ -50,8 +50,6 @@ import { format, isToday, parseISO } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import type { ClientPermissions } from "@/App";
 import type { Project } from "@/lib/mockData";
-import type { TimecardDateFormatPreset } from "@shared/timecardDateFormat";
-import TimecardsComplianceSummary from "@/components/TimecardsComplianceSummary";
 import {
   WORK_CATEGORIES,
   buildStoredTimeDescription,
@@ -75,7 +73,7 @@ function WorkDescriptionCell({ description }: { description: string | null | und
   }
   if (workType) {
     return (
-      <div className="space-y-1.5 min-w-0 max-w-md" title={fullText}>
+      <div className="space-y-1.5 min-w-0" title={fullText}>
         <Badge variant="outline" className="text-[10px] font-medium border-primary/30 text-primary bg-primary/5 shrink-0">
           {workType}
         </Badge>
@@ -85,7 +83,7 @@ function WorkDescriptionCell({ description }: { description: string | null | und
       </div>
     );
   }
-  return <p className="text-xs text-muted-foreground whitespace-pre-wrap break-words max-w-md">{fullText}</p>;
+  return <p className="text-xs text-muted-foreground whitespace-pre-wrap break-words min-w-0">{fullText}</p>;
 }
 
 interface TimecardsViewProps {
@@ -163,7 +161,6 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
     logoUrl?: string | null;
     timeLogMinDescriptionWords?: number;
     timeLogMaxHoursPerEntry?: number | null;
-    timecardDateDisplayFormat?: TimecardDateFormatPreset;
   }>({
     queryKey: ["/api/company-settings"],
     queryFn: async () => {
@@ -187,7 +184,6 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
     try {
       await apiRequest("DELETE", `/api/time-entries/${id}`);
       queryClient.invalidateQueries({ queryKey: ["/api/time-entries"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/timecards-compliance-summary"] });
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
       toast({ title: "Entry deleted" });
     } catch {
@@ -237,7 +233,6 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
         clientVisible: clientTimecardsEnabled ? logClientVisible : false,
       });
       queryClient.invalidateQueries({ queryKey: ["/api/time-entries"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/timecards-compliance-summary"] });
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
       toast({ title: "Time logged successfully" });
       setLogOpen(false);
@@ -444,20 +439,6 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
     if (page > totalPages) setPage(totalPages);
   }, [page, totalPages]);
 
-  /** Deep link from sidebar: #timecards-summary */
-  useEffect(() => {
-    const scrollIfNeeded = () => {
-      if (typeof window === "undefined") return;
-      if (window.location.hash.replace(/^#/, "") !== "timecards-summary") return;
-      window.requestAnimationFrame(() => {
-        document.getElementById("pms-timecards-summary-anchor")?.scrollIntoView({ behavior: "smooth", block: "start" });
-      });
-    };
-    scrollIfNeeded();
-    window.addEventListener("hashchange", scrollIfNeeded);
-    return () => window.removeEventListener("hashchange", scrollIfNeeded);
-  }, []);
-
   const showMemberColumn = isClient || isManagerOrAdmin;
 
   const exportMeta = useMemo(
@@ -571,7 +552,7 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
   if (isClient) {
     const projectName = currentProject?.name || "this project";
     return (
-      <div className="flex-1 h-full overflow-hidden flex flex-col">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <div className="border-b border-border/50 bg-muted/10 px-6 py-5 shrink-0">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="flex min-w-0 items-start gap-3">
@@ -651,8 +632,8 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
 
         {summaryDialog}
 
-        <ScrollArea className="flex-1">
-          <div className="p-6">
+        <ScrollArea className="flex-1 min-h-0">
+          <div className="min-w-0 p-6">
             {!hasLoadedEntries && !isLoading ? (
               <div className="text-center py-16 border-2 border-dashed border-border/50 rounded-xl space-y-3">
                 <Search className="w-10 h-10 text-muted-foreground/40 mx-auto" />
@@ -677,22 +658,29 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
               </div>
             ) : (
               <div className="space-y-3">
-                <div className="bg-background border border-border/50 rounded-xl overflow-hidden shadow-sm">
-                  <table className="w-full text-sm" data-testid="table-client-time-log">
+                <div className="bg-background border border-border/50 rounded-xl shadow-sm min-w-0 max-w-full overflow-x-hidden">
+                  <table className="w-full table-fixed border-collapse text-sm" data-testid="table-client-time-log">
+                    <colgroup>
+                      <col style={{ width: "9.25rem" }} />
+                      <col style={{ width: "10rem" }} />
+                      <col style={{ width: "4.25rem" }} />
+                      <col style={{ width: "26%" }} />
+                      <col />
+                    </colgroup>
                     <thead>
                       <tr className="border-b border-border/50 bg-muted/30">
-                        <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Date</th>
-                        <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Member</th>
-                        <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Task</th>
-                        <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Work Type</th>
-                        <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Hours</th>
+                        <th className="text-left px-3 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Date</th>
+                        <th className="text-left px-3 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider min-w-0">Member</th>
+                        <th className="text-right px-3 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Hours</th>
+                        <th className="text-left px-3 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider min-w-0">Task</th>
+                        <th className="text-left px-3 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider min-w-0">Work type</th>
                       </tr>
                     </thead>
                     <tbody>
                       {groupedPaginatedEntries.map((group) => (
                         <Fragment key={`group-client-${group.logDate}`}>
                           <tr className="bg-muted/40 border-y border-border/40">
-                            <td colSpan={5} className="px-4 py-2.5">
+                            <td colSpan={5} className="px-3 py-2.5">
                               <div className="flex items-center justify-between gap-3">
                                 <div className="min-w-0">
                                   <span className="text-xs font-bold text-foreground">
@@ -712,24 +700,24 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
                           </tr>
                           {group.entries.map((entry: any) => (
                             <tr key={entry.id} className="border-b border-border/30 last:border-0 hover:bg-muted/20 transition-colors" data-testid={`row-client-time-entry-${entry.id}`}>
-                              <td className="px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">{entry.logDate}</td>
-                              <td className="px-4 py-3">
-                                <div className="flex items-center gap-2">
+                              <td className="px-3 py-3 text-muted-foreground text-xs whitespace-nowrap align-top">{entry.logDate}</td>
+                              <td className="px-3 py-3 min-w-0 align-top">
+                                <div className="flex items-center gap-2 min-w-0">
                                   <Avatar className="h-5 w-5 shrink-0">
                                     <AvatarFallback className="text-[9px]">{(entry.userName || "?")[0]}</AvatarFallback>
                                   </Avatar>
-                                  <span className="text-xs whitespace-nowrap">{entry.userName}</span>
+                                  <span className="text-xs truncate min-w-0" title={entry.userName}>{entry.userName}</span>
                                 </div>
                               </td>
-                              <td className="px-4 py-3 font-medium max-w-[220px] align-top">
+                              <td className="px-3 py-3 text-right font-semibold text-primary whitespace-nowrap align-top tabular-nums">{parseFloat(entry.hours).toFixed(1)}h</td>
+                              <td className="px-3 py-3 font-medium align-top min-w-0">
                                 <span className="block whitespace-pre-wrap break-words" title={entry.taskTitle}>
                                   {entry.taskTitle}
                                 </span>
                               </td>
-                              <td className="px-4 py-3 align-top min-w-[12rem] max-w-md">
+                              <td className="px-3 py-3 align-top min-w-0">
                                 <WorkDescriptionCell description={entry.description} />
                               </td>
-                              <td className="px-4 py-3 text-right font-semibold text-primary whitespace-nowrap align-top">{parseFloat(entry.hours).toFixed(1)}h</td>
                             </tr>
                           ))}
                         </Fragment>
@@ -782,7 +770,7 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
   }
 
   return (
-    <div className="flex-1 h-full overflow-hidden flex flex-col">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       {/* Header */}
       <div className="border-b border-border/50 bg-muted/10 shrink-0 space-y-5 px-6 py-5">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
@@ -928,18 +916,8 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
 
       {summaryDialog}
 
-      {/* Summary sits outside Radix ScrollArea so native horizontal scroll on the wide grid works */}
-      {isManagerOrAdmin ? (
-        <div className="shrink-0 border-b border-border/50 bg-muted/10 px-6 py-4 min-h-0">
-          <TimecardsComplianceSummary
-            dateDisplayPreset={companySettingsForTime?.timecardDateDisplayFormat ?? "DD/MM/YYYY"}
-            applied={applied}
-          />
-        </div>
-      ) : null}
-
       <ScrollArea className="flex-1 min-h-0">
-        <div className="space-y-3 p-6">
+        <div className="min-w-0 space-y-3 p-6">
           {/* Detailed Log */}
           <div className="space-y-3">
             <h3 className="text-sm font-semibold text-foreground">
@@ -974,26 +952,35 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
               </div>
             ) : (
               <div className="space-y-3">
-                <div className="bg-background border border-border/50 rounded-xl overflow-hidden shadow-sm">
-                  <table className="w-full text-sm" data-testid="table-time-log">
+                <div className="bg-background border border-border/50 rounded-xl shadow-sm min-w-0 max-w-full overflow-x-hidden">
+                  <table className="w-full table-fixed border-collapse text-sm" data-testid="table-time-log">
+                    <colgroup>
+                      <col style={{ width: "9.25rem" }} />
+                      {showMemberColumn ? <col style={{ width: "9.5rem" }} /> : null}
+                      <col style={{ width: "17%" }} />
+                      <col style={{ width: "4.25rem" }} />
+                      <col style={{ width: "22%" }} />
+                      <col />
+                      <col style={{ width: "2.75rem" }} />
+                    </colgroup>
                     <thead>
                       <tr className="border-b border-border/50 bg-muted/30">
-                        <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Date</th>
+                        <th className="text-left px-3 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Date</th>
                         {showMemberColumn ? (
-                          <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Member</th>
+                          <th className="text-left px-3 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Member</th>
                         ) : null}
-                        <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Project</th>
-                        <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Task</th>
-                        <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Work type &amp; description</th>
-                        <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Hours</th>
-                        <th className="px-4 py-3 w-10" />
+                        <th className="text-left px-3 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider min-w-0">Project</th>
+                        <th className="text-right px-3 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Hours</th>
+                        <th className="text-left px-3 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider min-w-0">Task</th>
+                        <th className="text-left px-3 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider min-w-0">Work type &amp; description</th>
+                        <th className="px-3 py-3 w-10" />
                       </tr>
                     </thead>
                     <tbody>
                       {groupedPaginatedEntries.map((group) => (
                         <Fragment key={`group-staff-${group.logDate}`}>
                           <tr className="bg-muted/40 border-y border-border/40">
-                            <td colSpan={showMemberColumn ? 7 : 6} className="px-4 py-2.5">
+                            <td colSpan={showMemberColumn ? 7 : 6} className="px-3 py-2.5">
                               <div className="flex items-center justify-between gap-3">
                                 <div className="min-w-0">
                                   <span className="text-xs font-bold text-foreground">
@@ -1016,11 +1003,11 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
                             const isPrivate = entry.clientVisible === false;
                             return (
                               <tr key={entry.id} className={cn("border-b border-border/30 last:border-0 hover:bg-muted/20 transition-colors group", isPrivate && "bg-muted/10")} data-testid={`row-time-entry-${entry.id}`}>
-                                <td className="px-4 py-3 text-muted-foreground text-xs whitespace-nowrap align-top">
-                                  <div className="flex items-center gap-1.5">
+                                <td className="px-3 py-3 text-muted-foreground text-xs whitespace-nowrap align-top">
+                                  <div className="flex items-center gap-1.5 min-w-0">
                                     {entry.logDate}
                                     {isPrivate && (
-                                      <span className="inline-flex items-center gap-0.5 text-[10px] font-medium text-muted-foreground bg-muted border border-border/50 px-1.5 py-0.5 rounded" data-testid={`badge-private-${entry.id}`}>
+                                      <span className="inline-flex items-center gap-0.5 text-[10px] font-medium text-muted-foreground bg-muted border border-border/50 px-1.5 py-0.5 rounded shrink-0" data-testid={`badge-private-${entry.id}`}>
                                         <Lock className="w-2.5 h-2.5" />
                                         private
                                       </span>
@@ -1028,26 +1015,30 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
                                   </div>
                                 </td>
                                 {showMemberColumn ? (
-                                  <td className="px-4 py-3 align-top">
-                                    <div className="flex items-center gap-2">
+                                  <td className="px-3 py-3 align-top min-w-0">
+                                    <div className="flex items-center gap-2 min-w-0">
                                       <Avatar className="h-5 w-5 shrink-0">
                                         <AvatarFallback className="text-[9px]">{(entry.userName || "?")[0]}</AvatarFallback>
                                       </Avatar>
-                                      <span className="text-xs whitespace-nowrap">{entry.userName}</span>
+                                      <span className="text-xs truncate min-w-0" title={entry.userName}>{entry.userName}</span>
                                     </div>
                                   </td>
                                 ) : null}
-                                <td className="px-4 py-3 text-xs text-muted-foreground align-top whitespace-nowrap">{projectMap[String(entry.projectId)] || `Project ${entry.projectId}`}</td>
-                                <td className="px-4 py-3 font-medium max-w-[220px] align-top">
+                                <td className="px-3 py-3 text-xs text-muted-foreground align-top min-w-0">
+                                  <span className="block truncate" title={projectMap[String(entry.projectId)] || `Project ${entry.projectId}`}>
+                                    {projectMap[String(entry.projectId)] || `Project ${entry.projectId}`}
+                                  </span>
+                                </td>
+                                <td className="px-3 py-3 text-right font-semibold text-primary whitespace-nowrap align-top tabular-nums">{parseFloat(entry.hours).toFixed(1)}h</td>
+                                <td className="px-3 py-3 font-medium align-top min-w-0">
                                   <span className="block whitespace-pre-wrap break-words" title={entry.taskTitle}>
                                     {entry.taskTitle}
                                   </span>
                                 </td>
-                                <td className="px-4 py-3 align-top min-w-[12rem] max-w-md">
+                                <td className="px-3 py-3 align-top min-w-0">
                                   <WorkDescriptionCell description={entry.description} />
                                 </td>
-                                <td className="px-4 py-3 text-right font-semibold text-primary whitespace-nowrap align-top">{parseFloat(entry.hours).toFixed(1)}h</td>
-                                <td className="px-4 py-3 text-right align-top">
+                                <td className="px-3 py-3 text-right align-top">
                                   {canDelete && (
                                     <Button
                                       variant="ghost"

@@ -1,4 +1,4 @@
-import { Plus, LayoutGrid, CheckSquare, Settings, Users, MessageSquare, Bell, Search, Hash, Lock, ListTodo, FolderKanban, LogOut, Briefcase, Building2, User, Shield, Key, Clock, LogIn, MoreVertical, X, Menu, BarChart3, ClipboardList } from "lucide-react";
+import { Plus, LayoutGrid, CheckSquare, Settings, Users, MessageSquare, Bell, Search, Hash, Lock, ListTodo, FolderKanban, LogOut, Briefcase, Building2, User, Shield, Key, Clock, LogIn, MoreVertical, X, Menu, BarChart3 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -184,25 +184,6 @@ export function Sidebar({ currentView, currentChannelId, onViewChange, currentPr
   const isTimeHoursContext = isTimecardsView || isTeamSummaryView;
   const timeHoursNavActive = isTimeHoursContext;
 
-  /** Sub-nav under Time & hours: `#timecards-summary` highlights HR compliance grid on Timecards. */
-  const [timeHoursHash, setTimeHoursHash] = useState(() =>
-    typeof window !== "undefined" ? window.location.hash.replace(/^#/, "") : "",
-  );
-  useEffect(() => {
-    const sync = () => setTimeHoursHash(window.location.hash.replace(/^#/, ""));
-    window.addEventListener("hashchange", sync);
-    return () => window.removeEventListener("hashchange", sync);
-  }, []);
-
-  function clearWorkspaceHash() {
-    if (typeof window === "undefined") return;
-    const { pathname, search } = window.location;
-    if (window.location.hash) {
-      window.history.replaceState(null, "", `${pathname}${search}`);
-    }
-    setTimeHoursHash("");
-  }
-
   return (
     <div className="flex h-screen bg-sidebar border-r border-border shadow-2xl z-20">
         {/* Primary Rail - Global Navigation & Project Switcher */}
@@ -309,10 +290,7 @@ export function Sidebar({ currentView, currentChannelId, onViewChange, currentPr
                      <Tooltip>
                         <TooltipTrigger asChild>
                             <button
-                                onClick={() => {
-                                    clearWorkspaceHash();
-                                    onViewChange("timecards");
-                                }}
+                                onClick={() => onViewChange("timecards")}
                                 className={cn(
                                     "w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-200",
                                     timeHoursNavActive
@@ -382,58 +360,28 @@ export function Sidebar({ currentView, currentChannelId, onViewChange, currentPr
                                 variant="ghost"
                                 className={cn(
                                     "w-full justify-start font-medium",
-                                    isTimecardsView && timeHoursHash !== "timecards-summary"
+                                    isTimecardsView
                                         ? "bg-background shadow-sm text-primary"
                                         : "text-muted-foreground hover:text-foreground",
                                 )}
-                                onClick={() => {
-                                    clearWorkspaceHash();
-                                    onViewChange("timecards");
-                                }}
+                                onClick={() => onViewChange("timecards")}
                             >
                                 <Clock className="w-4 h-4 mr-2" />
                                 {isClient ? "Shared hours" : "Time log"}
                             </Button>
                             {showTeamSummaryNav && (
-                                <>
-                                    <Button
-                                        variant="ghost"
-                                        className={cn(
-                                            "w-full justify-start font-medium",
-                                            isTimecardsView && timeHoursHash === "timecards-summary"
-                                                ? "bg-background shadow-sm text-primary"
-                                                : "text-muted-foreground hover:text-foreground",
-                                        )}
-                                        onClick={() => {
-                                            onViewChange("timecards");
-                                            window.location.hash = "timecards-summary";
-                                            window.requestAnimationFrame(() => {
-                                                document
-                                                    .getElementById("pms-timecards-summary-anchor")
-                                                    ?.scrollIntoView({ behavior: "smooth", block: "start" });
-                                            });
-                                        }}
-                                        data-testid="button-nav-timecards-summary"
-                                    >
-                                        <ClipboardList className="w-4 h-4 mr-2" />
-                                        Timecards summary
-                                    </Button>
-                                    <Button
-                                        variant="ghost"
-                                        className={cn(
-                                            "w-full justify-start font-medium",
-                                            isTeamSummaryView ? "bg-background shadow-sm text-primary" : "text-muted-foreground hover:text-foreground",
-                                        )}
-                                        onClick={() => {
-                                            clearWorkspaceHash();
-                                            onViewChange("team-summary");
-                                        }}
-                                        data-testid="button-nav-team-summary"
-                                    >
-                                        <BarChart3 className="w-4 h-4 mr-2" />
-                                        Team summary
-                                    </Button>
-                                </>
+                                <Button
+                                    variant="ghost"
+                                    className={cn(
+                                        "w-full justify-start font-medium",
+                                        isTeamSummaryView ? "bg-background shadow-sm text-primary" : "text-muted-foreground hover:text-foreground",
+                                    )}
+                                    onClick={() => onViewChange("team-summary")}
+                                    data-testid="button-nav-team-summary"
+                                >
+                                    <BarChart3 className="w-4 h-4 mr-2" />
+                                    Team summary
+                                </Button>
                             )}
                         </div>
                     </ScrollArea>
