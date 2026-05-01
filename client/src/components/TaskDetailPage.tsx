@@ -34,7 +34,8 @@ import { cn, getUserInitials } from "@/lib/utils";
 import { useState, useEffect, useMemo, useRef } from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { format, formatDistanceToNow } from "date-fns";
+import { format, formatDistanceToNow, isSameDay } from "date-fns";
+import type { DateRange } from "react-day-picker";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -129,6 +130,12 @@ function parseTaskDateStr(s: string | undefined): Date | undefined {
   }
   const dt = new Date(str);
   return isNaN(dt.getTime()) ? undefined : dt;
+}
+
+function sameCalendarDay(a?: Date, b?: Date): boolean {
+  if (a == null && b == null) return true;
+  if (a == null || b == null) return false;
+  return isSameDay(a, b);
 }
 
 /** One row: From … to … (grid stays a single column; text is inline). */
@@ -568,6 +575,8 @@ export function TaskDetailPage({
   const [startDateVal, setStartDateVal] = useState<Date | undefined>(() => parseTaskDateStr(task.startDate));
   const [dueDateVal, setDueDateVal] = useState<Date | undefined>(() => parseTaskDateStr(task.dueDate));
   const [timelinePopoverOpen, setTimelinePopoverOpen] = useState(false);
+  const timelinePopoverSnapshotRef = useRef<{ start?: Date; due?: Date } | null>(null);
+  const timelineRangeCommittedRef = useRef(false);
   const [timelineSaving, setTimelineSaving] = useState(false);
   const [rightPanelTab, setRightPanelTab] = useState("comments");
 
@@ -955,22 +964,75 @@ export function TaskDetailPage({
     }
   };
 
-  const persistTimelineDate = async (field: "startDate" | "dueDate", date: Date | undefined) => {
-    if (!canEditTaskFields || !Number.isInteger(numericTaskId) || numericTaskId <= 0) return;
-    const isStart = field === "startDate";
+  const persistTimelineBoth = async (start: Date | undefined, due: Date | undefined) => {
+    if (!canEditTaskFields || !Number.isInteger(numericTaskId) || numericTaskId <= 0) return false;
     const prevStart = startDateVal;
     const prevDue = dueDateVal;
-    if (isStart) setStartDateVal(date);
-    else setDueDateVal(date);
+    setStartDateVal(start);
+    setDueDateVal(due);
     setTimelineSaving(true);
     try {
-      await patchTask({ [field]: date ? format(date, "yyyy-MM-dd") : null });
+      await patchTask({
+        startDate: start ? format(start, "yyyy-MM-dd") : null,
+        dueDate: due ? format(due, "yyyy-MM-dd") : null,
+      });
+      return true;
     } catch {
-      if (isStart) setStartDateVal(prevStart);
-      else setDueDateVal(prevDue);
-      toast({ title: `Could not update ${isStart ? "start" : "due"} date`, variant: "destructive" });
+      setStartDateVal(prevStart);
+      setDueDateVal(prevDue);
+      toast({ title: "Could not update timeline", variant: "destructive" });
+      return false;
     } finally {
       setTimelineSaving(false);
+    }
+  };
+
+  const handleTimelinePopoverOpenChange = (open: boolean) => {
+    if (open) {
+      timelinePopoverSnapshotRef.current = { start: startDateVal, due: dueDateVal };
+      timelineRangeCommittedRef.current = false;
+      setTimelinePopoverOpen(true);
+      return;
+    }
+    const snap = timelinePopoverSnapshotRef.current;
+    timelinePopoverSnapshotRef.current = null;
+    if (!timelineRangeCommittedRef.current && snap) {
+      const startChanged = !sameCalendarDay(startDateVal, snap.start);
+      const dueChanged = !sameCalendarDay(dueDateVal, snap.due);
+      if (startChanged || dueChanged) {
+        setStartDateVal(snap.start);
+        setDueDateVal(snap.due);
+      }
+    }
+    timelineRangeCommittedRef.current = false;
+    setTimelinePopoverOpen(false);
+  };
+
+  const handleTimelineRangeSelect = (range: DateRange | undefined) => {
+    if (range == null || (!range.from && !range.to)) {
+      setStartDateVal(undefined);
+      setDueDateVal(undefined);
+      void (async () => {
+        const ok = await persistTimelineBoth(undefined, undefined);
+        if (ok) timelineRangeCommittedRef.current = true;
+      })();
+      return;
+    }
+    if (range.from && range.to === undefined) {
+      setStartDateVal(range.from);
+      setDueDateVal(undefined);
+      return;
+    }
+    if (range.from && range.to) {
+      let from = range.from;
+      let to = range.to;
+      if (from.getTime() > to.getTime()) [from, to] = [to, from];
+      setStartDateVal(from);
+      setDueDateVal(to);
+      void (async () => {
+        const ok = await persistTimelineBoth(from, to);
+        if (ok) timelineRangeCommittedRef.current = true;
+      })();
     }
   };
 
@@ -1777,7 +1839,7 @@ export function TaskDetailPage({
                              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Timeline</div>
                              <div className="w-full min-w-0 rounded-lg border border-border/40 bg-background/40 p-1">
                                  {(!isClient || isFullAccess) ? (
-                                   <Popover open={timelinePopoverOpen} onOpenChange={setTimelinePopoverOpen}>
+                                   <Popover open={timelinePopoverOpen} onOpenChange={handleTimelinePopoverOpenChange}>
                                      <PopoverTrigger asChild>
                                        <Button
                                          type="button"
@@ -1792,54 +1854,38 @@ export function TaskDetailPage({
                                          <TaskTimelineDatesDisplay start={startDateVal} due={dueDateVal} />
                                        </Button>
                                      </PopoverTrigger>
-                                     <PopoverContent
-                                       className="w-auto max-w-[calc(100vw-1.5rem)] p-2 sm:p-3"
-                                       align="start"
-                                     >
-                                       {/* One row: From + To side by side — avoids tall stacked calendars and inner scroll */}
-                                       <div className="flex max-w-full flex-row flex-nowrap items-start gap-3 overflow-x-auto sm:gap-4">
-                                         <div className="min-w-0 shrink-0">
-                                           <div className="mb-1 text-xs font-medium text-muted-foreground">From</div>
-                                           <CalendarComponent
-                                             mode="single"
-                                             selected={startDateVal}
-                                             onSelect={(d) => void persistTimelineDate("startDate", d)}
-                                             initialFocus
-                                           />
-                                           {startDateVal && (
-                                             <Button
-                                               type="button"
-                                               variant="ghost"
-                                               size="sm"
-                                               className="mt-2 w-full min-w-[240px] max-w-[min(100%,280px)] h-8 text-xs"
-                                               disabled={timelineSaving}
-                                               onClick={() => void persistTimelineDate("startDate", undefined)}
-                                             >
-                                               Clear from date
-                                             </Button>
-                                           )}
-                                         </div>
-                                         <div className="min-w-0 shrink-0 border-l border-border pl-3 sm:pl-4">
-                                           <div className="mb-1 text-xs font-medium text-muted-foreground">To</div>
-                                           <CalendarComponent
-                                             mode="single"
-                                             selected={dueDateVal}
-                                             onSelect={(d) => void persistTimelineDate("dueDate", d)}
-                                           />
-                                           {dueDateVal && (
-                                             <Button
-                                               type="button"
-                                               variant="ghost"
-                                               size="sm"
-                                               className="mt-2 w-full min-w-[240px] max-w-[min(100%,280px)] h-8 text-xs"
-                                               disabled={timelineSaving}
-                                               onClick={() => void persistTimelineDate("dueDate", undefined)}
-                                             >
-                                               Clear to date
-                                             </Button>
-                                           )}
-                                         </div>
-                                       </div>
+                                     <PopoverContent className="w-auto max-w-[calc(100vw-1.5rem)] p-2 sm:p-3" align="start">
+                                       <p className="mb-2 text-center text-xs text-muted-foreground">
+                                         Click twice to set <span className="font-medium text-foreground">from</span> then{" "}
+                                         <span className="font-medium text-foreground">to</span>
+                                       </p>
+                                       <CalendarComponent
+                                         mode="range"
+                                         defaultMonth={startDateVal ?? dueDateVal ?? new Date()}
+                                         selected={{
+                                           from: startDateVal,
+                                           to: dueDateVal,
+                                         }}
+                                         onSelect={(r) => handleTimelineRangeSelect(r)}
+                                         initialFocus
+                                       />
+                                       {(startDateVal || dueDateVal) && (
+                                         <Button
+                                           type="button"
+                                           variant="ghost"
+                                           size="sm"
+                                           className="mt-2 w-full h-8 text-xs"
+                                           disabled={timelineSaving}
+                                           onClick={() => {
+                                             void (async () => {
+                                               const ok = await persistTimelineBoth(undefined, undefined);
+                                               if (ok) timelineRangeCommittedRef.current = true;
+                                             })();
+                                           }}
+                                         >
+                                           Clear dates
+                                         </Button>
+                                       )}
                                      </PopoverContent>
                                    </Popover>
                                  ) : (
