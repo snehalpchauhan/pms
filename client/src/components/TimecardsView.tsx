@@ -632,7 +632,7 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
 
         {summaryDialog}
 
-        <ScrollArea className="flex-1 min-h-0">
+        <div className="flex-1 min-h-0 overflow-y-auto">
           <div className="min-w-0 p-6">
             {!hasLoadedEntries && !isLoading ? (
               <div className="text-center py-16 border-2 border-dashed border-border/50 rounded-xl space-y-3">
@@ -764,7 +764,7 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
               </div>
             )}
           </div>
-        </ScrollArea>
+        </div>
       </div>
     );
   }
@@ -835,69 +835,66 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
           </div>
         </div>
 
-        {/* Filters: controls wrap on the left; Search stays on the right */}
-        <div className="flex flex-col gap-3 border-t border-border/40 pt-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
-            <Filter className="h-4 w-4 shrink-0 text-muted-foreground" />
-            {isManagerOrAdmin && (
-              <div className="flex items-center gap-1.5">
-                <Users className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
-                <SearchableSelect
-                  value={filterUserId}
-                  onValueChange={setFilterUserId}
-                  options={memberFilterOptions}
-                  placeholder="All members"
-                  searchPlaceholder="Search members…"
-                  triggerClassName="w-[200px]"
-                  data-testid="select-filter-user"
-                />
-              </div>
-            )}
-            <div className="flex items-center gap-1.5">
-              <Folder className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
-              <SearchableSelect
-                value={filterProjectId}
-                onValueChange={setFilterProjectId}
-                options={projectFilterOptions}
-                placeholder="All projects"
-                searchPlaceholder="Search projects…"
-                triggerClassName="w-[200px]"
-                data-testid="select-filter-project"
-              />
-            </div>
-            <div className="flex items-center gap-1.5">
-              <Tag className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
-              <SearchableSelect
-                value={filterTaskId}
-                onValueChange={setFilterTaskId}
-                options={taskFilterOptions}
-                placeholder={filterProjectId === "all" ? "Select project for tasks" : "All tasks in project"}
-                searchPlaceholder="Search tasks…"
-                disabled={filterProjectId === "all"}
-                triggerClassName="w-[220px]"
-                data-testid="select-filter-task"
-              />
-            </div>
+        {/* Filters row — wraps freely; Search/Clear always sit at the trailing end */}
+        <div className="flex flex-wrap items-center gap-2 border-t border-border/40 pt-4">
+          <Filter className="h-4 w-4 shrink-0 text-muted-foreground" />
+          {isManagerOrAdmin && (
+            <SearchableSelect
+              value={filterUserId}
+              onValueChange={setFilterUserId}
+              options={memberFilterOptions}
+              placeholder="All members"
+              searchPlaceholder="Search members…"
+              triggerClassName="h-9 w-[160px]"
+              data-testid="select-filter-user"
+            />
+          )}
+          <SearchableSelect
+            value={filterProjectId}
+            onValueChange={setFilterProjectId}
+            options={projectFilterOptions}
+            placeholder="All projects"
+            searchPlaceholder="Search projects…"
+            triggerClassName="h-9 w-[160px]"
+            data-testid="select-filter-project"
+          />
+          <SearchableSelect
+            value={filterTaskId}
+            onValueChange={setFilterTaskId}
+            options={taskFilterOptions}
+            placeholder={filterProjectId === "all" ? "All tasks" : "All tasks"}
+            searchPlaceholder="Search tasks…"
+            disabled={filterProjectId === "all"}
+            triggerClassName="h-9 w-[160px]"
+            data-testid="select-filter-task"
+          />
+          <div className="flex items-center gap-1.5 shrink-0">
             <Input
               type="date"
               value={filterStartDate}
               onChange={(e) => setFilterStartDate(e.target.value)}
-              className="h-9 w-[150px] text-sm"
+              className="h-9 w-[136px] text-sm"
               data-testid="input-filter-start-date"
             />
-            <span className="text-xs text-muted-foreground">to</span>
+            <span className="text-xs text-muted-foreground">–</span>
             <Input
               type="date"
               value={filterEndDate}
               onChange={(e) => setFilterEndDate(e.target.value)}
-              className="h-9 w-[150px] text-sm"
+              className="h-9 w-[136px] text-sm"
               data-testid="input-filter-end-date"
             />
           </div>
-          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 lg:pl-4">
+          {/* ml-auto pushes this group to the right on whatever line it ends up on */}
+          <div className="ml-auto flex shrink-0 items-center gap-2">
+            {hasActiveFilters ? (
+              <Button variant="ghost" size="sm" className="h-9 text-xs" onClick={clearFiltersAndPage} data-testid="button-clear-filters">
+                Clear
+              </Button>
+            ) : null}
             <Button
               size="sm"
-              className="h-9 min-w-[7.5rem] gap-1.5"
+              className="h-9 gap-1.5 px-4"
               onClick={commitSearch}
               disabled={isLoading}
               data-testid="button-timecards-search"
@@ -905,18 +902,13 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
               <Search className="h-3.5 w-3.5" />
               Search
             </Button>
-            {hasActiveFilters ? (
-              <Button variant="ghost" size="sm" className="h-9 text-xs" onClick={clearFiltersAndPage} data-testid="button-clear-filters">
-                Clear filters
-              </Button>
-            ) : null}
           </div>
         </div>
       </div>
 
       {summaryDialog}
 
-      <ScrollArea className="flex-1 min-h-0">
+      <div className="flex-1 min-h-0 overflow-y-auto">
         <div className="min-w-0 space-y-3 p-6">
           {/* Detailed Log */}
           <div className="space-y-3">
@@ -1097,7 +1089,7 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
             )}
           </div>
         </div>
-      </ScrollArea>
+      </div>
 
       {/* Log Time Dialog */}
       <Dialog open={logOpen} onOpenChange={(open) => {
