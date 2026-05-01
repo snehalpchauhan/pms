@@ -633,7 +633,7 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
 
         {summaryDialog}
 
-        <div className="flex-1 min-h-0 overflow-y-auto">
+        <div className="min-h-0 flex-1 overflow-auto">
           <div className="min-w-0 p-6">
             {!hasLoadedEntries && !isLoading ? (
               <div className="text-center py-16 border-2 border-dashed border-border/50 rounded-xl space-y-3">
@@ -677,8 +677,11 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
                     </select>
                   </div>
                 </div>
-                <div className="bg-background border border-border/50 rounded-xl shadow-sm min-w-0 max-w-full overflow-x-hidden">
-                  <table className="w-full table-fixed border-collapse text-sm" data-testid="table-client-time-log">
+                <div className="rounded-xl border border-border/50 bg-background shadow-sm">
+                  <table
+                    className="w-max min-w-full border-separate border-spacing-0 text-sm table-fixed"
+                    data-testid="table-client-time-log"
+                  >
                     <colgroup>
                       <col style={{ width: "9.25rem" }} />
                       <col style={{ width: "10rem" }} />
@@ -687,19 +690,29 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
                       <col />
                     </colgroup>
                     <thead>
-                      <tr className="border-b border-border/50 bg-muted/30">
-                        <th className="text-left px-3 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Date</th>
-                        <th className="text-left px-3 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider min-w-0">Member</th>
-                        <th className="text-right px-3 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Hours</th>
-                        <th className="text-left px-3 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider min-w-0">Task</th>
-                        <th className="text-left px-3 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider min-w-0">Work type</th>
+                      <tr className="[&_th]:border-b [&_th]:border-border/50 bg-muted/30">
+                        <th className="sticky left-0 top-0 z-[50] bg-muted/95 px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground backdrop-blur-sm supports-[backdrop-filter]:bg-muted/80 shadow-[4px_0_6px_-4px_rgba(0,0,0,0.12)] dark:shadow-[4px_0_6px_-4px_rgba(0,0,0,0.4)]">
+                          Date
+                        </th>
+                        <th className="sticky top-0 z-[40] bg-muted/95 px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground backdrop-blur-sm supports-[backdrop-filter]:bg-muted/80 min-w-[8rem]">
+                          Member
+                        </th>
+                        <th className="sticky top-0 z-[40] bg-muted/95 px-3 py-3 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground backdrop-blur-sm supports-[backdrop-filter]:bg-muted/80">
+                          Hours
+                        </th>
+                        <th className="sticky top-0 z-[40] bg-muted/95 px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground backdrop-blur-sm supports-[backdrop-filter]:bg-muted/80 min-w-[140px]">
+                          Task
+                        </th>
+                        <th className="sticky top-0 z-[40] bg-muted/95 px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground backdrop-blur-sm supports-[backdrop-filter]:bg-muted/80 min-w-[180px]">
+                          Work type
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
                       {groupedPaginatedEntries.map((group) => (
                         <Fragment key={`group-client-${group.logDate}`}>
-                          <tr className="bg-muted/40 border-y border-border/40">
-                            <td colSpan={5} className="px-3 py-2.5">
+                          <tr className="bg-muted/40 [&>td]:border-b [&>td]:border-border/40">
+                            <td colSpan={5} className="bg-muted/40 px-3 py-2.5">
                               <div className="flex items-center justify-between gap-3">
                                 <div className="min-w-0">
                                   <span className="text-xs font-bold text-foreground">
@@ -718,8 +731,14 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
                             </td>
                           </tr>
                           {group.entries.map((entry: any) => (
-                            <tr key={entry.id} className="border-b border-border/30 last:border-0 hover:bg-muted/20 transition-colors" data-testid={`row-client-time-entry-${entry.id}`}>
-                              <td className="px-3 py-3 text-muted-foreground text-xs whitespace-nowrap align-top">{entry.logDate}</td>
+                            <tr
+                              key={entry.id}
+                              className="[&>td]:border-b [&>td]:border-border/25 last:border-0 hover:bg-muted/20 transition-colors"
+                              data-testid={`row-client-time-entry-${entry.id}`}
+                            >
+                              <td className="sticky left-0 z-[30] border-r border-border/40 bg-background/95 px-3 py-3 text-xs whitespace-nowrap align-top text-muted-foreground backdrop-blur-sm supports-[backdrop-filter]:bg-background/85 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)] dark:shadow-[2px_0_4px_-2px_rgba(0,0,0,0.35)]">
+                                {entry.logDate}
+                              </td>
                               <td className="px-3 py-3 min-w-0 align-top">
                                 <div className="flex items-center gap-2 min-w-0">
                                   <Avatar className="h-5 w-5 shrink-0">
@@ -924,7 +943,7 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
 
       {summaryDialog}
 
-      <div className="flex-1 min-h-0 overflow-y-auto">
+      <div className="min-h-0 flex-1 overflow-auto">
         <div className="min-w-0 space-y-3 p-6">
           {/* Detailed Log */}
           <div className="space-y-3">
@@ -980,8 +999,11 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
                     </select>
                   </div>
                 </div>
-                <div className="bg-background border border-border/50 rounded-xl shadow-sm min-w-0 max-w-full overflow-x-hidden">
-                  <table className="w-full table-fixed border-collapse text-sm" data-testid="table-time-log">
+                <div className="rounded-xl border border-border/50 bg-background shadow-sm">
+                  <table
+                    className="w-max min-w-full border-separate border-spacing-0 text-sm table-fixed"
+                    data-testid="table-time-log"
+                  >
                     <colgroup>
                       <col style={{ width: "9.25rem" }} />
                       {showMemberColumn ? <col style={{ width: "9.5rem" }} /> : null}
@@ -992,23 +1014,38 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
                       <col style={{ width: "2.75rem" }} />
                     </colgroup>
                     <thead>
-                      <tr className="border-b border-border/50 bg-muted/30">
-                        <th className="text-left px-3 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Date</th>
+                      <tr className="[&_th]:border-b [&_th]:border-border/50 bg-muted/30">
+                        <th className="sticky left-0 top-0 z-[50] bg-muted/95 px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground backdrop-blur-sm supports-[backdrop-filter]:bg-muted/80 shadow-[4px_0_6px_-4px_rgba(0,0,0,0.12)] dark:shadow-[4px_0_6px_-4px_rgba(0,0,0,0.4)]">
+                          Date
+                        </th>
                         {showMemberColumn ? (
-                          <th className="text-left px-3 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Member</th>
+                          <th className="sticky top-0 z-[40] bg-muted/95 px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground backdrop-blur-sm supports-[backdrop-filter]:bg-muted/80 min-w-[7.5rem]">
+                            Member
+                          </th>
                         ) : null}
-                        <th className="text-left px-3 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider min-w-0">Project</th>
-                        <th className="text-right px-3 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Hours</th>
-                        <th className="text-left px-3 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider min-w-0">Task</th>
-                        <th className="text-left px-3 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider min-w-0">Work type &amp; description</th>
-                        <th className="px-3 py-3 w-10" />
+                        <th className="sticky top-0 z-[40] bg-muted/95 px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground backdrop-blur-sm supports-[backdrop-filter]:bg-muted/80 min-w-[120px]">
+                          Project
+                        </th>
+                        <th className="sticky top-0 z-[40] bg-muted/95 px-3 py-3 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground backdrop-blur-sm supports-[backdrop-filter]:bg-muted/80 whitespace-nowrap">
+                          Hours
+                        </th>
+                        <th className="sticky top-0 z-[40] bg-muted/95 px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground backdrop-blur-sm supports-[backdrop-filter]:bg-muted/80 min-w-[140px]">
+                          Task
+                        </th>
+                        <th className="sticky top-0 z-[40] bg-muted/95 px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground backdrop-blur-sm supports-[backdrop-filter]:bg-muted/80 min-w-[180px]">
+                          Work type &amp; description
+                        </th>
+                        <th
+                          className="sticky right-0 top-0 z-[45] w-14 min-w-[2.75rem] border-l border-border/50 bg-muted/95 px-3 py-3 shadow-[-6px_0_8px_-4px_rgba(0,0,0,0.08)] backdrop-blur-sm supports-[backdrop-filter]:bg-muted/80 dark:shadow-[-6px_0_8px_-4px_rgba(0,0,0,0.35)]"
+                          aria-label="Actions"
+                        />
                       </tr>
                     </thead>
                     <tbody>
                       {groupedPaginatedEntries.map((group) => (
                         <Fragment key={`group-staff-${group.logDate}`}>
-                          <tr className="bg-muted/40 border-y border-border/40">
-                            <td colSpan={showMemberColumn ? 7 : 6} className="px-3 py-2.5">
+                          <tr className="bg-muted/40 [&>td]:border-b [&>td]:border-border/40">
+                            <td colSpan={showMemberColumn ? 7 : 6} className="bg-muted/40 px-3 py-2.5">
                               <div className="flex items-center justify-between gap-3">
                                 <div className="min-w-0">
                                   <span className="text-xs font-bold text-foreground">
@@ -1030,8 +1067,20 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
                             const canDelete = isManagerOrAdmin || String(entry.userId) === String(currentUser?.id);
                             const isPrivate = entry.clientVisible === false;
                             return (
-                              <tr key={entry.id} className={cn("border-b border-border/30 last:border-0 hover:bg-muted/20 transition-colors group", isPrivate && "bg-muted/10")} data-testid={`row-time-entry-${entry.id}`}>
-                                <td className="px-3 py-3 text-muted-foreground text-xs whitespace-nowrap align-top">
+                              <tr
+                                key={entry.id}
+                                className={cn(
+                                  "[&>td]:border-b [&>td]:border-border/25 hover:bg-muted/20 transition-colors group",
+                                  isPrivate && "bg-muted/10",
+                                )}
+                                data-testid={`row-time-entry-${entry.id}`}
+                              >
+                                <td
+                                  className={cn(
+                                    "sticky left-0 z-[30] border-r border-border/40 px-3 py-3 text-xs whitespace-nowrap align-top text-muted-foreground shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)] backdrop-blur-sm supports-[backdrop-filter]:bg-background/85 dark:shadow-[2px_0_4px_-2px_rgba(0,0,0,0.35)]",
+                                    isPrivate ? "bg-muted/95 dark:bg-muted/90" : "bg-background/95",
+                                  )}
+                                >
                                   <div className="flex items-center gap-1.5 min-w-0">
                                     {entry.logDate}
                                     {isPrivate && (
@@ -1066,7 +1115,12 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
                                 <td className="px-3 py-3 align-top min-w-0">
                                   <WorkDescriptionCell description={entry.description} />
                                 </td>
-                                <td className="px-3 py-3 text-right align-top">
+                                <td
+                                  className={cn(
+                                    "sticky right-0 z-[35] border-l border-border/40 px-3 py-3 text-right align-top shadow-[-4px_0_6px_-4px_rgba(0,0,0,0.08)] backdrop-blur-sm supports-[backdrop-filter]:bg-background/85 dark:shadow-[-4px_0_6px_-4px_rgba(0,0,0,0.35)]",
+                                    isPrivate ? "bg-muted/95 dark:bg-muted/90" : "bg-background/95",
+                                  )}
+                                >
                                   {canDelete && (
                                     <Button
                                       variant="ghost"
