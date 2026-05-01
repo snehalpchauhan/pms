@@ -784,25 +784,21 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
             </div>
           </div>
           <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end xl:shrink-0">
-            <div className="flex items-center gap-2.5 rounded-lg border border-border/60 bg-background px-3 py-2 shadow-sm">
-              <Timer className="h-4 w-4 shrink-0 text-primary" />
-              <div className="text-right leading-tight">
-                <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Total</p>
-                <p className="text-lg font-bold tabular-nums text-foreground" data-testid="text-total-hours">
-                  {hasLoadedEntries ? `${totalHours.toFixed(1)}h` : "—"}
-                </p>
-                <p className="text-[11px] text-muted-foreground">
-                  {hasLoadedEntries ? (
-                    <>
-                      {entries.length} {entries.length === 1 ? "entry" : "entries"}
-                      {isManagerOrAdmin ? " · filtered" : ""}
-                    </>
-                  ) : (
-                    "Not loaded"
-                  )}
-                </p>
+            {hasLoadedEntries ? (
+              <div className="flex items-center gap-2.5 rounded-lg border border-border/60 bg-background px-3 py-2 shadow-sm">
+                <Timer className="h-4 w-4 shrink-0 text-primary" />
+                <div className="text-right leading-tight">
+                  <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Total</p>
+                  <p className="text-lg font-bold tabular-nums text-foreground" data-testid="text-total-hours">
+                    {totalHours.toFixed(1)}h
+                  </p>
+                  <p className="text-[11px] text-muted-foreground">
+                    {entries.length} {entries.length === 1 ? "entry" : "entries"}
+                    {isManagerOrAdmin ? " · filtered" : ""}
+                  </p>
+                </div>
               </div>
-            </div>
+            ) : null}
             {hasLoadedEntries && entries.length > 0 ? (
               <>
                 <Separator orientation="vertical" className="hidden h-9 sm:block" />
@@ -858,22 +854,23 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
             triggerClassName="h-9 w-[160px]"
             data-testid="select-filter-project"
           />
-          <SearchableSelect
-            value={filterTaskId}
-            onValueChange={setFilterTaskId}
-            options={taskFilterOptions}
-            placeholder={filterProjectId === "all" ? "All tasks" : "All tasks"}
-            searchPlaceholder="Search tasks…"
-            disabled={filterProjectId === "all"}
-            triggerClassName="h-9 w-[160px]"
-            data-testid="select-filter-task"
-          />
+          {filterProjectId !== "all" && (
+            <SearchableSelect
+              value={filterTaskId}
+              onValueChange={setFilterTaskId}
+              options={taskFilterOptions}
+              placeholder="All tasks"
+              searchPlaceholder="Search tasks…"
+              triggerClassName="h-9 w-[160px]"
+              data-testid="select-filter-task"
+            />
+          )}
           <div className="flex items-center gap-1.5 shrink-0">
             <Input
               type="date"
               value={filterStartDate}
               onChange={(e) => setFilterStartDate(e.target.value)}
-              className="h-9 w-[136px] text-sm"
+              className="h-9 w-[148px] text-sm tabular-nums"
               data-testid="input-filter-start-date"
             />
             <span className="text-xs text-muted-foreground">–</span>
@@ -881,7 +878,7 @@ export default function TimecardsView({ currentUserRole, currentProject, clientP
               type="date"
               value={filterEndDate}
               onChange={(e) => setFilterEndDate(e.target.value)}
-              className="h-9 w-[136px] text-sm"
+              className="h-9 w-[148px] text-sm tabular-nums"
               data-testid="input-filter-end-date"
             />
           </div>
