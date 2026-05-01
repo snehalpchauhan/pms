@@ -18,7 +18,20 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Building2, Upload, Plus, MoreHorizontal, Search, Trash2, LogIn, Kanban, Pencil, Clock, FolderKanban } from "lucide-react";
+import {
+    Building2,
+    Upload,
+    Plus,
+    MoreHorizontal,
+    Search,
+    Trash2,
+    LogIn,
+    Kanban,
+    Pencil,
+    Clock,
+    FolderKanban,
+    Mail,
+} from "lucide-react";
 import { format } from "date-fns";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -82,6 +95,29 @@ type AdminProjectRow = {
     closureDescription?: string | null;
     closurePaymentReceived?: boolean | null;
 };
+
+type MonthlyDigestSendResult = {
+    success: boolean;
+    scope: string;
+    referenceDate: string;
+    admin: { sent: boolean; reason?: string; brevoMessageId?: string; to: string[] } | null;
+    employees: { emailed: number; skipped: number } | null;
+};
+
+function summarizeMonthlyDigestResult(d: MonthlyDigestSendResult): string {
+    const parts: string[] = [];
+    if (d.admin) {
+        parts.push(
+            d.admin.sent
+                ? `Admin rollup sent to ${d.admin.to.length ? d.admin.to.join(", ") : "(no recipients)"}.`
+                : `Admin rollup not sent: ${d.admin.reason ?? "unknown"}.`,
+        );
+    }
+    if (d.employees) {
+        parts.push(`Per-employee emails: ${d.employees.emailed} sent, ${d.employees.skipped} skipped or failed.`);
+    }
+    return parts.join(" ");
+}
 
 type CompanySettingsDto = {
     companyName: string;
@@ -177,6 +213,9 @@ export default function CompanySettingsView() {
     const [timecardDateDisplayFormat, setTimecardDateDisplayFormat] = useState<TimecardDateFormatPreset>("DD/MM/YYYY");
     const [timecardSummaryEmailsText, setTimecardSummaryEmailsText] = useState<string>("");
     const [emailDigestTimezone, setEmailDigestTimezone] = useState("");
+    /** Optional YYYY-MM-DD: previous calendar month is computed as if the cron ran on this day */
+    const [monthlyDigestAsOf, setMonthlyDigestAsOf] = useState("");
+    const [monthlyDigestLastResult, setMonthlyDigestLastResult] = useState<MonthlyDigestSendResult | null>(null);
 
     const [projectsSubTab, setProjectsSubTab] = useState<"active" | "closed">("active");
     const [projectsSearch, setProjectsSearch] = useState("");
@@ -308,6 +347,40 @@ export default function CompanySettingsView() {
         onError: (err: unknown) => {
             toast({
                 title: "Could not save",
+                description: parseApiError(err),
+                variant: "destructive",
+            });
+        },
+    });
+
+    const sendMonthlyDigestsMutation = useMutation({
+        mutationFn: async (scope: "both" | "admin" | "employees") => {
+            const body: Record<string, unknown> = { scope };
+            if (/^\d{4}-\d{2}-\d{2}$/.test(monthlyDigestAsOf.trim())) {
+                body.asOf = monthlyDigestAsOf.trim();
+            }
+            const res = await apiRequest("POST", "/api/admin/timecard-digests/monthly", body);
+            return (await res.json()) as MonthlyDigestSendResult;
+        },
+        onSuccess: (data) => {
+            setMonthlyDigestLastResult(data);
+            if (data.success) {
+                toast({
+                    title: "Monthly digest emails sent",
+                    description: summarizeMonthlyDigestResult(data),
+                });
+            } else {
+                toast({
+                    title: "Digest completed with issues",
+                    description: summarizeMonthlyDigestResult(data),
+                    variant: "destructive",
+                });
+            }
+        },
+        onError: (err: unknown) => {
+            setMonthlyDigestLastResult(null);
+            toast({
+                title: "Could not send digests",
                 description: parseApiError(err),
                 variant: "destructive",
             });
@@ -894,6 +967,96 @@ export default function CompanySettingsView() {
                                             the server. Restart <code className="text-xs bg-muted px-1 rounded">pms.service</code>{" "}
                                             after changing. Leave empty to use the server&apos;s default timezone.
                                         </p>
+                                    </div>
+
+                                    <div className="space-y-3 max-w-2xl rounded-lg border border-border/80 bg-muted/20 p-4">
+                                        <div className="flex items-start gap-2">
+                                            <Mail className="w-5 h-5 text-muted-foreground shrink-0 mt-0.5" />
+                                            <div className="space-y-1 min-w-0">
+                                                <Label className="text-base font-semibold">Send monthly timecard digests</Label>
+                                                <p className="text-xs text-muted-foreground leading-relaxed">
+                                                    Runs the same emails as scheduled monthly jobs: one rollup to{" "}
+                                                    <strong>summary recipients</strong> above (all staff), plus one personal email per
+                                                    employee/manager who has an email. Requires Brevo or SMTP on the server.
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <div className="space-y-2 max-w-xs">
+                                            <Label htmlFor="monthly-digest-as-of" className="text-xs">
+                                                Reference date (optional)
+                                            </Label>
+                                            <Input
+                                                id="monthly-digest-as-of"
+                                                type="date"
+                                                className="font-mono text-sm"
+                                                value={monthlyDigestAsOf}
+                                                onChange={(e) => setMonthlyDigestAsOf(e.target.value)}
+                                                disabled={!isAdmin || companyLoading || sendMonthlyDigestsMutation.isPending}
+                                            />
+                                            <p className="text-xs text-muted-foreground">
+                                                Leave empty for today. When set, the <strong>previous calendar month</strong> is
+                                                calculated from this date (same rule as the 1st-of-month cron).
+                                            </p>
+                                        </div>
+                                        <div className="flex flex-wrap gap-2">
+                                            <Button
+                                                type="button"
+                                                variant="default"
+                                                size="sm"
+                                                disabled={!isAdmin || companyLoading || sendMonthlyDigestsMutation.isPending}
+                                                onClick={() => sendMonthlyDigestsMutation.mutate("both")}
+                                            >
+                                                {sendMonthlyDigestsMutation.isPending &&
+                                                sendMonthlyDigestsMutation.variables === "both"
+                                                    ? "Sending…"
+                                                    : "Admin + all staff"}
+                                            </Button>
+                                            <Button
+                                                type="button"
+                                                variant="outline"
+                                                size="sm"
+                                                disabled={!isAdmin || companyLoading || sendMonthlyDigestsMutation.isPending}
+                                                onClick={() => sendMonthlyDigestsMutation.mutate("admin")}
+                                            >
+                                                {sendMonthlyDigestsMutation.isPending &&
+                                                sendMonthlyDigestsMutation.variables === "admin"
+                                                    ? "Sending…"
+                                                    : "Admin summary only"}
+                                            </Button>
+                                            <Button
+                                                type="button"
+                                                variant="outline"
+                                                size="sm"
+                                                disabled={!isAdmin || companyLoading || sendMonthlyDigestsMutation.isPending}
+                                                onClick={() => sendMonthlyDigestsMutation.mutate("employees")}
+                                            >
+                                                {sendMonthlyDigestsMutation.isPending &&
+                                                sendMonthlyDigestsMutation.variables === "employees"
+                                                    ? "Sending…"
+                                                    : "Staff only"}
+                                            </Button>
+                                        </div>
+                                        {monthlyDigestLastResult && (
+                                            <div
+                                                className={`rounded-md border px-3 py-2 text-xs font-mono whitespace-pre-wrap ${
+                                                    monthlyDigestLastResult.success
+                                                        ? "border-green-200 bg-green-50 text-green-900 dark:border-green-900 dark:bg-green-950/40 dark:text-green-100"
+                                                        : "border-destructive/40 bg-destructive/10 text-destructive"
+                                                }`}
+                                                role="status"
+                                            >
+                                                <div className="font-sans font-semibold mb-1">
+                                                    {monthlyDigestLastResult.success ? "Last send: OK" : "Last send: issues"}
+                                                </div>
+                                                {summarizeMonthlyDigestResult(monthlyDigestLastResult)}
+                                                {"\n"}
+                                                scope={monthlyDigestLastResult.scope} · ref=
+                                                {monthlyDigestLastResult.referenceDate}
+                                                {monthlyDigestLastResult.admin?.brevoMessageId
+                                                    ? `\nBrevo messageId: ${monthlyDigestLastResult.admin.brevoMessageId}`
+                                                    : ""}
+                                            </div>
+                                        )}
                                     </div>
                                 </CardContent>
                             </Card>

@@ -28,6 +28,7 @@ import {
 import { isValidProjectColor, sanitizeProjectColor } from "@shared/projectColors";
 import { timeLogNoteMeetsMinWords } from "@shared/timeLogDescription";
 import type { Project } from "@shared/schema";
+import { runAdminMonthlyDigestAllStaff, runEmployeeMonthlyDigests } from "./jobs/timecardDigest";
 
 /**
  * VoiceLink integration — session-token third-party API.
@@ -769,6 +770,64 @@ export async function registerRoutes(
         ? updated.timecardSummaryRecipientEmails
         : [],
       emailDigestTimezone: updated.emailDigestTimezone?.trim() ?? "",
+    });
+  });
+
+  const monthlyManualDigestSchema = z.object({
+    scope: z.enum(["both", "admin", "employees"]).default("both"),
+    /** Reference calendar date (YYYY-MM-DD). Previous calendar month is computed as for a cron run on this day. */
+    asOf: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  });
+
+  /** Admin-only: send the same monthly digest emails as the scheduler / CLI (manual trigger). */
+  app.post("/api/admin/timecard-digests/monthly", requireAuth, async (req, res) => {
+    const currentUser = req.user as { role?: string };
+    if (currentUser.role !== "admin") {
+      return res.status(403).json({ message: "Only admins can send timecard digest emails" });
+    }
+    const parsed = monthlyManualDigestSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({ message: parsed.error.issues[0]?.message ?? "Invalid body" });
+    }
+    const { scope, asOf } = parsed.data;
+    const now = asOf ? new Date(`${asOf}T12:00:00.000Z`) : new Date();
+
+    const runAdmin = scope !== "employees";
+    const runEmployees = scope !== "admin";
+
+    let admin: {
+      sent: boolean;
+      reason?: string;
+      brevoMessageId?: string;
+      to: string[];
+    } | null = null;
+    let employees: { emailed: number; skipped: number } | null = null;
+
+    if (runAdmin) {
+      const r = await runAdminMonthlyDigestAllStaff(now);
+      admin = {
+        sent: r.sent,
+        reason: r.reason,
+        brevoMessageId: r.brevoMessageId,
+        to: r.to,
+      };
+    }
+    if (runEmployees) {
+      employees = await runEmployeeMonthlyDigests(now);
+    }
+
+    const adminOk = !runAdmin || admin?.sent === true;
+    const employeesOk =
+      !runEmployees ||
+      !employees ||
+      !(employees.emailed === 0 && employees.skipped > 0);
+
+    res.json({
+      success: adminOk && employeesOk,
+      scope,
+      referenceDate: now.toISOString(),
+      admin,
+      employees,
     });
   });
 
